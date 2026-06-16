@@ -20,6 +20,11 @@ Modulos funcionales del MVP:
   valida preguntas por capas (formal, fuente, tema, dificultad, duplicados y
   avisos de ambiguedad), emite un informe con errores/advertencias/info y aplica
   el estado recomendado (`needs_fix` o `pending_review`), nunca `validated`.
+- **Admin Review (SPEC 006):** flujo de revision humana (listar cola, detalle,
+  editar, aprobar/rechazar/needs_fix/obsolete/devolver a pending_review) con
+  historial de revisiones y transiciones de estado controladas. Solo la accion
+  explicita `approve` pasa una pregunta a `validated`, reutilizando el validador
+  de SPEC 005.
 
 No incluye validacion automatica avanzada, generacion de tests finales,
 simulacros, extraccion de indices, procesamiento avanzado de PDFs/DOCX, OCR,

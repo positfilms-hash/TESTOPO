@@ -55,3 +55,12 @@ export * from './quality/questionValidationProvider.js';
 export * from './repository/questionValidationReportRepository.js';
 export * from './repository/inMemoryQuestionValidationReportRepository.js';
 export * from './service/questionValidationService.js';
+
+// SPEC 006 - Admin Review
+export * from './models/questionReview.js';
+export * from './review/reviewErrors.js';
+export * from './review/questionReviewError.js';
+export * from './review/reviewTransitions.js';
+export * from './repository/questionReviewRepository.js';
+export * from './repository/inMemoryQuestionReviewRepository.js';
+export * from './service/questionReviewService.js';
