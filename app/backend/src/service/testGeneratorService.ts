@@ -56,6 +56,8 @@ export interface StudentOptionView {
 }
 export interface StudentQuestionView {
   question_id: string;
+  /** Id de la pregunta dentro del test; necesario para registrar la respuesta. */
+  test_question_id: string;
   order: number;
   statement: string;
   options: StudentOptionView[];
@@ -339,6 +341,7 @@ export class TestGeneratorService {
     });
     return {
       question_id: question.id,
+      test_question_id: item.id,
       order: item.order,
       statement: question.statement,
       options,
