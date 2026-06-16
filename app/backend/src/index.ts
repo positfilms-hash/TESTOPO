@@ -34,3 +34,15 @@ export * from './repository/inMemoryTopicMaterialLinkRepository.js';
 export * from './service/topicService.js';
 export * from './service/topicValidationError.js';
 export * from './service/topicCoverage.js';
+
+// SPEC 004 - Question Generation Drafts
+export * from './models/generationMetadata.js';
+export * from './models/questionGenerationRun.js';
+export * from './generation/generationErrors.js';
+export * from './generation/generationTypes.js';
+export * from './generation/validateGeneration.js';
+export * from './generation/questionGenerationError.js';
+export * from './generation/mockQuestionGenerationProvider.js';
+export * from './repository/generationRunRepository.js';
+export * from './repository/inMemoryGenerationRunRepository.js';
+export * from './service/questionGenerationService.js';

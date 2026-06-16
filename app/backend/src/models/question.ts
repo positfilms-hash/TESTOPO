@@ -8,6 +8,7 @@
 import type { Difficulty, QuestionStatus } from './enums.js';
 import type { Option } from './option.js';
 import type { Source } from './source.js';
+import type { GenerationMetadata } from './generationMetadata.js';
 
 export interface Question {
   id: string;
@@ -30,6 +31,11 @@ export interface Question {
   topic_id?: string | null;
   difficulty: Difficulty | null;
   status: QuestionStatus;
+  /**
+   * Trazabilidad de generacion (SPEC 004). Presente solo en preguntas creadas
+   * por el generador de borradores; las preguntas manuales lo dejan vacio.
+   */
+  generation_metadata?: GenerationMetadata | null;
   created_at: Date;
   updated_at: Date;
 }
