@@ -1,0 +1,17 @@
+{
+  "name": "@testopo/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TESTOPO question bank (SPEC 001).",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
