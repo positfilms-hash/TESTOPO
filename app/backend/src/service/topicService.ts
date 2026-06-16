@@ -189,7 +189,12 @@ export class TopicService {
     reference: string | null = null,
   ): TopicMaterialLink {
     this.requireTopic(topicId);
-    if (this.materials && !this.materials.findById(materialId)) {
+    if (!this.materials) {
+      throw new Error(
+        'linkMaterial requires a materialRepository in TopicService options',
+      );
+    }
+    if (!this.materials.findById(materialId)) {
       throw new TopicValidationError([
         TopicValidationErrorCode.MATERIAL_NOT_FOUND,
       ]);
