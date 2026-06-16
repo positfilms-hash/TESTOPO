@@ -46,3 +46,12 @@ export * from './generation/mockQuestionGenerationProvider.js';
 export * from './repository/generationRunRepository.js';
 export * from './repository/inMemoryGenerationRunRepository.js';
 export * from './service/questionGenerationService.js';
+
+// SPEC 005 - Question Validation & Quality Gate
+export * from './models/questionValidationResult.js';
+export * from './quality/qualityCodes.js';
+export * from './quality/qualityChecks.js';
+export * from './quality/questionValidationProvider.js';
+export * from './repository/questionValidationReportRepository.js';
+export * from './repository/inMemoryQuestionValidationReportRepository.js';
+export * from './service/questionValidationService.js';
