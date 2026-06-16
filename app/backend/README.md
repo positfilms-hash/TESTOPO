@@ -1,11 +1,17 @@
-# TESTOPO Backend - Question Bank (SPEC 001)
+# TESTOPO Backend
 
-Primer modulo funcional: el banco de preguntas. Implementa el modelo de
-pregunta, opciones y fuente, las reglas de validacion obligatorias y las
-operaciones minimas (crear, listar, ver, editar, cambiar estado).
+Modulos funcionales del MVP:
 
-No incluye IA, generacion de tests, usuarios, autenticacion, reportes ni
-estadisticas (fuera del alcance de la SPEC 001).
+- **Question Bank (SPEC 001):** modelo de pregunta, opciones y fuente, reglas de
+  validacion obligatorias y operaciones minimas (crear, listar, ver, editar,
+  cambiar estado).
+- **Material Upload & Source Registry (SPEC 002):** registro de material de
+  estudio (crear manual, registrar archivo, listar, ver, editar, cambiar
+  estado, marcar obsoleto) y vinculo trazable entre material y la fuente de una
+  pregunta.
+
+No incluye IA, generacion de preguntas, generacion de tests, procesamiento
+avanzado de PDFs, OCR, usuarios, autenticacion, panel complejo ni estadisticas.
 
 ## Stack
 
@@ -17,13 +23,18 @@ estadisticas (fuera del alcance de la SPEC 001).
 
 ```text
 src/
-  models/        Question, Option, Source y enums (estados, dificultades, tipos)
-  validation/    validateQuestion() + codigos de error (logica pura, reutilizable)
-  repository/    Contrato QuestionRepository + implementacion en memoria
-  service/       QuestionService (crear/listar/ver/editar/cambiar estado)
-  index.ts       API publica del modulo
+  models/        Question, Option, Source, Material y enums
+  validation/    validateQuestion() / validateMaterial() + codigos de error
+                 (logica pura, reutilizable)
+  repository/    Contratos + implementaciones en memoria (preguntas y material)
+  service/       QuestionService y MaterialService
+  index.ts       API publica de los modulos
 tests/           Tests de las reglas criticas (Vitest)
 ```
+
+El material privado real del usuario no se guarda en el repositorio: las
+carpetas de subida (`uploads/`, `private-materials/`) estan ignoradas por Git y
+`Material.storage_path` debe apuntar a una de ellas.
 
 ## Comandos
 

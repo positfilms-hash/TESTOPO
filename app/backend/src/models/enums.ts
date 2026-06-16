@@ -33,10 +33,27 @@ export const SOURCE_STATUSES = [
 ] as const;
 export type SourceStatus = (typeof SOURCE_STATUSES)[number];
 
+// El material (SPEC 002) comparte la misma taxonomia de tipos y estados que la
+// fuente de una pregunta (SPEC 001). Se reutilizan los mismos conjuntos para
+// evitar duplicar valores que deben mantenerse sincronizados.
+export const MATERIAL_TYPES = SOURCE_TYPES;
+export type MaterialType = SourceType;
+
+export const MATERIAL_STATUSES = SOURCE_STATUSES;
+export type MaterialStatus = SourceStatus;
+
 export function isDifficulty(value: unknown): value is Difficulty {
   return DIFFICULTIES.includes(value as Difficulty);
 }
 
 export function isQuestionStatus(value: unknown): value is QuestionStatus {
   return QUESTION_STATUSES.includes(value as QuestionStatus);
+}
+
+export function isMaterialType(value: unknown): value is MaterialType {
+  return MATERIAL_TYPES.includes(value as MaterialType);
+}
+
+export function isMaterialStatus(value: unknown): value is MaterialStatus {
+  return MATERIAL_STATUSES.includes(value as MaterialStatus);
 }

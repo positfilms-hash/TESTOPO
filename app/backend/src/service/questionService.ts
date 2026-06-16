@@ -5,7 +5,7 @@
 // el generador de ids son inyectables para facilitar los tests.
 
 import { randomUUID } from 'node:crypto';
-import type { Difficulty } from '../models/enums.js';
+import type { Difficulty, MaterialStatus } from '../models/enums.js';
 import type { Option } from '../models/option.js';
 import type { Question } from '../models/question.js';
 import type { Source } from '../models/source.js';
@@ -15,6 +15,7 @@ import type {
   QuestionRepository,
 } from '../repository/questionRepository.js';
 import { validateQuestion } from '../validation/validateQuestion.js';
+import { ValidationErrorCode } from '../validation/errors.js';
 import { QuestionValidationError } from './questionValidationError.js';
 
 export interface OptionInput {
@@ -45,11 +46,22 @@ export interface EditQuestionInput {
 export interface QuestionServiceOptions {
   generateId?: () => string;
   now?: () => Date;
+  /**
+   * Resolutor opcional del estado de un material registrado (SPEC 002). Si se
+   * proporciona, una pregunta cuya fuente apunte (`source.material_id`) a un
+   * material `obsolete` no podra pasar a `validated`. Devuelve `null` si el
+   * material no existe. Se inyecta como funcion para no acoplar el banco de
+   * preguntas al repositorio de material.
+   */
+  resolveMaterialStatus?: (materialId: string) => MaterialStatus | null;
 }
 
 export class QuestionService {
   private readonly generateId: () => string;
   private readonly now: () => Date;
+  private readonly resolveMaterialStatus?: (
+    materialId: string,
+  ) => MaterialStatus | null;
 
   constructor(
     private readonly repository: QuestionRepository,
@@ -57,6 +69,7 @@ export class QuestionService {
   ) {
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
+    this.resolveMaterialStatus = options.resolveMaterialStatus;
   }
 
   // 9.1 Crear pregunta. Siempre nace en `draft` y no exige cumplir todas las
@@ -130,6 +143,7 @@ export class QuestionService {
       if (!result.valid) {
         throw new QuestionValidationError(result.errors);
       }
+      this.assertSourceMaterialNotObsolete(existing);
     }
 
     const updated: Question = {
@@ -138,6 +152,21 @@ export class QuestionService {
       updated_at: this.now(),
     };
     return this.repository.save(updated);
+  }
+
+  // SPEC 002: si la fuente esta vinculada a un material registrado y ese
+  // material esta `obsolete`, la pregunta no puede validarse. Solo se aplica si
+  // se ha inyectado un resolutor de estado de material.
+  private assertSourceMaterialNotObsolete(question: Question): void {
+    const materialId = question.source?.material_id;
+    if (!materialId || !this.resolveMaterialStatus) {
+      return;
+    }
+    if (this.resolveMaterialStatus(materialId) === 'obsolete') {
+      throw new QuestionValidationError([
+        ValidationErrorCode.SOURCE_MATERIAL_OBSOLETE,
+      ]);
+    }
   }
 
   private requireQuestion(id: string): Question {
