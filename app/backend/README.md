@@ -30,6 +30,10 @@ Modulos funcionales del MVP:
   con semilla opcional, sin duplicados). Excluye preguntas no validadas o
   vinculadas a fuente/material/tema obsoleto. La vista de alumno no expone la
   respuesta correcta.
+- **Test Taking & Results (SPEC 008):** realizacion y correccion de tests
+  (iniciar intento, guardar/actualizar/borrar respuestas, enviar, corregir,
+  resultado y revision con explicaciones). Antes de enviar no se expone la
+  respuesta correcta ni la explicacion; tras enviar si. Cierra el flujo del MVP.
 
 No incluye validacion automatica avanzada, generacion de tests finales,
 simulacros, extraccion de indices, procesamiento avanzado de PDFs/DOCX, OCR,

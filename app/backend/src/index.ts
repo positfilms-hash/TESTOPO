@@ -75,3 +75,14 @@ export * from './repository/inMemoryTestRepository.js';
 export * from './repository/testQuestionRepository.js';
 export * from './repository/inMemoryTestQuestionRepository.js';
 export * from './service/testGeneratorService.js';
+
+// SPEC 008 - Test Taking & Results
+export * from './models/testAttempt.js';
+export * from './models/testAnswer.js';
+export * from './attempt/attemptErrors.js';
+export * from './attempt/testAttemptError.js';
+export * from './repository/testAttemptRepository.js';
+export * from './repository/inMemoryTestAttemptRepository.js';
+export * from './repository/testAnswerRepository.js';
+export * from './repository/inMemoryTestAnswerRepository.js';
+export * from './service/testAttemptService.js';
