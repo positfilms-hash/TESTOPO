@@ -13,6 +13,7 @@ import type {
 import type { Option } from '../models/option.js';
 import type { Question } from '../models/question.js';
 import type { Source } from '../models/source.js';
+import type { GenerationMetadata } from '../models/generationMetadata.js';
 import { QUESTION_STATUSES, type QuestionStatus } from '../models/enums.js';
 import type {
   QuestionFilter,
@@ -37,6 +38,7 @@ export interface CreateQuestionInput {
   topic?: string | null;
   topic_id?: string | null;
   difficulty?: Difficulty | null;
+  generation_metadata?: GenerationMetadata | null;
 }
 
 export interface EditQuestionInput {
@@ -103,6 +105,7 @@ export class QuestionService {
       topic: input.topic ?? null,
       topic_id: input.topic_id ?? null,
       difficulty: input.difficulty ?? null,
+      generation_metadata: input.generation_metadata ?? null,
       status: 'draft',
       created_at: timestamp,
       updated_at: timestamp,
@@ -162,8 +165,8 @@ export class QuestionService {
       if (!result.valid) {
         throw new QuestionValidationError(result.errors);
       }
-      this.assertSourceMaterialNotObsolete(existing);
-      this.assertTopicNotObsolete(existing);
+      this.assertSourceMaterialUsable(existing);
+      this.assertTopicUsable(existing);
     }
 
     const updated: Question = {
@@ -174,30 +177,37 @@ export class QuestionService {
     return this.repository.save(updated);
   }
 
-  // SPEC 002: si la fuente esta vinculada a un material registrado y ese
-  // material esta `obsolete`, la pregunta no puede validarse. Solo se aplica si
-  // se ha inyectado un resolutor de estado de material.
-  private assertSourceMaterialNotObsolete(question: Question): void {
+  // SPEC 002 (reforzado en SPEC 004): si la fuente esta vinculada a un material
+  // registrado (`source.material_id`), la pregunta no puede validarse si el
+  // material no se puede resolver o esta `obsolete`. La trazabilidad fuerte
+  // exige poder confirmar que el material sigue vigente.
+  private assertSourceMaterialUsable(question: Question): void {
     const materialId = question.source?.material_id;
-    if (!materialId || !this.resolveMaterialStatus) {
+    if (!materialId) {
       return;
     }
-    if (this.resolveMaterialStatus(materialId) === 'obsolete') {
+    const status = this.resolveMaterialStatus
+      ? this.resolveMaterialStatus(materialId)
+      : null;
+    if (status === null || status === 'obsolete') {
       throw new QuestionValidationError([
         ValidationErrorCode.SOURCE_MATERIAL_OBSOLETE,
       ]);
     }
   }
 
-  // SPEC 003: si la pregunta esta vinculada (`topic_id`) a un tema registrado
-  // en estado `obsolete`, no puede validarse. Solo se aplica si se ha inyectado
-  // un resolutor de estado de tema.
-  private assertTopicNotObsolete(question: Question): void {
+  // SPEC 003 (reforzado en SPEC 004): si la pregunta esta vinculada (`topic_id`)
+  // a un tema registrado, no puede validarse si el tema no se puede resolver o
+  // esta `obsolete`.
+  private assertTopicUsable(question: Question): void {
     const topicId = question.topic_id;
-    if (!topicId || !this.resolveTopicStatus) {
+    if (!topicId) {
       return;
     }
-    if (this.resolveTopicStatus(topicId) === 'obsolete') {
+    const status = this.resolveTopicStatus
+      ? this.resolveTopicStatus(topicId)
+      : null;
+    if (status === null || status === 'obsolete') {
       throw new QuestionValidationError([ValidationErrorCode.TOPIC_OBSOLETE]);
     }
   }

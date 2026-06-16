@@ -32,9 +32,13 @@ export function validateQuestion(question: Question): ValidationResult {
   }
 
   if (options.length > 0) {
-    const correctCount = options.filter((option) => option.is_correct).length;
-    if (correctCount !== 1) {
+    const correctOptions = options.filter((option) => option.is_correct);
+    if (correctOptions.length !== 1) {
       errors.push(ValidationErrorCode.SINGLE_CORRECT_OPTION_REQUIRED);
+    } else if (question.correct_answer !== correctOptions[0].id) {
+      // Hay exactamente una opcion correcta, pero `correct_answer` no apunta
+      // a ella: la pregunta es internamente incoherente.
+      errors.push(ValidationErrorCode.CORRECT_ANSWER_MISMATCH);
     }
     if (hasDuplicateOptions(options)) {
       errors.push(ValidationErrorCode.DUPLICATE_OPTIONS);

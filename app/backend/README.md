@@ -12,10 +12,15 @@ Modulos funcionales del MVP:
 - **Topic Map (SPEC 003):** mapa jerarquico del temario (temas y subtemas con
   validacion de ciclos), vinculacion de materiales a temas, asignacion de temas
   a preguntas y cobertura basica por tema.
+- **Question Generation Drafts (SPEC 004):** generacion de borradores de
+  preguntas desde material, fragmento o texto manual, mediante un proveedor
+  desacoplado (mock en el MVP). Las preguntas generadas reutilizan el banco de
+  preguntas y quedan en `draft` o `pending_review`, nunca en `validated`.
 
-No incluye IA, generacion de preguntas, generacion de tests, extraccion de
-indices, procesamiento avanzado de PDFs/DOCX, OCR, usuarios, autenticacion,
-panel complejo ni estadisticas avanzadas.
+No incluye validacion automatica avanzada, generacion de tests finales,
+simulacros, extraccion de indices, procesamiento avanzado de PDFs/DOCX, OCR,
+preguntas multirrespuesta, usuarios, autenticacion, panel complejo ni
+estadisticas avanzadas.
 
 ## Stack
 
