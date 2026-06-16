@@ -1,5 +1,6 @@
 // Punto de entrada publico del banco de preguntas (SPEC 001).
 
+// SPEC 001 - Question Bank
 export * from './models/enums.js';
 export * from './models/option.js';
 export * from './models/source.js';
@@ -11,3 +12,25 @@ export * from './repository/questionRepository.js';
 export * from './repository/inMemoryQuestionRepository.js';
 export * from './service/questionService.js';
 export * from './service/questionValidationError.js';
+
+// SPEC 002 - Material Upload & Source Registry
+export * from './models/material.js';
+export * from './validation/materialErrors.js';
+export * from './validation/validateMaterial.js';
+export * from './repository/materialRepository.js';
+export * from './repository/inMemoryMaterialRepository.js';
+export * from './service/materialService.js';
+export * from './service/materialValidationError.js';
+
+// SPEC 003 - Topic Map
+export * from './models/topic.js';
+export * from './models/topicMaterialLink.js';
+export * from './validation/topicErrors.js';
+export * from './validation/validateTopic.js';
+export * from './repository/topicRepository.js';
+export * from './repository/inMemoryTopicRepository.js';
+export * from './repository/topicMaterialLinkRepository.js';
+export * from './repository/inMemoryTopicMaterialLinkRepository.js';
+export * from './service/topicService.js';
+export * from './service/topicValidationError.js';
+export * from './service/topicCoverage.js';
