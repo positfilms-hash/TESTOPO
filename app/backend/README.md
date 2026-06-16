@@ -25,6 +25,11 @@ Modulos funcionales del MVP:
   historial de revisiones y transiciones de estado controladas. Solo la accion
   explicita `approve` pasa una pregunta a `validated`, reutilizando el validador
   de SPEC 005.
+- **Test Generator (SPEC 007):** generacion de tests de practica a partir de
+  preguntas `validated` (filtros por tema/dificultad/mixto, seleccion aleatoria
+  con semilla opcional, sin duplicados). Excluye preguntas no validadas o
+  vinculadas a fuente/material/tema obsoleto. La vista de alumno no expone la
+  respuesta correcta.
 
 No incluye validacion automatica avanzada, generacion de tests finales,
 simulacros, extraccion de indices, procesamiento avanzado de PDFs/DOCX, OCR,
