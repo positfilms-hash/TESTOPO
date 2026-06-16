@@ -1,0 +1,55 @@
+# TESTOPO Backend
+
+Modulos funcionales del MVP:
+
+- **Question Bank (SPEC 001):** modelo de pregunta, opciones y fuente, reglas de
+  validacion obligatorias y operaciones minimas (crear, listar, ver, editar,
+  cambiar estado).
+- **Material Upload & Source Registry (SPEC 002):** registro de material de
+  estudio (crear manual, registrar archivo, listar, ver, editar, cambiar
+  estado, marcar obsoleto) y vinculo trazable entre material y la fuente de una
+  pregunta.
+
+No incluye IA, generacion de preguntas, generacion de tests, procesamiento
+avanzado de PDFs, OCR, usuarios, autenticacion, panel complejo ni estadisticas.
+
+## Stack
+
+- TypeScript (logica y tipos).
+- Vitest (tests).
+- Almacenamiento en memoria (sin base de datos todavia).
+
+## Estructura
+
+```text
+src/
+  models/        Question, Option, Source, Material y enums
+  validation/    validateQuestion() / validateMaterial() + codigos de error
+                 (logica pura, reutilizable)
+  repository/    Contratos + implementaciones en memoria (preguntas y material)
+  service/       QuestionService y MaterialService
+  index.ts       API publica de los modulos
+tests/           Tests de las reglas criticas (Vitest)
+```
+
+El material privado real del usuario no se guarda en el repositorio: las
+carpetas de subida (`uploads/`, `private-materials/`) estan ignoradas por Git y
+`Material.storage_path` debe apuntar a una de ellas.
+
+## Comandos
+
+```bash
+npm install        # instala dependencias de desarrollo
+npm test           # ejecuta los tests una vez (vitest run)
+npm run test:watch # ejecuta los tests en modo watch
+npm run typecheck  # comprueba tipos sin emitir (tsc --noEmit)
+```
+
+## Regla central
+
+Una pregunta solo puede pasar a `validated` si tiene fuente (no obsoleta),
+explicacion, tema, dificultad valida y exactamente una respuesta correcta,
+entre el resto de reglas de la SPEC 001. La validacion vive aislada en
+`src/validation/validateQuestion.ts` para poder reutilizarse mas adelante en el
+panel de administracion, el generador de preguntas con IA, el generador de
+tests y el sistema de reportes.
