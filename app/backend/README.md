@@ -9,9 +9,13 @@ Modulos funcionales del MVP:
   estudio (crear manual, registrar archivo, listar, ver, editar, cambiar
   estado, marcar obsoleto) y vinculo trazable entre material y la fuente de una
   pregunta.
+- **Topic Map (SPEC 003):** mapa jerarquico del temario (temas y subtemas con
+  validacion de ciclos), vinculacion de materiales a temas, asignacion de temas
+  a preguntas y cobertura basica por tema.
 
-No incluye IA, generacion de preguntas, generacion de tests, procesamiento
-avanzado de PDFs, OCR, usuarios, autenticacion, panel complejo ni estadisticas.
+No incluye IA, generacion de preguntas, generacion de tests, extraccion de
+indices, procesamiento avanzado de PDFs/DOCX, OCR, usuarios, autenticacion,
+panel complejo ni estadisticas avanzadas.
 
 ## Stack
 
@@ -23,11 +27,11 @@ avanzado de PDFs, OCR, usuarios, autenticacion, panel complejo ni estadisticas.
 
 ```text
 src/
-  models/        Question, Option, Source, Material y enums
-  validation/    validateQuestion() / validateMaterial() + codigos de error
-                 (logica pura, reutilizable)
-  repository/    Contratos + implementaciones en memoria (preguntas y material)
-  service/       QuestionService y MaterialService
+  models/        Question, Option, Source, Material, Topic, links y enums
+  validation/    validateQuestion() / validateMaterial() / validateTopic()
+                 + codigos de error (logica pura, reutilizable)
+  repository/    Contratos + implementaciones en memoria
+  service/       QuestionService, MaterialService, TopicService, coverage
   index.ts       API publica de los modulos
 tests/           Tests de las reglas criticas (Vitest)
 ```

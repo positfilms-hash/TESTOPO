@@ -21,3 +21,16 @@ export * from './repository/materialRepository.js';
 export * from './repository/inMemoryMaterialRepository.js';
 export * from './service/materialService.js';
 export * from './service/materialValidationError.js';
+
+// SPEC 003 - Topic Map
+export * from './models/topic.js';
+export * from './models/topicMaterialLink.js';
+export * from './validation/topicErrors.js';
+export * from './validation/validateTopic.js';
+export * from './repository/topicRepository.js';
+export * from './repository/inMemoryTopicRepository.js';
+export * from './repository/topicMaterialLinkRepository.js';
+export * from './repository/inMemoryTopicMaterialLinkRepository.js';
+export * from './service/topicService.js';
+export * from './service/topicValidationError.js';
+export * from './service/topicCoverage.js';

@@ -20,7 +20,14 @@ export interface Question {
   correct_answer: string | null;
   explanation: string | null;
   source: Source | null;
+  /** Tema en texto (SPEC 001). Sigue siendo el valor visible/obligatorio. */
   topic: string | null;
+  /**
+   * Vinculo opcional al `Topic` registrado del mapa del temario (SPEC 003).
+   * Cuando esta presente, una pregunta no puede validarse si ese tema esta
+   * `obsolete`. Es aditivo: no sustituye a `topic`.
+   */
+  topic_id?: string | null;
   difficulty: Difficulty | null;
   status: QuestionStatus;
   created_at: Date;

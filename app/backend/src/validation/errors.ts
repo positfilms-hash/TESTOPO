@@ -19,4 +19,6 @@ export enum ValidationErrorCode {
   OBSOLETE_CANNOT_BE_VALIDATED = 'QUESTION_OBSOLETE_CANNOT_BE_VALIDATED',
   // SPEC 002: la fuente apunta a un material registrado en estado `obsolete`.
   SOURCE_MATERIAL_OBSOLETE = 'QUESTION_SOURCE_MATERIAL_OBSOLETE',
+  // SPEC 003: la pregunta esta vinculada a un tema en estado `obsolete`.
+  TOPIC_OBSOLETE = 'QUESTION_TOPIC_OBSOLETE',
 }

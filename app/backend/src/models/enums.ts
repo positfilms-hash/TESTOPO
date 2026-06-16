@@ -57,3 +57,18 @@ export function isMaterialType(value: unknown): value is MaterialType {
 export function isMaterialStatus(value: unknown): value is MaterialStatus {
   return MATERIAL_STATUSES.includes(value as MaterialStatus);
 }
+
+// Estados de un tema del temario (SPEC 003). Se define como conjunto propio
+// aunque hoy comparta valores con el material: tema y material son conceptos
+// distintos y sus estados podrian divergir en el futuro.
+export const TOPIC_STATUSES = [
+  'active',
+  'needs_review',
+  'deprecated',
+  'obsolete',
+] as const;
+export type TopicStatus = (typeof TOPIC_STATUSES)[number];
+
+export function isTopicStatus(value: unknown): value is TopicStatus {
+  return TOPIC_STATUSES.includes(value as TopicStatus);
+}
