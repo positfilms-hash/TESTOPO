@@ -34,6 +34,20 @@ Modulos funcionales del MVP:
   (iniciar intento, guardar/actualizar/borrar respuestas, enviar, corregir,
   resultado y revision con explicaciones). Antes de enviar no se expone la
   respuesta correcta ni la explicacion; tras enviar si. Cierra el flujo del MVP.
+- **Oppositions, Users & Access (SPEC 010):** usuarios (`admin`/`student`),
+  oposiciones y acceso usuario-oposicion. Material, temas, preguntas, tests e
+  intentos pertenecen a una oposicion (`opposition_id` obligatorio); no se
+  mezclan entidades de oposiciones distintas; el generador de tests filtra por
+  oposicion; el estudiante solo accede a oposiciones autorizadas.
+
+> Migracion / oposicion por defecto: el almacen es en memoria, asi que no hay
+> datos persistidos previos que migrar. El seed del frontend crea una
+> `Oposicion MVP` y le asocia todo. Cuando exista persistencia real, la
+> estrategia sera crear esa oposicion por defecto y asignarle las filas previas
+> sin `opposition_id`.
+>
+> Nota de seguridad: el hash de contrasena (`auth/password.ts`) es solo para el
+> MVP (no produccion); debe sustituirse por un hash fuerte en una spec futura.
 
 No incluye validacion automatica avanzada, generacion de tests finales,
 simulacros, extraccion de indices, procesamiento avanzado de PDFs/DOCX, OCR,

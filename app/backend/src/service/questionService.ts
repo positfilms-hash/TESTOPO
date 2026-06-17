@@ -22,6 +22,10 @@ import type {
 import { validateQuestion } from '../validation/validateQuestion.js';
 import { ValidationErrorCode } from '../validation/errors.js';
 import { QuestionValidationError } from './questionValidationError.js';
+import {
+  assertSameOpposition,
+  requireOpposition,
+} from '../access/oppositionGuards.js';
 
 export interface OptionInput {
   id?: string;
@@ -31,6 +35,7 @@ export interface OptionInput {
 }
 
 export interface CreateQuestionInput {
+  opposition_id?: string;
   statement?: string;
   options?: OptionInput[];
   explanation?: string | null;
@@ -68,6 +73,14 @@ export interface QuestionServiceOptions {
    * podra pasar a `validated`. Devuelve `null` si el tema no existe.
    */
   resolveTopicStatus?: (topicId: string) => TopicStatus | null;
+  /**
+   * Resolutor opcional de la oposicion de un material (SPEC 010). Si se
+   * proporciona, no se puede crear una pregunta cuya fuente apunte a material
+   * de otra oposicion. Devuelve `null` si el material no existe.
+   */
+  resolveMaterialOpposition?: (materialId: string) => string | null;
+  /** Resolutor opcional de la oposicion de un tema (SPEC 010). */
+  resolveTopicOpposition?: (topicId: string) => string | null;
 }
 
 export class QuestionService {
@@ -79,6 +92,10 @@ export class QuestionService {
   private readonly resolveTopicStatus?: (
     topicId: string,
   ) => TopicStatus | null;
+  private readonly resolveMaterialOpposition?: (
+    materialId: string,
+  ) => string | null;
+  private readonly resolveTopicOpposition?: (topicId: string) => string | null;
 
   constructor(
     private readonly repository: QuestionRepository,
@@ -88,15 +105,34 @@ export class QuestionService {
     this.now = options.now ?? (() => new Date());
     this.resolveMaterialStatus = options.resolveMaterialStatus;
     this.resolveTopicStatus = options.resolveTopicStatus;
+    this.resolveMaterialOpposition = options.resolveMaterialOpposition;
+    this.resolveTopicOpposition = options.resolveTopicOpposition;
   }
 
   // 9.1 Crear pregunta. Siempre nace en `draft` y no exige cumplir todas las
   // reglas de validacion todavia.
   createQuestion(input: CreateQuestionInput): Question {
+    const oppositionId = requireOpposition(input.opposition_id);
+    // Integridad: la fuente/material y el tema deben ser de la misma oposicion.
+    const materialId = input.source?.material_id;
+    if (materialId && this.resolveMaterialOpposition) {
+      const materialOpposition = this.resolveMaterialOpposition(materialId);
+      if (materialOpposition) {
+        assertSameOpposition(materialOpposition, oppositionId);
+      }
+    }
+    if (input.topic_id && this.resolveTopicOpposition) {
+      const topicOpposition = this.resolveTopicOpposition(input.topic_id);
+      if (topicOpposition) {
+        assertSameOpposition(topicOpposition, oppositionId);
+      }
+    }
+
     const timestamp = this.now();
     const options = this.buildOptions(input.options ?? []);
     const question: Question = {
       id: this.generateId(),
+      opposition_id: oppositionId,
       statement: input.statement ?? '',
       options,
       correct_answer: deriveCorrectAnswer(options),

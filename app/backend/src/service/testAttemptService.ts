@@ -106,8 +106,8 @@ export class TestAttemptService {
     this.now = options.now ?? (() => new Date());
   }
 
-  // 10.1 Iniciar intento.
-  startAttempt(testId: string): TestAttempt {
+  // 10.1 Iniciar intento. `userId` asocia el intento al estudiante (SPEC 010).
+  startAttempt(testId: string, userId: string | null = null): TestAttempt {
     const test = this.tests.findById(testId);
     if (!test) {
       throw new TestAttemptError([TestAttemptErrorCode.TEST_NOT_FOUND]);
@@ -122,6 +122,8 @@ export class TestAttemptService {
     return this.attempts.create({
       id: this.generateId(),
       test_id: testId,
+      opposition_id: test.opposition_id,
+      user_id: userId,
       status: 'in_progress',
       started_at: timestamp,
       submitted_at: null,

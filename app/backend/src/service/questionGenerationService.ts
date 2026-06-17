@@ -35,6 +35,7 @@ import {
   validateGeneratedCandidate,
   validateGenerationRequest,
 } from '../generation/validateGeneration.js';
+import { requireOpposition } from '../access/oppositionGuards.js';
 
 export interface QuestionGenerationServiceOptions {
   questionService: QuestionService;
@@ -96,6 +97,7 @@ export class QuestionGenerationService {
   // 13.3 Generar desde texto pegado manualmente.
   generateFromManualText(input: {
     manual_text: string;
+    opposition_id?: string | null;
     topic_id?: string | null;
     difficulty: GenerateQuestionsRequest['difficulty'];
     question_count: number;
@@ -138,6 +140,12 @@ export class QuestionGenerationService {
       ]);
     }
 
+    // La oposicion de las preguntas generadas se hereda del material; en modo
+    // manual sin material, debe venir en la solicitud (SPEC 010).
+    const oppositionId = material
+      ? material.opposition_id
+      : requireOpposition(request.opposition_id);
+
     // Sin tema vinculado, los borradores quedan en `draft`; con tema, en
     // `pending_review` (SPEC 004, regla central y 9.4).
     const targetStatus: QuestionStatus = topic ? 'pending_review' : 'draft';
@@ -178,6 +186,7 @@ export class QuestionGenerationService {
       };
 
       const draft = this.questionService.createQuestion({
+        opposition_id: oppositionId,
         statement: candidate.statement,
         options: candidate.options.map((option, index) => ({
           text: option.text,

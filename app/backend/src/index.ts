@@ -86,3 +86,21 @@ export * from './repository/inMemoryTestAttemptRepository.js';
 export * from './repository/testAnswerRepository.js';
 export * from './repository/inMemoryTestAnswerRepository.js';
 export * from './service/testAttemptService.js';
+
+// SPEC 010 - Oppositions, Users & Access
+export * from './models/user.js';
+export * from './models/opposition.js';
+export * from './models/oppositionAccess.js';
+export * from './access/accessErrors.js';
+export * from './access/accessError.js';
+export * from './access/oppositionGuards.js';
+export * from './access/permissions.js';
+export * from './auth/password.js';
+export * from './repository/userRepository.js';
+export * from './repository/inMemoryUserRepository.js';
+export * from './repository/oppositionRepository.js';
+export * from './repository/inMemoryOppositionRepository.js';
+export * from './repository/oppositionAccessRepository.js';
+export * from './repository/inMemoryOppositionAccessRepository.js';
+export * from './service/userService.js';
+export * from './service/oppositionService.js';

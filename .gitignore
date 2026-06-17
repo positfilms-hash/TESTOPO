@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 coverage/
+.vite/
 *.log
 
 # Private uploaded materials (never commit real user material)

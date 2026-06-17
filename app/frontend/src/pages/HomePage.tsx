@@ -3,9 +3,14 @@ import { Button, PageHeader } from '../components/ui.js';
 import type { Section } from '../components/AppLayout.js';
 
 export function HomePage({ onNavigate }: { onNavigate: (s: Section) => void }) {
-  const { store } = useStore();
-  const materials = store.materials.listMaterials();
-  const questions = store.questions.listQuestions();
+  const { store, currentOpposition } = useStore();
+  const oppositionId = currentOpposition?.id;
+  const materials = store.materials
+    .listMaterials()
+    .filter((m) => m.opposition_id === oppositionId);
+  const questions = store.questions
+    .listQuestions()
+    .filter((q) => q.opposition_id === oppositionId);
   const pending = questions.filter((q) =>
     ['draft', 'pending_review', 'needs_fix'].includes(q.status),
   ).length;
@@ -15,7 +20,11 @@ export function HomePage({ onNavigate }: { onNavigate: (s: Section) => void }) {
     { label: 'Materiales', value: materials.length },
     { label: 'Pendientes de revisar', value: pending },
     { label: 'Preguntas validadas', value: validated },
-    { label: 'Tests creados', value: store.createdTests.length },
+    {
+      label: 'Tests creados',
+      value: store.createdTests.filter((t) => t.opposition_id === oppositionId)
+        .length,
+    },
   ];
 
   const steps: { title: string; text: string; cta: string; to: Section }[] = [

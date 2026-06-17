@@ -37,20 +37,26 @@ export function TestsPage() {
 }
 
 function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
-  const { store, refresh } = useStore();
+  const { store, refresh, currentOpposition, currentUser } = useStore();
   const [count, setCount] = useState(5);
   const [topicId, setTopicId] = useState('');
   const [difficulty, setDifficulty] = useState<RequestedDifficulty | 'any'>('any');
   const [mode, setMode] = useState<TestMode>('random');
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  const topics = store.topics.listTopics().filter((t) => t.status !== 'obsolete');
+  const topics = store.topics
+    .listTopics()
+    .filter((t) => t.opposition_id === currentOpposition?.id && t.status !== 'obsolete');
+  const createdTests = store.createdTests.filter(
+    (t) => t.opposition_id === currentOpposition?.id,
+  );
 
   const createTest = () => {
     setNotice(null);
     try {
       const { test } = store.testGenerator.generate({
         mode,
+        opposition_id: currentOpposition?.id,
         question_count: count,
         topic_id: topicId || null,
         difficulty: difficulty === 'any' ? null : difficulty,
@@ -68,7 +74,7 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
   };
 
   const start = (testId: string) => {
-    const attempt = store.attempts.startAttempt(testId);
+    const attempt = store.attempts.startAttempt(testId, currentUser?.id ?? null);
     refresh();
     onStart(attempt.id);
   };
@@ -114,10 +120,10 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
       </div>
 
       <h3>Tus tests</h3>
-      {store.createdTests.length === 0 ? (
+      {createdTests.length === 0 ? (
         <EmptyState message="Todavia no has creado ningun test." />
       ) : (
-        store.createdTests.map((t) => (
+        createdTests.map((t) => (
           <div className="card" key={t.id}>
             <div className="row spread">
               <div>

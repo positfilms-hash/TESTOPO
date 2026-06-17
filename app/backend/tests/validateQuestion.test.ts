@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { validateQuestion } from '../src/validation/validateQuestion.js';
 import { ValidationErrorCode } from '../src/validation/errors.js';
 import type { Question } from '../src/models/question.js';
-import { activeSource } from './helpers.js';
+import { activeSource, TEST_OPPOSITION_ID } from './helpers.js';
 
 const now = new Date(Date.UTC(2026, 0, 1));
 
 function validQuestion(): Question {
   return {
     id: 'q-1',
+    opposition_id: TEST_OPPOSITION_ID,
     statement: '¿Enunciado ficticio valido?',
     options: [
       { id: 'o-1', text: 'A', is_correct: true, order: 0 },
@@ -36,6 +37,7 @@ describe('validateQuestion', () => {
   it('una pregunta vacia acumula todos los errores aplicables', () => {
     const empty: Question = {
       id: 'q-empty',
+      opposition_id: TEST_OPPOSITION_ID,
       statement: '',
       options: [],
       correct_answer: null,

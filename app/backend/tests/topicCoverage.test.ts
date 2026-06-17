@@ -9,6 +9,7 @@ const now = new Date(Date.UTC(2026, 0, 1));
 function topic(id: string, title: string): Topic {
   return {
     id,
+    opposition_id: 'opp-test',
     title,
     description: null,
     code: null,
@@ -23,6 +24,7 @@ function topic(id: string, title: string): Topic {
 function question(topicId: string | null, status: Question['status']): Question {
   return {
     id: `q-${Math.random()}`,
+    opposition_id: 'opp-test',
     statement: 'Pregunta ficticia',
     options: [],
     correct_answer: null,

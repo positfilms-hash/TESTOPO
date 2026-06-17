@@ -8,6 +8,8 @@ import type { TopicStatus } from './enums.js';
 
 export interface Topic {
   id: string;
+  /** Oposicion a la que pertenece el tema (SPEC 010). Obligatorio. */
+  opposition_id: string;
   title: string;
   description: string | null;
   /** Codigo opcional para ordenar/identificar el tema (p. ej. T1, T1.1). */

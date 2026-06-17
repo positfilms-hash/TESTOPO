@@ -7,6 +7,7 @@ import {
 import { MaterialValidationError } from '../src/service/materialValidationError.js';
 import { MaterialValidationErrorCode } from '../src/validation/materialErrors.js';
 import type { MaterialStatus, MaterialType } from '../src/models/enums.js';
+import { TEST_OPPOSITION_ID } from './helpers.js';
 
 // Servicio con reloj e ids deterministas (datos ficticios).
 function makeService(maxFileSizeBytes?: number): MaterialService {
@@ -25,6 +26,7 @@ function validInput(
   overrides: Partial<CreateMaterialInput> = {},
 ): CreateMaterialInput {
   return {
+    opposition_id: TEST_OPPOSITION_ID,
     title: 'Tema 1 - Documento ficticio',
     type: 'syllabus',
     content_text: 'Texto ficticio del tema 1.',
@@ -143,6 +145,7 @@ describe('MaterialService - registro de archivo', () => {
   it('registra un .txt y guarda content_text', () => {
     const service = makeService();
     const material = service.registerFileMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Apuntes ficticios',
       type: 'notes',
       file: {
@@ -161,6 +164,7 @@ describe('MaterialService - registro de archivo', () => {
   it('registra un .pdf sin extraer texto (content_text null)', () => {
     const service = makeService();
     const material = service.registerFileMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Examen ficticio',
       type: 'official_exam',
       file: {
@@ -181,6 +185,7 @@ describe('MaterialService - registro de archivo', () => {
     expectMaterialError(
       () =>
         service.registerFileMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
           title: 'Documento ficticio',
           type: 'other',
           file: { original_filename: 'malware.exe', size_bytes: 10 },
@@ -194,6 +199,7 @@ describe('MaterialService - registro de archivo', () => {
     expectMaterialError(
       () =>
         service.registerFileMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
           title: 'Documento grande ficticio',
           type: 'other',
           file: { original_filename: 'grande.pdf', size_bytes: 500 },
