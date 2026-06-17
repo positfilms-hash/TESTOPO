@@ -9,6 +9,9 @@ import {
 import type { Opposition, User, Workspace, WorkspaceRole } from '@backend';
 import { createAppStore, type AppStore } from './appStore.js';
 
+// Zona de la app (SPEC 014): administracion (gestionar) vs estudio (estudiar).
+export type Zone = 'admin' | 'student';
+
 interface StoreContextValue {
   store: AppStore;
   version: number;
@@ -20,6 +23,12 @@ interface StoreContextValue {
   // Rol DENTRO del workspace activo (owner/admin/student). Decide capacidades.
   workspaceRole: WorkspaceRole | null;
   isWorkspaceManager: boolean;
+  // ¿Tiene matricula de estudio en alguna oposicion del workspace? (SPEC 014)
+  canStudy: boolean;
+  // Zona activa elegida por el usuario; null = aun sin decidir.
+  zone: Zone | null;
+  selectZone: (zone: Zone) => void;
+  clearZone: () => void;
   login: (user: User) => void;
   logout: () => void;
   selectWorkspace: (workspace: Workspace) => void;
@@ -42,6 +51,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [currentOpposition, setCurrentOpposition] =
     useState<Opposition | null>(null);
+  const [zone, setZone] = useState<Zone | null>(null);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const login = useCallback((user: User) => setCurrentUser(user), []);
@@ -49,20 +59,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
     setCurrentWorkspace(null);
     setCurrentOpposition(null);
+    setZone(null);
   }, []);
   const selectWorkspace = useCallback((workspace: Workspace) => {
     setCurrentWorkspace(workspace);
     setCurrentOpposition(null);
+    // Cada workspace puede tener distinto rol: se reelige zona al entrar.
+    setZone(null);
   }, []);
   const clearWorkspace = useCallback(() => {
     setCurrentWorkspace(null);
     setCurrentOpposition(null);
+    setZone(null);
   }, []);
   const selectOpposition = useCallback(
     (opposition: Opposition) => setCurrentOpposition(opposition),
     [],
   );
   const clearOpposition = useCallback(() => setCurrentOpposition(null), []);
+  const selectZone = useCallback((next: Zone) => {
+    setZone(next);
+    // Las oposiciones visibles dependen de la zona: se reelige al cambiar.
+    setCurrentOpposition(null);
+  }, []);
+  const clearZone = useCallback(() => {
+    setZone(null);
+    setCurrentOpposition(null);
+  }, []);
 
   const workspaceRole =
     currentUser && currentWorkspace
@@ -73,6 +96,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       : null;
   const isWorkspaceManager =
     workspaceRole === 'owner' || workspaceRole === 'admin';
+  const canStudy =
+    currentUser && currentWorkspace
+      ? storeRef.current.oppositions.hasStudyAccess(
+          currentUser,
+          currentWorkspace.id,
+        )
+      : false;
 
   return (
     <StoreContext.Provider
@@ -85,6 +115,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         currentOpposition,
         workspaceRole,
         isWorkspaceManager,
+        canStudy,
+        zone,
+        selectZone,
+        clearZone,
         login,
         logout,
         selectWorkspace,

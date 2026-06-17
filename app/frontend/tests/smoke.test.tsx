@@ -34,13 +34,22 @@ describe('MVP frontend - smoke (SPEC 010)', () => {
     expect(screen.getByText('Entrar como Estudiante')).toBeInTheDocument();
   });
 
-  it('admin: entra, ve oposicion y navegacion completa', () => {
+  it('admin: entra en zona administracion con navegacion de gestion', () => {
     renderApp();
     enter('admin');
     const sidebar = screen.getByLabelText('Navegacion principal');
-    for (const label of ['Inicio', 'Material', 'Temario', 'Preguntas', 'Tests']) {
+    for (const label of [
+      'Resumen',
+      'Material',
+      'Temario',
+      'Preguntas',
+      'Tests',
+      'Alumnos',
+    ]) {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     }
+    // Distintivo de zona y redireccion inicial a inicio de gestion.
+    expect(within(sidebar).getByText('Administracion')).toBeInTheDocument();
     expect(screen.getByText('Prepara tus oposiciones')).toBeInTheDocument();
   });
 
@@ -59,18 +68,21 @@ describe('MVP frontend - smoke (SPEC 010)', () => {
     expect(screen.getAllByText('Revisar').length).toBeGreaterThan(0);
   });
 
-  it('estudiante: navegacion reducida (sin Temario ni Preguntas)', () => {
+  it('estudiante: zona estudio sin secciones de administracion', () => {
     renderApp();
     enter('student');
     const sidebar = screen.getByLabelText('Navegacion principal');
     expect(within(sidebar).getByText('Material')).toBeInTheDocument();
     expect(within(sidebar).getByText('Crear test')).toBeInTheDocument();
     expect(within(sidebar).getByText('Mis resultados')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Estudio')).toBeInTheDocument();
+    // Nada de gestion en la zona estudiante.
     expect(within(sidebar).queryByText('Temario')).toBeNull();
     expect(within(sidebar).queryByText('Preguntas')).toBeNull();
+    expect(within(sidebar).queryByText('Alumnos')).toBeNull();
   });
 
-  it('estudiante: inicio muestra la oposicion y accion principal Crear test', () => {
+  it('estudiante: redireccion a estudio, inicio muestra la oposicion y Crear test', () => {
     renderApp();
     enter('student');
     // Titulo de la oposicion sembrada y boton principal del portal.

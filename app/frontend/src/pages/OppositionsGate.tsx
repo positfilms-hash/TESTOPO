@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { useStore } from '../store/StoreContext.js';
+import { useStore, type Zone } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
-export function OppositionsGate() {
+export function OppositionsGate({ zone }: { zone: Zone }) {
   const {
     store,
     currentUser,
     currentWorkspace,
+    canStudy,
+    selectZone,
     selectOpposition,
     clearWorkspace,
     refresh,
@@ -17,14 +19,18 @@ export function OppositionsGate() {
   const [slug, setSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = zone === 'admin';
   // `version` fuerza recalcular tras crear una oposicion.
   void version;
+  // Admin: oposiciones que puede gestionar. Estudiante: solo donde tiene
+  // matricula activa (SPEC 014, 12).
   const oppositions = currentUser
-    ? store.oppositions
-        .listForUser(currentUser)
-        .filter((o) => o.workspace_id === currentWorkspace?.id)
+    ? (isAdmin
+        ? store.oppositions.listForUser(currentUser)
+        : store.oppositions.listStudyOppositions(currentUser)
+      ).filter((o) => o.workspace_id === currentWorkspace?.id)
     : [];
+  const canSwitchZone = isAdmin && canStudy;
 
   const create = () => {
     if (!currentUser) return;
@@ -48,12 +54,19 @@ export function OppositionsGate() {
   return (
     <div style={{ maxWidth: 640, margin: '60px auto' }}>
       <PageHeader
-        title="Mis oposiciones"
-        subtitle={`Espacio: ${currentWorkspace?.name}. Elige una oposicion para entrar.`}
+        title={isAdmin ? 'Oposiciones' : 'Mis oposiciones'}
+        subtitle={`${isAdmin ? 'Espacio' : 'Academia'}: ${currentWorkspace?.name}. Elige una oposicion para entrar.`}
         action={
-          <Button variant="secondary" onClick={clearWorkspace}>
-            Cambiar espacio
-          </Button>
+          <div className="row">
+            {canSwitchZone && (
+              <Button variant="secondary" onClick={() => selectZone('student')}>
+                Cambiar a estudio
+              </Button>
+            )}
+            <Button variant="secondary" onClick={clearWorkspace}>
+              Cambiar espacio
+            </Button>
+          </div>
         }
       />
 
@@ -85,8 +98,8 @@ export function OppositionsGate() {
         <EmptyState
           message={
             isAdmin
-              ? 'Todavia no gestionas ninguna oposicion. Crea la primera.'
-              : 'Aun no tienes acceso a ninguna oposicion. Pide acceso a un administrador.'
+              ? 'Todavia no has creado ninguna oposicion. Crea una oposicion para subir material y generar preguntas.'
+              : 'Todavia no tienes acceso a ninguna oposicion. Cuando un administrador te de acceso, aparecera aqui.'
           }
         />
       ) : (

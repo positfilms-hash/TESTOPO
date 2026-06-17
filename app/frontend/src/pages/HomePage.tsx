@@ -2,9 +2,14 @@ import { useStore } from '../store/StoreContext.js';
 import { Button, EmptyState, PageHeader } from '../components/ui.js';
 import type { Section } from '../components/AppLayout.js';
 
-export function HomePage({ onNavigate }: { onNavigate: (s: Section) => void }) {
-  const { isWorkspaceManager } = useStore();
-  return isWorkspaceManager ? (
+export function HomePage({
+  onNavigate,
+  isAdmin,
+}: {
+  onNavigate: (s: Section) => void;
+  isAdmin: boolean;
+}) {
+  return isAdmin ? (
     <AdminHome onNavigate={onNavigate} />
   ) : (
     <StudentHome onNavigate={onNavigate} />

@@ -77,7 +77,7 @@ export function WorkspacesGate() {
       </div>
 
       {workspaces.length === 0 ? (
-        <EmptyState message="Aun no perteneces a ningun espacio. Crea el primero." />
+        <EmptyState message="Todavia no tienes ningun espacio de trabajo. Crea tu primer workspace para empezar." />
       ) : (
         workspaces.map((ws) => (
           <div className="card" key={ws.id}>

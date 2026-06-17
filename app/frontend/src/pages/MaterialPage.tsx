@@ -26,10 +26,8 @@ const TYPE_LABELS: Record<MaterialType, string> = {
   other: 'Otro',
 };
 
-export function MaterialPage() {
-  const { store, refresh, currentUser, currentOpposition, isWorkspaceManager } =
-    useStore();
-  const isAdmin = isWorkspaceManager;
+export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
+  const { store, refresh, currentUser, currentOpposition } = useStore();
   const [view, setView] = useState<View>({ kind: 'list' });
 
   if (view.kind === 'new') {
@@ -60,6 +58,7 @@ export function MaterialPage() {
     return (
       <MaterialDetail
         id={view.id}
+        isAdmin={isAdmin}
         onBack={() => setView({ kind: 'list' })}
       />
     );
@@ -322,9 +321,16 @@ function PdfUploadForm({
   );
 }
 
-function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { store, refresh, currentUser, isWorkspaceManager } = useStore();
-  const isAdmin = isWorkspaceManager;
+function MaterialDetail({
+  id,
+  isAdmin,
+  onBack,
+}: {
+  id: string;
+  isAdmin: boolean;
+  onBack: () => void;
+}) {
+  const { store, refresh, currentUser } = useStore();
   // El facade verifica acceso (oposicion autorizada + material activo para el
   // estudiante). Si no procede, no se expone el material (SPEC 013, 20.4).
   const material = currentUser
