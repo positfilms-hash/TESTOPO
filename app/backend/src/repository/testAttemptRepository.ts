@@ -3,9 +3,10 @@
 import type { TestAttempt } from '../models/testAttempt.js';
 
 export interface TestAttemptRepository {
-  create(attempt: TestAttempt): TestAttempt;
-  findById(id: string): TestAttempt | null;
+  create(attempt: TestAttempt): Promise<TestAttempt>;
+  findById(id: string): Promise<TestAttempt | null>;
   /** Intentos de un usuario (SPEC 013: "Mis resultados"). */
-  findByUser(userId: string): TestAttempt[];
-  save(attempt: TestAttempt): TestAttempt;
+  findByUser(userId: string): Promise<TestAttempt[]>;
+  save(attempt: TestAttempt): Promise<TestAttempt>;
 }
+

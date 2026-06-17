@@ -14,6 +14,7 @@ import { ResultadosPage } from './pages/ResultadosPage.js';
 import { ResetPasswordPage } from './pages/ResetPasswordPage.js';
 import { AccountPage } from './pages/AccountPage.js';
 import { isSupabaseConfigured } from './auth/supabaseClient.js';
+import { LoadingState } from './components/ui.js';
 import { useStore, type Zone } from './store/StoreContext.js';
 
 // El enlace de recuperacion de Supabase vuelve con `type=recovery` en el hash.
@@ -31,6 +32,7 @@ export function App() {
     currentOpposition,
     isWorkspaceManager,
     canStudy,
+    accessReady,
     zone,
     selectZone,
   } = useStore();
@@ -48,6 +50,10 @@ export function App() {
   }
   if (!currentWorkspace) {
     return <WorkspacesGate />;
+  }
+  // Esperar a que se resuelvan rol/acceso del workspace (async, SPEC 018.3).
+  if (!accessReady) {
+    return <LoadingState />;
   }
 
   // Redireccion inicial por rol (SPEC 014, 13): si solo puede una cosa, entra

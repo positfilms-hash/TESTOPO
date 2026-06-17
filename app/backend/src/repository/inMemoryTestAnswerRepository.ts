@@ -6,28 +6,28 @@ import type { TestAnswerRepository } from './testAnswerRepository.js';
 export class InMemoryTestAnswerRepository implements TestAnswerRepository {
   private readonly answers = new Map<string, TestAnswer>();
 
-  create(answer: TestAnswer): TestAnswer {
+  async create(answer: TestAnswer): Promise<TestAnswer> {
     this.answers.set(key(answer.attempt_id, answer.test_question_id), clone(answer));
     return clone(answer);
   }
 
-  save(answer: TestAnswer): TestAnswer {
+  async save(answer: TestAnswer): Promise<TestAnswer> {
     this.answers.set(key(answer.attempt_id, answer.test_question_id), clone(answer));
     return clone(answer);
   }
 
-  find(attemptId: string, testQuestionId: string): TestAnswer | null {
+  async find(attemptId: string, testQuestionId: string): Promise<TestAnswer | null> {
     const answer = this.answers.get(key(attemptId, testQuestionId));
     return answer ? clone(answer) : null;
   }
 
-  findByAttempt(attemptId: string): TestAnswer[] {
+  async findByAttempt(attemptId: string): Promise<TestAnswer[]> {
     return [...this.answers.values()]
       .filter((answer) => answer.attempt_id === attemptId)
       .map(clone);
   }
 
-  delete(attemptId: string, testQuestionId: string): boolean {
+  async delete(attemptId: string, testQuestionId: string): Promise<boolean> {
     return this.answers.delete(key(attemptId, testQuestionId));
   }
 }
@@ -39,3 +39,4 @@ function key(attemptId: string, testQuestionId: string): string {
 function clone(answer: TestAnswer): TestAnswer {
   return structuredClone(answer);
 }
+

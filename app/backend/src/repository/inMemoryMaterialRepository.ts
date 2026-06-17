@@ -11,12 +11,12 @@ import type {
 export class InMemoryMaterialRepository implements MaterialRepository {
   private readonly materials = new Map<string, Material>();
 
-  create(material: Material): Material {
+  async create(material: Material): Promise<Material> {
     this.materials.set(material.id, clone(material));
     return clone(material);
   }
 
-  findAll(filter: MaterialFilter = {}): Material[] {
+  async findAll(filter: MaterialFilter = {}): Promise<Material[]> {
     let result = [...this.materials.values()];
     if (filter.type !== undefined) {
       result = result.filter((material) => material.type === filter.type);
@@ -32,12 +32,12 @@ export class InMemoryMaterialRepository implements MaterialRepository {
     return result.map(clone);
   }
 
-  findById(id: string): Material | null {
+  async findById(id: string): Promise<Material | null> {
     const material = this.materials.get(id);
     return material ? clone(material) : null;
   }
 
-  save(material: Material): Material {
+  async save(material: Material): Promise<Material> {
     if (!this.materials.has(material.id)) {
       throw new Error(`Cannot save unknown material: ${material.id}`);
     }
@@ -49,3 +49,4 @@ export class InMemoryMaterialRepository implements MaterialRepository {
 function clone(material: Material): Material {
   return structuredClone(material);
 }
+

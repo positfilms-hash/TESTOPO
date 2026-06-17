@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   TestGenerationError,
   type RequestedDifficulty,
   type TestMode,
+  type Topic,
+  type TakingView,
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
@@ -51,18 +53,31 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
   const [mode, setMode] = useState<TestMode>('random');
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  const topics = store.topics
-    .listTopics()
-    .filter((t) => t.opposition_id === currentOpposition?.id && t.status !== 'obsolete');
+  const [topics, setTopics] = useState<Topic[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void store.topics.listTopics().then((all) => {
+      if (!cancelled) {
+        setTopics(
+          all.filter(
+            (t) => t.opposition_id === currentOpposition?.id && t.status !== 'obsolete',
+          ),
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition]);
   const createdTests = store.createdTests.filter(
     (t) => t.opposition_id === currentOpposition?.id,
   );
 
-  const createTest = () => {
+  const createTest = async () => {
     setNotice(null);
     try {
       if (!currentUser) return;
-      const { test } = store.platform.createTest(currentUser, {
+      const { test } = await store.platform.createTest(currentUser, {
         mode,
         opposition_id: currentOpposition?.id,
         question_count: count,
@@ -81,9 +96,9 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
     }
   };
 
-  const start = (testId: string) => {
+  const start = async (testId: string) => {
     if (!currentUser) return;
-    const attempt = store.platform.startAttempt(currentUser, testId);
+    const attempt = await store.platform.startAttempt(currentUser, testId);
     refresh();
     onStart(attempt.id);
   };
@@ -163,29 +178,42 @@ function TakeTest({
   onSubmitted: () => void;
 }) {
   const { store, refresh, currentUser } = useStore();
-  const view = useMemo(
-    () => store.platform.getTestForTaking(currentUser!, attemptId),
-    [store, currentUser, attemptId],
-  );
+  const [view, setView] = useState<TakingView | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser) {
+      void store.platform.getTestForTaking(currentUser, attemptId).then((v) => {
+        if (!cancelled) setView(v);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, attemptId]);
 
   const select = (testQuestionId: string, optionId: string) => {
     if (!currentUser) return;
     setAnswers((prev) => ({ ...prev, [testQuestionId]: optionId }));
-    store.platform.saveAnswer(currentUser, {
+    void store.platform.saveAnswer(currentUser, {
       attempt_id: attemptId,
       test_question_id: testQuestionId,
       selected_option_id: optionId,
     });
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!currentUser) return;
     if (!window.confirm('¿Enviar el test? No podras cambiar las respuestas.')) return;
-    store.platform.submitAttempt(currentUser, attemptId);
+    await store.platform.submitAttempt(currentUser, attemptId);
     refresh();
     onSubmitted();
   };
+
+  if (!view) {
+    return <div className="loading-state">Cargando…</div>;
+  }
 
   const answered = Object.keys(answers).length;
 

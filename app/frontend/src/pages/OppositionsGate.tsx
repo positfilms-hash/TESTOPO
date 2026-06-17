@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Opposition } from '@backend';
 import { useStore, type Zone } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
@@ -20,23 +21,36 @@ export function OppositionsGate({ zone }: { zone: Zone }) {
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = zone === 'admin';
-  // `version` fuerza recalcular tras crear una oposicion.
-  void version;
   // Admin: oposiciones que puede gestionar. Estudiante: solo donde tiene
-  // matricula activa (SPEC 014, 12).
-  const oppositions = currentUser
-    ? (isAdmin
+  // matricula activa (SPEC 014, 12). Carga asincrona (SPEC 018.3).
+  const [oppositions, setOppositions] = useState<Opposition[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser) {
+      const load = isAdmin
         ? store.oppositions.listForUser(currentUser)
-        : store.oppositions.listStudyOppositions(currentUser)
-      ).filter((o) => o.workspace_id === currentWorkspace?.id)
-    : [];
+        : store.oppositions.listStudyOppositions(currentUser);
+      void load.then((list) => {
+        if (!cancelled) {
+          setOppositions(
+            list.filter((o) => o.workspace_id === currentWorkspace?.id),
+          );
+        }
+      });
+    } else {
+      setOppositions([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentWorkspace, isAdmin, version]);
   const canSwitchZone = isAdmin && canStudy;
 
-  const create = () => {
+  const create = async () => {
     if (!currentUser) return;
     setError(null);
     try {
-      const opposition = store.oppositions.createOpposition(currentUser, {
+      const opposition = await store.oppositions.createOpposition(currentUser, {
         workspace_id: currentWorkspace?.id,
         title,
         slug,

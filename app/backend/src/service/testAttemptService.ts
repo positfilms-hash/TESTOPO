@@ -107,8 +107,11 @@ export class TestAttemptService {
   }
 
   // 10.1 Iniciar intento. `userId` asocia el intento al estudiante (SPEC 010).
-  startAttempt(testId: string, userId: string | null = null): TestAttempt {
-    const test = this.tests.findById(testId);
+  async startAttempt(
+    testId: string,
+    userId: string | null = null,
+  ): Promise<TestAttempt> {
+    const test = await this.tests.findById(testId);
     if (!test) {
       throw new TestAttemptError([TestAttemptErrorCode.TEST_NOT_FOUND]);
     }
@@ -117,7 +120,7 @@ export class TestAttemptService {
         TestAttemptErrorCode.TEST_CANCELLED_CANNOT_BE_STARTED,
       ]);
     }
-    const total = this.testQuestions.findByTest(testId).length;
+    const total = (await this.testQuestions.findByTest(testId)).length;
     const timestamp = this.now();
     return this.attempts.create({
       id: this.generateId(),
@@ -138,9 +141,9 @@ export class TestAttemptService {
   }
 
   // 10.2 Consultar test para responder (sin soluciones).
-  getTestForTaking(attemptId: string): TakingView {
-    const attempt = this.requireAttempt(attemptId);
-    const view = this.generator.getTest(attempt.test_id);
+  async getTestForTaking(attemptId: string): Promise<TakingView> {
+    const attempt = await this.requireAttempt(attemptId);
+    const view = await this.generator.getTest(attempt.test_id);
     return {
       attempt_id: attempt.id,
       test_id: attempt.test_id,
@@ -150,18 +153,18 @@ export class TestAttemptService {
   }
 
   // 10.3 Guardar (o actualizar) una respuesta.
-  saveAnswer(input: {
+  async saveAnswer(input: {
     attempt_id: string;
     test_question_id: string;
     selected_option_id: string;
-  }): TestAnswer {
-    const attempt = this.requireEditableAttempt(input.attempt_id);
-    const testQuestion = this.requireTestQuestion(
+  }): Promise<TestAnswer> {
+    const attempt = await this.requireEditableAttempt(input.attempt_id);
+    const testQuestion = await this.requireTestQuestion(
       attempt.test_id,
       input.test_question_id,
     );
 
-    const question = this.questions.getQuestion(testQuestion.question_id);
+    const question = await this.questions.getQuestion(testQuestion.question_id);
     const optionIds = question?.options.map((option) => option.id) ?? [];
     if (!optionIds.includes(input.selected_option_id)) {
       throw new TestAttemptError([
@@ -170,7 +173,7 @@ export class TestAttemptService {
     }
 
     const timestamp = this.now();
-    const existing = this.answers.find(
+    const existing = await this.answers.find(
       input.attempt_id,
       input.test_question_id,
     );
@@ -197,35 +200,35 @@ export class TestAttemptService {
   }
 
   // 10.4 Borrar respuesta (la pregunta queda como no respondida).
-  clearAnswer(input: {
+  async clearAnswer(input: {
     attempt_id: string;
     test_question_id: string;
-  }): void {
-    const attempt = this.requireEditableAttempt(input.attempt_id);
-    this.requireTestQuestion(attempt.test_id, input.test_question_id);
-    this.answers.delete(input.attempt_id, input.test_question_id);
+  }): Promise<void> {
+    const attempt = await this.requireEditableAttempt(input.attempt_id);
+    await this.requireTestQuestion(attempt.test_id, input.test_question_id);
+    await this.answers.delete(input.attempt_id, input.test_question_id);
   }
 
   // 10.5 Enviar test: corrige, calcula y finaliza.
-  submitAttempt(attemptId: string): TestAttempt {
-    const attempt = this.requireEditableAttempt(attemptId);
+  async submitAttempt(attemptId: string): Promise<TestAttempt> {
+    const attempt = await this.requireEditableAttempt(attemptId);
 
-    const testQuestions = this.testQuestions.findByTest(attempt.test_id);
+    const testQuestions = await this.testQuestions.findByTest(attempt.test_id);
     let correct = 0;
     let incorrect = 0;
     let unanswered = 0;
 
     for (const testQuestion of testQuestions) {
-      const answer = this.answers.find(attemptId, testQuestion.id);
+      const answer = await this.answers.find(attemptId, testQuestion.id);
       if (!answer || !answer.selected_option_id) {
         unanswered += 1;
         continue;
       }
-      const question = this.questions.getQuestion(testQuestion.question_id);
+      const question = await this.questions.getQuestion(testQuestion.question_id);
       const isCorrect =
         question !== null &&
         answer.selected_option_id === question.correct_answer;
-      this.answers.save({
+      await this.answers.save({
         ...answer,
         is_correct: isCorrect,
         updated_at: this.now(),
@@ -253,20 +256,20 @@ export class TestAttemptService {
 
   // Devuelve el intento crudo (o null). Util para comprobar propiedad (SPEC 010,
   // 13.6: el estudiante solo ve sus propios intentos).
-  getAttempt(attemptId: string): TestAttempt | null {
+  async getAttempt(attemptId: string): Promise<TestAttempt | null> {
     return this.attempts.findById(attemptId);
   }
 
   // Intentos de un usuario, mas recientes primero (SPEC 013: "Mis resultados").
-  listAttemptsForUser(userId: string): TestAttempt[] {
-    return this.attempts
-      .findByUser(userId)
-      .sort((a, b) => startedAtValue(b) - startedAtValue(a));
+  async listAttemptsForUser(userId: string): Promise<TestAttempt[]> {
+    return (await this.attempts.findByUser(userId)).sort(
+      (a, b) => startedAtValue(b) - startedAtValue(a),
+    );
   }
 
   // 10.6 Consultar resultado.
-  getResult(attemptId: string): AttemptResult {
-    const attempt = this.requireAttempt(attemptId);
+  async getResult(attemptId: string): Promise<AttemptResult> {
+    const attempt = await this.requireAttempt(attemptId);
     return {
       attempt_id: attempt.id,
       test_id: attempt.test_id,
@@ -284,8 +287,8 @@ export class TestAttemptService {
   }
 
   // 10.7 Consultar revision (solo tras enviar): respuesta correcta + explicacion.
-  getReview(attemptId: string): AttemptReview {
-    const attempt = this.requireAttempt(attemptId);
+  async getReview(attemptId: string): Promise<AttemptReview> {
+    const attempt = await this.requireAttempt(attemptId);
     if (attempt.status !== 'submitted') {
       throw new TestAttemptError([
         TestAttemptErrorCode.REVIEW_NOT_AVAILABLE,
@@ -293,12 +296,13 @@ export class TestAttemptService {
     }
 
     const questions: ReviewItemView[] = [];
-    for (const testQuestion of this.testQuestions.findByTest(attempt.test_id)) {
-      const question = this.questions.getQuestion(testQuestion.question_id);
+    const testQuestions = await this.testQuestions.findByTest(attempt.test_id);
+    for (const testQuestion of testQuestions) {
+      const question = await this.questions.getQuestion(testQuestion.question_id);
       if (!question) {
         continue;
       }
-      const answer = this.answers.find(attemptId, testQuestion.id);
+      const answer = await this.answers.find(attemptId, testQuestion.id);
       const options: ReviewOptionView[] = [];
       testQuestion.options_order.forEach((optionId, index) => {
         const option = question.options.find((o) => o.id === optionId);
@@ -324,8 +328,8 @@ export class TestAttemptService {
   }
 
   // 10.8 Cancelar intento en progreso.
-  cancelAttempt(attemptId: string): TestAttempt {
-    const attempt = this.requireAttempt(attemptId);
+  async cancelAttempt(attemptId: string): Promise<TestAttempt> {
+    const attempt = await this.requireAttempt(attemptId);
     if (attempt.status !== 'in_progress') {
       throw new TestAttemptError([TestAttemptErrorCode.INVALID_STATUS]);
     }
@@ -336,8 +340,8 @@ export class TestAttemptService {
     });
   }
 
-  private requireAttempt(attemptId: string): TestAttempt {
-    const attempt = this.attempts.findById(attemptId);
+  private async requireAttempt(attemptId: string): Promise<TestAttempt> {
+    const attempt = await this.attempts.findById(attemptId);
     if (!attempt) {
       throw new TestAttemptError([TestAttemptErrorCode.ATTEMPT_NOT_FOUND]);
     }
@@ -345,8 +349,10 @@ export class TestAttemptService {
   }
 
   // Exige que el intento exista y siga `in_progress` (para guardar/enviar).
-  private requireEditableAttempt(attemptId: string): TestAttempt {
-    const attempt = this.requireAttempt(attemptId);
+  private async requireEditableAttempt(
+    attemptId: string,
+  ): Promise<TestAttempt> {
+    const attempt = await this.requireAttempt(attemptId);
     if (attempt.status === 'submitted') {
       throw new TestAttemptError([
         TestAttemptErrorCode.ALREADY_SUBMITTED,
@@ -358,10 +364,10 @@ export class TestAttemptService {
     return attempt;
   }
 
-  private requireTestQuestion(testId: string, testQuestionId: string) {
-    const testQuestion = this.testQuestions
-      .findByTest(testId)
-      .find((item) => item.id === testQuestionId);
+  private async requireTestQuestion(testId: string, testQuestionId: string) {
+    const testQuestion = (await this.testQuestions.findByTest(testId)).find(
+      (item) => item.id === testQuestionId,
+    );
     if (!testQuestion) {
       throw new TestAttemptError([
         TestAttemptErrorCode.QUESTION_NOT_IN_TEST,

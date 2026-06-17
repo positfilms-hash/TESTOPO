@@ -3,7 +3,8 @@
 import type { QuestionReview } from '../models/questionReview.js';
 
 export interface QuestionReviewRepository {
-  create(review: QuestionReview): QuestionReview;
-  findByQuestion(questionId: string): QuestionReview[];
-  findAll(): QuestionReview[];
+  create(review: QuestionReview): Promise<QuestionReview>;
+  findByQuestion(questionId: string): Promise<QuestionReview[]>;
+  findAll(): Promise<QuestionReview[]>;
 }
+

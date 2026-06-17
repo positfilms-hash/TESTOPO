@@ -2,12 +2,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
 import type { Opposition, User, Workspace, WorkspaceRole } from '@backend';
-import { createAppStore, type AppStore } from './appStore.js';
+import { createAppStore, seedDemoData, type AppStore } from './appStore.js';
 
 // Zona de la app (SPEC 014): administracion (gestionar) vs estudio (estudiar).
 export type Zone = 'admin' | 'student';
@@ -25,6 +26,8 @@ interface StoreContextValue {
   isWorkspaceManager: boolean;
   // ¿Tiene matricula de estudio en alguna oposicion del workspace? (SPEC 014)
   canStudy: boolean;
+  // false mientras se resuelven rol/acceso del workspace (SPEC 018.3, async).
+  accessReady: boolean;
   // Zona activa elegida por el usuario; null = aun sin decidir.
   zone: Zone | null;
   selectZone: (zone: Zone) => void;
@@ -42,8 +45,19 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const storeRef = useRef<AppStore | null>(null);
   if (storeRef.current === null) {
-    storeRef.current = createAppStore(true);
+    storeRef.current = createAppStore();
   }
+  // Datos demo: se siembran de forma asincrona al arrancar (SPEC 018.3).
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void seedDemoData(storeRef.current as AppStore).then(() => {
+      if (!cancelled) setSeeded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [version, setVersion] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(
@@ -87,22 +101,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCurrentOpposition(null);
   }, []);
 
-  const workspaceRole =
-    currentUser && currentWorkspace
-      ? storeRef.current.workspaces.getMemberRole(
-          currentUser.id,
-          currentWorkspace.id,
-        )
-      : null;
+  // SPEC 018.3: el rol de workspace y el acceso de estudio se consultan de
+  // forma asincrona; se cargan en estado al cambiar usuario/workspace/version.
+  const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRole | null>(null);
+  const [canStudy, setCanStudy] = useState(false);
+  const [accessReady, setAccessReady] = useState(true);
+  const store = storeRef.current;
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser && currentWorkspace) {
+      setAccessReady(false);
+      void Promise.all([
+        store.workspaces.getMemberRole(currentUser.id, currentWorkspace.id),
+        store.oppositions.hasStudyAccess(currentUser, currentWorkspace.id),
+      ]).then(([role, study]) => {
+        if (!cancelled) {
+          setWorkspaceRole(role);
+          setCanStudy(study);
+          setAccessReady(true);
+        }
+      });
+    } else {
+      setWorkspaceRole(null);
+      setCanStudy(false);
+      setAccessReady(true);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentWorkspace, version]);
   const isWorkspaceManager =
     workspaceRole === 'owner' || workspaceRole === 'admin';
-  const canStudy =
-    currentUser && currentWorkspace
-      ? storeRef.current.oppositions.hasStudyAccess(
-          currentUser,
-          currentWorkspace.id,
-        )
-      : false;
 
   return (
     <StoreContext.Provider
@@ -116,6 +145,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         workspaceRole,
         isWorkspaceManager,
         canStudy,
+        accessReady,
         zone,
         selectZone,
         clearZone,
@@ -127,7 +157,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         clearOpposition,
       }}
     >
-      {children}
+      {seeded ? children : <div className="loading-state">Cargando…</div>}
     </StoreContext.Provider>
   );
 }

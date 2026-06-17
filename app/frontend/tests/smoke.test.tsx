@@ -12,31 +12,35 @@ function renderApp() {
 }
 
 // Entra como admin o estudiante, elige el workspace y la oposicion sembrados.
-function enter(role: 'admin' | 'student') {
+// Todo es asincrono (SPEC 018.3): seed + cargas de datos via Promise.
+async function enter(role: 'admin' | 'student') {
   fireEvent.click(
-    screen.getByText(role === 'admin' ? 'Entrar como Admin' : 'Entrar como Estudiante'),
+    await screen.findByText(
+      role === 'admin' ? 'Entrar como Admin' : 'Entrar como Estudiante',
+    ),
   );
-  // "Mis espacios": entrar en el Workspace MVP.
+  // "Mis espacios": espera el workspace sembrado y entra.
+  await screen.findByText('Workspace MVP');
   fireEvent.click(screen.getByText('Entrar'));
-  // "Mis oposiciones": entrar en la Oposicion MVP.
+  // "Mis oposiciones": espera la oposicion sembrada y entra.
+  await screen.findByText('Oposicion MVP');
   fireEvent.click(screen.getByText('Entrar'));
+  // Espera a que monte el layout con la navegacion.
+  await screen.findByLabelText('Navegacion principal');
 }
 
-function goTo(section: string) {
-  const sidebar = screen.getByLabelText('Navegacion principal');
-  fireEvent.click(within(sidebar).getByText(section));
-}
-
-describe('MVP frontend - smoke (SPEC 010)', () => {
-  it('muestra el login al arrancar', () => {
+describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
+  it('muestra el login al arrancar', async () => {
     renderApp();
-    expect(screen.getByText('Entrar como Admin')).toBeInTheDocument();
-    expect(screen.getByText('Entrar como Estudiante')).toBeInTheDocument();
+    expect(await screen.findByText('Entrar como Admin')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Entrar como Estudiante'),
+    ).toBeInTheDocument();
   });
 
-  it('admin: entra en zona administracion con navegacion de gestion', () => {
+  it('admin: entra en zona administracion con navegacion de gestion', async () => {
     renderApp();
-    enter('admin');
+    await enter('admin');
     const sidebar = screen.getByLabelText('Navegacion principal');
     for (const label of [
       'Resumen',
@@ -48,76 +52,89 @@ describe('MVP frontend - smoke (SPEC 010)', () => {
     ]) {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     }
-    // Distintivo de zona y redireccion inicial a inicio de gestion.
     expect(within(sidebar).getByText('Administracion')).toBeInTheDocument();
-    expect(screen.getByText('Prepara tus oposiciones')).toBeInTheDocument();
+    expect(await screen.findByText('Prepara tus oposiciones')).toBeInTheDocument();
   });
 
-  it('admin: ve la lista de materiales (seed) de la oposicion', () => {
+  it('admin: ve la lista de materiales (seed) de la oposicion', async () => {
     renderApp();
-    enter('admin');
-    goTo('Material');
-    expect(screen.getByText('Tema 1 - Constitucion (ficticio)')).toBeInTheDocument();
-  });
-
-  it('admin: ve preguntas pendientes de revision', () => {
-    renderApp();
-    enter('admin');
-    goTo('Preguntas');
-    expect(screen.getByText('Pendientes de revision')).toBeInTheDocument();
-    expect(screen.getAllByText('Revisar').length).toBeGreaterThan(0);
-  });
-
-  it('admin: Temario unificado muestra material y acciones al elegir tema (SPEC 017)', () => {
-    renderApp();
-    enter('admin');
-    goTo('Temario');
-    // Panel de temas con la accion de anadir.
-    expect(screen.getByText('Temas')).toBeInTheDocument();
-    expect(screen.getByText('Anadir tema')).toBeInTheDocument();
-    // Al seleccionar un tema aparecen las acciones de material.
+    await enter('admin');
     fireEvent.click(
-      screen.getByRole('button', { name: /Tema 1 - Constitucion/ }),
+      within(screen.getByLabelText('Navegacion principal')).getByText('Material'),
     );
-    expect(screen.getByText('Subir material')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Tema 1 - Constitucion (ficticio)'),
+    ).toBeInTheDocument();
+  });
+
+  it('admin: Temario unificado muestra material y acciones al elegir tema (SPEC 017)', async () => {
+    renderApp();
+    await enter('admin');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText('Temario'),
+    );
+    expect(await screen.findByText('Temas')).toBeInTheDocument();
+    expect(screen.getByText('Anadir tema')).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Tema 1 - Constitucion/ }),
+    );
+    expect(await screen.findByText('Subir material')).toBeInTheDocument();
     expect(screen.getByText('Importar ZIP')).toBeInTheDocument();
   });
 
-  it('estudiante: zona estudio sin secciones de administracion', () => {
+  it('admin: ve preguntas pendientes de revision', async () => {
     renderApp();
-    enter('student');
+    await enter('admin');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText('Preguntas'),
+    );
+    expect(await screen.findByText('Pendientes de revision')).toBeInTheDocument();
+    expect((await screen.findAllByText('Revisar')).length).toBeGreaterThan(0);
+  });
+
+  it('estudiante: zona estudio sin secciones de administracion', async () => {
+    renderApp();
+    await enter('student');
     const sidebar = screen.getByLabelText('Navegacion principal');
     expect(within(sidebar).getByText('Material')).toBeInTheDocument();
     expect(within(sidebar).getByText('Crear test')).toBeInTheDocument();
     expect(within(sidebar).getByText('Mis resultados')).toBeInTheDocument();
     expect(within(sidebar).getByText('Estudio')).toBeInTheDocument();
-    // Nada de gestion en la zona estudiante.
     expect(within(sidebar).queryByText('Temario')).toBeNull();
     expect(within(sidebar).queryByText('Preguntas')).toBeNull();
     expect(within(sidebar).queryByText('Alumnos')).toBeNull();
   });
 
-  it('estudiante: redireccion a estudio, inicio muestra la oposicion y Crear test', () => {
+  it('estudiante: redireccion a estudio, inicio muestra la oposicion y Crear test', async () => {
     renderApp();
-    enter('student');
-    // Titulo de la oposicion sembrada y boton principal del portal.
-    expect(screen.getByText('Oposicion MVP')).toBeInTheDocument();
-    expect(screen.getAllByText('Crear test').length).toBeGreaterThan(0);
+    await enter('student');
+    expect(await screen.findByText('Oposicion MVP')).toBeInTheDocument();
+    expect((await screen.findAllByText('Crear test')).length).toBeGreaterThan(0);
   });
 
-  it('estudiante: estado vacio en Crear test cuando no hay tests creados', () => {
+  it('estudiante: estado vacio en Crear test cuando no hay tests creados', async () => {
     renderApp();
-    enter('student');
-    goTo('Crear test');
-    expect(screen.getByText('Todavia no has creado ningun test.')).toBeInTheDocument();
-  });
-
-  it('estudiante: Mis resultados vacio al empezar', () => {
-    renderApp();
-    enter('student');
-    goTo('Mis resultados');
+    await enter('student');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText('Crear test'),
+    );
     expect(
-      screen.getByText("Todavia no has enviado ningun test. Crea uno en 'Crear test'."),
+      await screen.findByText('Todavia no has creado ningun test.'),
+    ).toBeInTheDocument();
+  });
+
+  it('estudiante: Mis resultados vacio al empezar', async () => {
+    renderApp();
+    await enter('student');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText(
+        'Mis resultados',
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Todavia no has enviado ningun test. Crea uno en 'Crear test'.",
+      ),
     ).toBeInTheDocument();
   });
 });

@@ -1,39 +1,72 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
 // Gestion de alumnos de la oposicion (SPEC 014, zona admin): dar y quitar
 // acceso de estudio. Reutiliza OppositionService (acceso/matricula) y la lista
 // de miembros del workspace; toda la regla real vive en backend/servicios.
+interface Person {
+  user_id: string;
+  name: string;
+  status?: string;
+}
+
 export function AlumnosPage() {
   const { store, currentUser, currentWorkspace, currentOpposition, refresh, version } =
     useStore();
   const [error, setError] = useState<string | null>(null);
-  void version;
+  const [activeStudents, setActiveStudents] = useState<Person[]>([]);
+  const [candidates, setCandidates] = useState<Person[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!currentUser || !currentWorkspace || !currentOpposition) {
+        return;
+      }
+      const nameOf = async (userId: string) => {
+        const u = await store.users.getUser(userId);
+        return u ? `${u.name} · ${u.email}` : userId;
+      };
+      const access = await safe(() =>
+        store.oppositions.listStudents(currentUser, currentOpposition.id),
+      );
+      const members = await safe(() =>
+        store.workspaces.listMembers(currentUser, currentWorkspace.id),
+      );
+      const active = (access ?? []).filter((a) => a.status === 'active');
+      const cand = (members ?? []).filter(
+        (m) =>
+          m.role === 'student' &&
+          m.status === 'active' &&
+          !active.some((a) => a.user_id === m.user_id),
+      );
+      const students: Person[] = [];
+      for (const a of active) {
+        students.push({ user_id: a.user_id, name: await nameOf(a.user_id), status: a.status });
+      }
+      const cands: Person[] = [];
+      for (const m of cand) {
+        cands.push({ user_id: m.user_id, name: await nameOf(m.user_id) });
+      }
+      if (!cancelled) {
+        setActiveStudents(students);
+        setCandidates(cands);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentWorkspace, currentOpposition, version]);
 
   if (!currentUser || !currentWorkspace || !currentOpposition) {
     return <EmptyState message="Selecciona una oposicion para gestionar alumnos." />;
   }
 
-  const access = safe(() =>
-    store.oppositions.listStudents(currentUser, currentOpposition.id),
-  );
-  const grantedIds = new Set((access ?? []).map((a) => a.user_id));
-  const members = safe(() =>
-    store.workspaces.listMembers(currentUser, currentWorkspace.id),
-  );
-  // Candidatos: miembros del workspace con rol student y sin acceso activo aun.
-  const candidates = (members ?? []).filter(
-    (m) =>
-      m.role === 'student' &&
-      m.status === 'active' &&
-      !(access ?? []).some((a) => a.user_id === m.user_id && a.status === 'active'),
-  );
-
-  const grant = (userId: string) => {
+  const grant = async (userId: string) => {
     setError(null);
     try {
-      store.oppositions.grantAccess(currentUser, {
+      await store.oppositions.grantAccess(currentUser, {
         user_id: userId,
         opposition_id: currentOpposition.id,
       });
@@ -43,10 +76,10 @@ export function AlumnosPage() {
     }
   };
 
-  const revoke = (userId: string) => {
+  const revoke = async (userId: string) => {
     setError(null);
     try {
-      store.oppositions.revokeAccess(currentUser, {
+      await store.oppositions.revokeAccess(currentUser, {
         user_id: userId,
         opposition_id: currentOpposition.id,
       });
@@ -55,13 +88,6 @@ export function AlumnosPage() {
       setError('No se pudo revocar el acceso.');
     }
   };
-
-  const nameOf = (userId: string) => {
-    const u = store.users.getUser(userId);
-    return u ? `${u.name} · ${u.email}` : userId;
-  };
-
-  const activeStudents = (access ?? []).filter((a) => a.status === 'active');
 
   return (
     <div>
@@ -79,11 +105,11 @@ export function AlumnosPage() {
           <div className="card" key={a.user_id}>
             <div className="row spread">
               <div>
-                <strong>{nameOf(a.user_id)}</strong>
+                <strong>{a.name}</strong>
                 <div className="muted small">Acceso de estudio</div>
               </div>
               <div className="row">
-                <Badge status={a.status} />
+                <Badge status={a.status ?? 'active'} />
                 <Button variant="danger" small onClick={() => revoke(a.user_id)}>
                   Quitar acceso
                 </Button>
@@ -104,7 +130,7 @@ export function AlumnosPage() {
         candidates.map((m) => (
           <div className="card" key={m.user_id}>
             <div className="row spread">
-              <strong>{nameOf(m.user_id)}</strong>
+              <strong>{m.name}</strong>
               <Button small onClick={() => grant(m.user_id)}>
                 Dar acceso
               </Button>
@@ -116,9 +142,9 @@ export function AlumnosPage() {
   );
 }
 
-function safe<T>(fn: () => T): T | null {
+async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
-    return fn();
+    return await fn();
   } catch {
     return null;
   }

@@ -47,10 +47,10 @@ export class WorkspaceService {
   }
 
   // 15.1 Crear workspace personal (plan free o premium).
-  createPersonalWorkspace(
+  async createPersonalWorkspace(
     owner: User,
     input: { name?: string; slug?: string; plan?: WorkspacePlan },
-  ): Workspace {
+  ): Promise<Workspace> {
     const plan: WorkspacePlan = input.plan ?? 'free';
     if (plan !== 'free' && plan !== 'premium') {
       throw new AccessError([AccessErrorCode.WORKSPACE_INVALID_PLAN]);
@@ -64,10 +64,10 @@ export class WorkspaceService {
   }
 
   // 15.2 Crear workspace de organizacion (plan organization).
-  createOrganizationWorkspace(
+  async createOrganizationWorkspace(
     owner: User,
     input: { name?: string; slug?: string },
-  ): Workspace {
+  ): Promise<Workspace> {
     return this.create(owner, {
       name: input.name,
       slug: input.slug,
@@ -77,14 +77,14 @@ export class WorkspaceService {
   }
 
   // 15.3 Workspaces donde el usuario es miembro activo.
-  listForUser(user: User): Workspace[] {
+  async listForUser(user: User): Promise<Workspace[]> {
     requireUser(user);
     const result: Workspace[] = [];
-    for (const member of this.members.findByUser(user.id)) {
+    for (const member of await this.members.findByUser(user.id)) {
       if (member.status !== 'active') {
         continue;
       }
-      const workspace = this.workspaces.findById(member.workspace_id);
+      const workspace = await this.workspaces.findById(member.workspace_id);
       if (workspace) {
         result.push(workspace);
       }
@@ -93,9 +93,9 @@ export class WorkspaceService {
   }
 
   // 15.4 Ver workspace (solo miembro activo).
-  getWorkspace(user: User, workspaceId: string): Workspace {
-    requireWorkspaceMember(this.members, user, workspaceId);
-    const workspace = this.workspaces.findById(workspaceId);
+  async getWorkspace(user: User, workspaceId: string): Promise<Workspace> {
+    await requireWorkspaceMember(this.members, user, workspaceId);
+    const workspace = await this.workspaces.findById(workspaceId);
     if (!workspace) {
       throw new AccessError([AccessErrorCode.WORKSPACE_NOT_FOUND]);
     }
@@ -103,13 +103,13 @@ export class WorkspaceService {
   }
 
   // 15.5 Editar workspace (owner/admin).
-  editWorkspace(
+  async editWorkspace(
     actor: User,
     workspaceId: string,
     changes: { name?: string; status?: WorkspaceStatus },
-  ): Workspace {
-    requireManageWorkspace(this.members, actor, workspaceId);
-    const existing = this.workspaces.findById(workspaceId);
+  ): Promise<Workspace> {
+    await requireManageWorkspace(this.members, actor, workspaceId);
+    const existing = await this.workspaces.findById(workspaceId);
     if (!existing) {
       throw new AccessError([AccessErrorCode.WORKSPACE_NOT_FOUND]);
     }
@@ -126,15 +126,15 @@ export class WorkspaceService {
   }
 
   // 15.6 Anadir miembro (owner/admin). Rol admin o student.
-  addMember(
+  async addMember(
     actor: User,
     input: { workspace_id: string; user_id: string; role: WorkspaceRole },
-  ): WorkspaceMember {
-    requireManageWorkspace(this.members, actor, input.workspace_id);
+  ): Promise<WorkspaceMember> {
+    await requireManageWorkspace(this.members, actor, input.workspace_id);
     if (input.role !== 'admin' && input.role !== 'student') {
       throw new AccessError([AccessErrorCode.WORKSPACE_MEMBER_INVALID_ROLE]);
     }
-    const existing = this.members.find(input.workspace_id, input.user_id);
+    const existing = await this.members.find(input.workspace_id, input.user_id);
     if (existing && existing.status === 'active') {
       throw new AccessError([
         AccessErrorCode.WORKSPACE_MEMBER_ALREADY_EXISTS,
@@ -144,12 +144,12 @@ export class WorkspaceService {
   }
 
   // 15.7 Revocar miembro (no borra historico).
-  revokeMember(
+  async revokeMember(
     actor: User,
     input: { workspace_id: string; user_id: string },
-  ): WorkspaceMember {
-    requireManageWorkspace(this.members, actor, input.workspace_id);
-    const existing = this.members.find(input.workspace_id, input.user_id);
+  ): Promise<WorkspaceMember> {
+    await requireManageWorkspace(this.members, actor, input.workspace_id);
+    const existing = await this.members.find(input.workspace_id, input.user_id);
     if (!existing) {
       throw new AccessError([AccessErrorCode.WORKSPACE_MEMBER_NOT_FOUND]);
     }
@@ -160,19 +160,25 @@ export class WorkspaceService {
     });
   }
 
-  listMembers(actor: User, workspaceId: string): WorkspaceMember[] {
-    requireManageWorkspace(this.members, actor, workspaceId);
+  async listMembers(
+    actor: User,
+    workspaceId: string,
+  ): Promise<WorkspaceMember[]> {
+    await requireManageWorkspace(this.members, actor, workspaceId);
     return this.members.findByWorkspace(workspaceId);
   }
 
   // Rol activo del usuario en el workspace (o null). Util para que la UI decida
   // capacidades por rol de workspace, no por `User.role` global.
-  getMemberRole(userId: string, workspaceId: string): WorkspaceRole | null {
-    const member = this.members.find(workspaceId, userId);
+  async getMemberRole(
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceRole | null> {
+    const member = await this.members.find(workspaceId, userId);
     return member && member.status === 'active' ? member.role : null;
   }
 
-  private create(
+  private async create(
     owner: User | null | undefined,
     input: {
       name?: string;
@@ -181,7 +187,7 @@ export class WorkspaceService {
       plan: WorkspacePlan;
       status?: WorkspaceStatus;
     },
-  ): Workspace {
+  ): Promise<Workspace> {
     if (!owner) {
       throw new AccessError([AccessErrorCode.WORKSPACE_OWNER_REQUIRED]);
     }
@@ -201,12 +207,12 @@ export class WorkspaceService {
     if (!isWorkspaceStatus(status)) {
       throw new AccessError([AccessErrorCode.WORKSPACE_INVALID_STATUS]);
     }
-    if (this.workspaces.findBySlug(input.slug)) {
+    if (await this.workspaces.findBySlug(input.slug)) {
       throw new AccessError([AccessErrorCode.WORKSPACE_SLUG_ALREADY_EXISTS]);
     }
 
     const timestamp = this.now();
-    const workspace = this.workspaces.create({
+    const workspace = await this.workspaces.create({
       id: this.generateId(),
       name: input.name,
       slug: input.slug,
@@ -217,20 +223,20 @@ export class WorkspaceService {
       created_at: timestamp,
       updated_at: timestamp,
     });
-    this.upsertMember(workspace.id, owner.id, 'owner');
+    await this.upsertMember(workspace.id, owner.id, 'owner');
     return workspace;
   }
 
-  private upsertMember(
+  private async upsertMember(
     workspaceId: string,
     userId: string,
     role: WorkspaceRole,
-  ): WorkspaceMember {
+  ): Promise<WorkspaceMember> {
     if (!isWorkspaceRole(role)) {
       throw new AccessError([AccessErrorCode.WORKSPACE_MEMBER_INVALID_ROLE]);
     }
     const timestamp = this.now();
-    const existing = this.members.find(workspaceId, userId);
+    const existing = await this.members.find(workspaceId, userId);
     if (existing) {
       return this.members.save({
         ...existing,

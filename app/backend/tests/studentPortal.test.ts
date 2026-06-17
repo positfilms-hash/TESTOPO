@@ -39,7 +39,7 @@ import {
   AccessError,
 } from '../src/index.js';
 
-function makeSetup() {
+async function makeSetup() {
   const users = new UserService(new InMemoryUserRepository());
   const memberRepo = new InMemoryWorkspaceMemberRepository();
   const workspaces = new WorkspaceService(
@@ -78,11 +78,10 @@ function makeSetup() {
     items: new InMemoryMaterialImportItemRepository(),
   });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
-    resolveMaterialOpposition: (id) =>
-      materials.getMaterial(id)?.opposition_id ?? null,
-    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
+    resolveMaterialOpposition: async (id) => (await materials.getMaterial(id))?.opposition_id ?? null,
+    resolveTopicOpposition: async (id) => (await topics.getTopic(id))?.opposition_id ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -130,42 +129,42 @@ function makeSetup() {
     attempts,
   });
 
-  const admin = users.createUser({
+  const admin = await users.createUser({
     email: 'admin@test.com',
     password: 'x',
     role: 'admin',
   });
-  const student = users.createUser({
+  const student = await users.createUser({
     email: 'student@test.com',
     password: 'y',
     role: 'student',
   });
-  const other = users.createUser({
+  const other = await users.createUser({
     email: 'other@test.com',
     password: 'z',
     role: 'student',
   });
-  const ws = workspaces.createOrganizationWorkspace(admin, {
+  const ws = await workspaces.createOrganizationWorkspace(admin, {
     name: 'Academia',
     slug: 'academia',
   });
   for (const u of [student, other]) {
-    workspaces.addMember(admin, {
+    await workspaces.addMember(admin, {
       workspace_id: ws.id,
       user_id: u.id,
       role: 'student',
     });
   }
   // Oposicion autorizada para `student` (no para `other`).
-  const opp = oppositions.createOpposition(admin, {
+  const opp = await oppositions.createOpposition(admin, {
     workspace_id: ws.id,
     title: 'Auxiliar',
     slug: 'auxiliar',
   });
-  oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
-  oppositions.grantAccess(admin, { user_id: other.id, opposition_id: opp.id });
+  await oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
+  await oppositions.grantAccess(admin, { user_id: other.id, opposition_id: opp.id });
   // Segunda oposicion: `student` NO tiene acceso.
-  const opp2 = oppositions.createOpposition(admin, {
+  const opp2 = await oppositions.createOpposition(admin, {
     workspace_id: ws.id,
     title: 'Gestion',
     slug: 'gestion',
@@ -173,7 +172,7 @@ function makeSetup() {
 
   // Pool validado en la oposicion autorizada.
   for (let i = 0; i < 5; i++) {
-    const q = questions.createQuestion({
+    const q = await questions.createQuestion({
       opposition_id: opp.id,
       statement: `Pregunta ${i} ficticia sobre el tema`,
       options: [
@@ -193,18 +192,18 @@ function makeSetup() {
       topic: 'Tema 1',
       difficulty: 'easy',
     });
-    questions.changeStatus(q.id, 'validated');
+    await questions.changeStatus(q.id, 'validated');
   }
 
   // Material activo y material obsoleto en la oposicion autorizada.
-  const activeMaterial = materials.createMaterial({
+  const activeMaterial = await materials.createMaterial({
     opposition_id: opp.id,
     title: 'Tema activo',
     type: 'syllabus',
     status: 'active',
     content_text: 'Texto del material activo.',
   });
-  const obsoleteMaterial = materials.createMaterial({
+  const obsoleteMaterial = await materials.createMaterial({
     opposition_id: opp.id,
     title: 'Tema obsoleto',
     type: 'syllabus',
@@ -226,52 +225,51 @@ function makeSetup() {
 }
 
 describe('SPEC 013 - oposiciones del estudiante', () => {
-  it('ve solo sus oposiciones autorizadas', () => {
-    const { oppositions, student, opp } = makeSetup();
-    const list = oppositions.listForUser(student);
+  it('ve solo sus oposiciones autorizadas', async () => {
+    const { oppositions, student, opp } = await makeSetup();
+    const list = await oppositions.listForUser(student);
     expect(list.map((o) => o.id)).toEqual([opp.id]);
   });
 
-  it('puede entrar en una oposicion autorizada', () => {
-    const { oppositions, student, opp } = makeSetup();
-    expect(oppositions.getOpposition(student, opp.id).id).toBe(opp.id);
+  it('puede entrar en una oposicion autorizada', async () => {
+    const { oppositions, student, opp } = await makeSetup();
+    expect((await oppositions.getOpposition(student, opp.id)).id).toBe(opp.id);
   });
 
-  it('no puede entrar en una oposicion no autorizada', () => {
-    const { oppositions, student, opp2 } = makeSetup();
-    expect(() => oppositions.getOpposition(student, opp2.id)).toThrow(
+  it('no puede entrar en una oposicion no autorizada', async () => {
+    const { oppositions, student, opp2 } = await makeSetup();
+    await expect(oppositions.getOpposition(student, opp2.id)).rejects.toThrow(
       AccessError,
     );
   });
 });
 
 describe('SPEC 013 - material del estudiante', () => {
-  it('ve solo material activo (no obsoleto)', () => {
-    const { platform, student, opp, activeMaterial } = makeSetup();
-    const list = platform.listMaterials(student, opp.id);
+  it('ve solo material activo (no obsoleto)', async () => {
+    const { platform, student, opp, activeMaterial } = await makeSetup();
+    const list = await platform.listMaterials(student, opp.id);
     expect(list.map((m) => m.id)).toEqual([activeMaterial.id]);
   });
 
-  it('no puede ver el detalle de material no activo', () => {
-    const { platform, student, obsoleteMaterial } = makeSetup();
-    expect(() => platform.getMaterial(student, obsoleteMaterial.id)).toThrow(
+  it('no puede ver el detalle de material no activo', async () => {
+    const { platform, student, obsoleteMaterial } = await makeSetup();
+    await expect(platform.getMaterial(student, obsoleteMaterial.id)).rejects.toThrow(
       AccessError,
     );
   });
 
-  it('puede ver el detalle de material activo', () => {
-    const { platform, student, activeMaterial } = makeSetup();
-    expect(platform.getMaterial(student, activeMaterial.id).id).toBe(
+  it('puede ver el detalle de material activo', async () => {
+    const { platform, student, activeMaterial } = await makeSetup();
+    expect((await platform.getMaterial(student, activeMaterial.id)).id).toBe(
       activeMaterial.id,
     );
   });
 });
 
 describe('SPEC 013 - el estudiante no puede administrar', () => {
-  it('no puede subir PDF', () => {
-    const { platform, student, opp } = makeSetup();
-    expect(() =>
-      platform.uploadPdf(student, {
+  it('no puede subir PDF', async () => {
+    const { platform, student, opp } = await makeSetup();
+    await expect(platform.uploadPdf(student, {
         opposition_id: opp.id,
         title: 'X',
         type: 'syllabus',
@@ -281,129 +279,125 @@ describe('SPEC 013 - el estudiante no puede administrar', () => {
           bytes: new Uint8Array([1, 2, 3]),
         },
       }),
-    ).toThrow(AccessError);
+    ).rejects.toThrow(AccessError);
   });
 
-  it('no puede generar preguntas', () => {
-    const { platform, student, activeMaterial } = makeSetup();
-    expect(() =>
-      platform.generateFromMaterial(student, {
+  it('no puede generar preguntas', async () => {
+    const { platform, student, activeMaterial } = await makeSetup();
+    await expect(platform.generateFromMaterial(student, {
         material_id: activeMaterial.id,
         difficulty: 'easy',
         question_count: 2,
       }),
-    ).toThrow(AccessError);
+    ).rejects.toThrow(AccessError);
   });
 
-  it('no puede importar material (subida multiple ni ZIP) - SPEC 017', () => {
-    const { platform, student, opp } = makeSetup();
-    expect(() =>
-      platform.importFilesToTopic(student, {
+  it('no puede importar material (subida multiple ni ZIP) - SPEC 017', async () => {
+    const { platform, student, opp } = await makeSetup();
+    await expect(platform.importFilesToTopic(student, {
         opposition_id: opp.id,
         topic_id: 't',
         files: [{ original_filename: 'a.pdf', bytes: new Uint8Array([1]) }],
       }),
-    ).toThrow(AccessError);
-    expect(() =>
-      platform.importZip(student, {
+    ).rejects.toThrow(AccessError);
+    await expect(platform.importZip(student, {
         opposition_id: opp.id,
         zip: { original_filename: 'z.zip', bytes: new Uint8Array([1]) },
       }),
-    ).toThrow(AccessError);
+    ).rejects.toThrow(AccessError);
   });
 });
 
 describe('SPEC 013 - tests y resultados del estudiante', () => {
-  it('puede crear test en oposicion autorizada con preguntas de esa oposicion', () => {
-    const { platform, student, opp } = makeSetup();
-    const { test } = platform.createTest(student, {
+  it('puede crear test en oposicion autorizada con preguntas de esa oposicion', async () => {
+    const { platform, student, opp } = await makeSetup();
+    const { test } = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 3,
     });
     expect(test.opposition_id).toBe(opp.id);
-    const view = platform.getTest(student, test.id);
+    const view = await platform.getTest(student, test.id);
     expect(view.questions.length).toBe(3);
   });
 
-  it('no puede crear test en oposicion no autorizada', () => {
-    const { platform, student, opp2 } = makeSetup();
-    expect(() =>
-      platform.createTest(student, {
+  it('no puede crear test en oposicion no autorizada', async () => {
+    const { platform, student, opp2 } = await makeSetup();
+    await expect(platform.createTest(student, {
         mode: 'random',
         opposition_id: opp2.id,
         question_count: 1,
       }),
-    ).toThrow(AccessError);
+    ).rejects.toThrow(AccessError);
   });
 
-  it('no puede ver la revision antes de enviar el test', () => {
-    const { platform, student, opp } = makeSetup();
-    const { test } = platform.createTest(student, {
+  it('no puede ver la revision antes de enviar el test', async () => {
+    const { platform, student, opp } = await makeSetup();
+    const { test } = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 2,
     });
-    const attempt = platform.startAttempt(student, test.id);
-    expect(() => platform.getReview(student, attempt.id)).toThrow(
+    const attempt = await platform.startAttempt(student, test.id);
+    await expect(platform.getReview(student, attempt.id)).rejects.toThrow(
       TestAttemptError,
     );
   });
 
-  it('ve resultado y revision (con explicacion y fuente) despues de enviar', () => {
-    const { platform, student, opp } = makeSetup();
-    const { test } = platform.createTest(student, {
+  it('ve resultado y revision (con explicacion y fuente) despues de enviar', async () => {
+    const { platform, student, opp } = await makeSetup();
+    const { test } = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 2,
     });
-    const attempt = platform.startAttempt(student, test.id);
-    platform.submitAttempt(student, attempt.id);
+    const attempt = await platform.startAttempt(student, test.id);
+    await platform.submitAttempt(student, attempt.id);
 
-    const result = platform.getResult(student, attempt.id);
+    const result = await platform.getResult(student, attempt.id);
     expect(result.total_questions).toBe(2);
 
-    const reviewItem = platform.getReview(student, attempt.id).questions[0];
+    const reviewItem = (await platform.getReview(student, attempt.id)).questions[0];
     expect(reviewItem.explanation).toBeTruthy();
     expect(reviewItem.correct_option_id).not.toBeNull();
     expect(reviewItem.source_reference).toBe('Tema 1');
   });
 
-  it('no puede ver resultados de otro estudiante', () => {
-    const { platform, student, other, opp } = makeSetup();
-    const { test } = platform.createTest(student, {
+  it('no puede ver resultados de otro estudiante', async () => {
+    const { platform, student, other, opp } = await makeSetup();
+    const { test } = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 1,
     });
-    const attempt = platform.startAttempt(student, test.id);
-    platform.submitAttempt(student, attempt.id);
-    expect(() => platform.getResult(other, attempt.id)).toThrow(AccessError);
+    const attempt = await platform.startAttempt(student, test.id);
+    await platform.submitAttempt(student, attempt.id);
+    await expect(platform.getResult(other, attempt.id)).rejects.toThrow(AccessError);
   });
 
-  it('listMyResults solo devuelve los intentos enviados del propio usuario', () => {
-    const { platform, student, other, opp } = makeSetup();
+  it('listMyResults solo devuelve los intentos enviados del propio usuario', async () => {
+    const { platform, student, other, opp } = await makeSetup();
     // student envia uno; other crea pero no envia.
-    const a = platform.createTest(student, {
+    const a = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 1,
     });
-    const attempt = platform.startAttempt(student, a.test.id);
-    platform.submitAttempt(student, attempt.id);
+    const attempt = await platform.startAttempt(student, a.test.id);
+    await platform.submitAttempt(student, attempt.id);
 
-    const b = platform.createTest(other, {
+    const b = await platform.createTest(other, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 1,
     });
-    platform.startAttempt(other, b.test.id); // sin enviar
+    await platform.startAttempt(other, b.test.id); // sin enviar
 
-    const mine = platform.listMyResults(student);
+    const mine = await platform.listMyResults(student);
     expect(mine).toHaveLength(1);
     expect(mine[0]?.attempt_id).toBe(attempt.id);
     expect(mine[0]?.test_title).toBeTruthy();
 
-    expect(platform.listMyResults(other)).toHaveLength(0);
+    expect(await platform.listMyResults(other)).toHaveLength(0);
   });
 });

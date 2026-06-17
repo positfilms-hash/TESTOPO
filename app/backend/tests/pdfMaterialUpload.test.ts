@@ -108,17 +108,17 @@ function makeTopic(id: string, oppositionId: string): Topic {
 }
 
 // --- Setup a nivel de servicio (validaciones, almacenamiento, extraccion) ---
-function makeServiceSetup() {
+async function makeServiceSetup() {
   const materialRepo = new InMemoryMaterialRepository();
   const topicRepo = new InMemoryTopicRepository();
   const linkRepo = new InMemoryTopicMaterialLinkRepository();
   const oppositionRepo = new InMemoryOppositionRepository();
   const storage = new InMemoryFileStorage();
 
-  const opposition = oppositionRepo.create(makeOpposition('opp-1', 'ws-1'));
-  const otherOpposition = oppositionRepo.create(makeOpposition('opp-2', 'ws-1'));
-  const topic = topicRepo.create(makeTopic('topic-1', opposition.id));
-  const foreignTopic = topicRepo.create(makeTopic('topic-x', otherOpposition.id));
+  const opposition = await oppositionRepo.create(makeOpposition('opp-1', 'ws-1'));
+  const otherOpposition = await oppositionRepo.create(makeOpposition('opp-2', 'ws-1'));
+  const topic = await topicRepo.create(makeTopic('topic-1', opposition.id));
+  const foreignTopic = await topicRepo.create(makeTopic('topic-x', otherOpposition.id));
 
   let counter = 0;
   const service = new PdfMaterialService({
@@ -158,9 +158,9 @@ function validInput(oppositionId: string) {
   };
 }
 
-function expectPdfCodes(fn: () => unknown, code: PdfErrorCode): void {
+async function expectPdfCodes(fn: () => unknown, code: PdfErrorCode): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(PdfUploadError);
     expect((error as PdfUploadError).codes).toContain(code);
@@ -170,9 +170,9 @@ function expectPdfCodes(fn: () => unknown, code: PdfErrorCode): void {
 }
 
 describe('PdfMaterialService - subida y validaciones', () => {
-  it('registra el PDF como Material con metadata y oposicion correcta', () => {
-    const { service, opposition } = makeServiceSetup();
-    const material = service.uploadPdf(validInput(opposition.id));
+  it('registra el PDF como Material con metadata y oposicion correcta', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    const material = await service.uploadPdf(validInput(opposition.id));
 
     expect(material.opposition_id).toBe(opposition.id);
     expect(material.original_filename).toBe('tema-1.pdf');
@@ -183,25 +183,25 @@ describe('PdfMaterialService - subida y validaciones', () => {
     expect(material.status).toBe('active');
   });
 
-  it('guarda los bytes fuera del repo (FileStorage), no en el material', () => {
-    const { service, storage, opposition } = makeServiceSetup();
-    const material = service.uploadPdf(validInput(opposition.id));
+  it('guarda los bytes fuera del repo (FileStorage), no en el material', async () => {
+    const { service, storage, opposition } = await makeServiceSetup();
+    const material = await service.uploadPdf(validInput(opposition.id));
     expect(storage.exists(material.storage_path as string)).toBe(true);
     expect(storage.read(material.storage_path as string)).not.toBeNull();
   });
 
-  it('extrae texto cuando el PDF tiene texto seleccionable', () => {
-    const { service, opposition } = makeServiceSetup();
-    const material = service.uploadPdf(validInput(opposition.id));
+  it('extrae texto cuando el PDF tiene texto seleccionable', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    const material = await service.uploadPdf(validInput(opposition.id));
     expect(material.extraction_status).toBe('completed');
     expect(material.content_text).toContain('Hola mundo de prueba');
     expect(material.page_count).toBe(1);
     expect(material.extraction_error).toBeNull();
   });
 
-  it('marca not_supported cuando el PDF no tiene texto extraible', () => {
-    const { service, opposition } = makeServiceSetup();
-    const material = service.uploadPdf({
+  it('marca not_supported cuando el PDF no tiene texto extraible', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    const material = await service.uploadPdf({
       ...validInput(opposition.id),
       file: {
         original_filename: 'escaneado.pdf',
@@ -214,20 +214,20 @@ describe('PdfMaterialService - subida y validaciones', () => {
     expect(material.extraction_error).toBeTruthy();
   });
 
-  it('vincula el PDF a temas de la misma oposicion', () => {
-    const { service, linkRepo, opposition, topic } = makeServiceSetup();
-    const material = service.uploadPdf({
+  it('vincula el PDF a temas de la misma oposicion', async () => {
+    const { service, linkRepo, opposition, topic } = await makeServiceSetup();
+    const material = await service.uploadPdf({
       ...validInput(opposition.id),
       topic_ids: [topic.id],
     });
-    const links = linkRepo.findAll({ material_id: material.id });
+    const links = await linkRepo.findAll({ material_id: material.id });
     expect(links).toHaveLength(1);
     expect(links[0]?.topic_id).toBe(topic.id);
   });
 
-  it('rechaza vincular a temas de otra oposicion', () => {
-    const { service, opposition, foreignTopic } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza vincular a temas de otra oposicion', async () => {
+    const { service, opposition, foreignTopic } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -237,9 +237,9 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('rechaza vincular a un tema inexistente', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza vincular a un tema inexistente', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -249,33 +249,33 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('exige oposicion', () => {
-    const { service } = makeServiceSetup();
-    expectPdfCodes(
+  it('exige oposicion', async () => {
+    const { service } = await makeServiceSetup();
+    await expectPdfCodes(
       () => service.uploadPdf({ ...validInput('opp-1'), opposition_id: undefined }),
       PdfErrorCode.OPPOSITION_REQUIRED,
     );
   });
 
-  it('rechaza oposicion inexistente', () => {
-    const { service } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza oposicion inexistente', async () => {
+    const { service } = await makeServiceSetup();
+    await expectPdfCodes(
       () => service.uploadPdf(validInput('no-existe')),
       PdfErrorCode.OPPOSITION_NOT_FOUND,
     );
   });
 
-  it('exige titulo', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('exige titulo', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () => service.uploadPdf({ ...validInput(opposition.id), title: '  ' }),
       PdfErrorCode.TITLE_REQUIRED,
     );
   });
 
-  it('exige tipo', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('exige tipo', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -285,9 +285,9 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('rechaza tipo de material invalido', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza tipo de material invalido', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -298,18 +298,18 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('exige archivo', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('exige archivo', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({ ...validInput(opposition.id), file: undefined }),
       PdfErrorCode.FILE_REQUIRED,
     );
   });
 
-  it('rechaza archivo que no es .pdf', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza archivo que no es .pdf', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -323,9 +323,9 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('rechaza MIME type que no es PDF', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza MIME type que no es PDF', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -339,9 +339,9 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('rechaza archivo vacio', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza archivo vacio', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -355,9 +355,9 @@ describe('PdfMaterialService - subida y validaciones', () => {
     );
   });
 
-  it('rechaza archivo demasiado grande', () => {
-    const { service, opposition } = makeServiceSetup();
-    expectPdfCodes(
+  it('rechaza archivo demasiado grande', async () => {
+    const { service, opposition } = await makeServiceSetup();
+    await expectPdfCodes(
       () =>
         service.uploadPdf({
           ...validInput(opposition.id),
@@ -373,7 +373,7 @@ describe('PdfMaterialService - subida y validaciones', () => {
 });
 
 // --- Setup a nivel de facade (permisos y visibilidad) ----------------------
-function makePlatformSetup() {
+async function makePlatformSetup() {
   const users = new UserService(new InMemoryUserRepository());
   const memberRepo = new InMemoryWorkspaceMemberRepository();
   const workspaces = new WorkspaceService(
@@ -412,11 +412,10 @@ function makePlatformSetup() {
     items: new InMemoryMaterialImportItemRepository(),
   });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
-    resolveMaterialOpposition: (id) =>
-      materials.getMaterial(id)?.opposition_id ?? null,
-    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
+    resolveMaterialOpposition: async (id) => (await materials.getMaterial(id))?.opposition_id ?? null,
+    resolveTopicOpposition: async (id) => (await topics.getTopic(id))?.opposition_id ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -464,36 +463,36 @@ function makePlatformSetup() {
     attempts,
   });
 
-  const admin = users.createUser({
+  const admin = await users.createUser({
     email: 'admin@test.com',
     password: 'x',
     role: 'admin',
   });
-  const student = users.createUser({
+  const student = await users.createUser({
     email: 'student@test.com',
     password: 'y',
     role: 'student',
   });
-  const outsider = users.createUser({
+  const outsider = await users.createUser({
     email: 'out@test.com',
     password: 'z',
     role: 'student',
   });
-  const ws = workspaces.createOrganizationWorkspace(admin, {
+  const ws = await workspaces.createOrganizationWorkspace(admin, {
     name: 'Academia',
     slug: 'academia',
   });
-  workspaces.addMember(admin, {
+  await workspaces.addMember(admin, {
     workspace_id: ws.id,
     user_id: student.id,
     role: 'student',
   });
-  const opp = oppositions.createOpposition(admin, {
+  const opp = await oppositions.createOpposition(admin, {
     workspace_id: ws.id,
     title: 'Auxiliar',
     slug: 'auxiliar',
   });
-  oppositions.grantAccess(admin, {
+  await oppositions.grantAccess(admin, {
     user_id: student.id,
     opposition_id: opp.id,
   });
@@ -515,50 +514,50 @@ function uploadInput(oppositionId: string) {
 }
 
 describe('PlatformService - PDF (permisos y visibilidad)', () => {
-  it('un owner/admin puede subir PDF a una oposicion autorizada', () => {
-    const { platform, admin, opp } = makePlatformSetup();
-    const material = platform.uploadPdf(admin, uploadInput(opp.id));
+  it('un owner/admin puede subir PDF a una oposicion autorizada', async () => {
+    const { platform, admin, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
     expect(material.uploaded_by).toBe(admin.id);
     expect(material.opposition_id).toBe(opp.id);
   });
 
-  it('un student no puede subir PDF', () => {
-    const { platform, student, opp } = makePlatformSetup();
-    expect(() => platform.uploadPdf(student, uploadInput(opp.id))).toThrow(
+  it('un student no puede subir PDF', async () => {
+    const { platform, student, opp } = await makePlatformSetup();
+    await expect(platform.uploadPdf(student, uploadInput(opp.id))).rejects.toThrow(
       AccessError,
     );
   });
 
-  it('lista PDFs de una oposicion (admin ve todos)', () => {
-    const { platform, admin, opp } = makePlatformSetup();
-    platform.uploadPdf(admin, uploadInput(opp.id));
-    const list = platform.listMaterials(admin, opp.id);
+  it('lista PDFs de una oposicion (admin ve todos)', async () => {
+    const { platform, admin, opp } = await makePlatformSetup();
+    await platform.uploadPdf(admin, uploadInput(opp.id));
+    const list = await platform.listMaterials(admin, opp.id);
     expect(list.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('un estudiante autorizado ve material activo', () => {
-    const { platform, admin, student, opp } = makePlatformSetup();
-    const material = platform.uploadPdf(admin, uploadInput(opp.id));
-    const seen = platform.getMaterial(student, material.id);
+  it('un estudiante autorizado ve material activo', async () => {
+    const { platform, admin, student, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
+    const seen = await platform.getMaterial(student, material.id);
     expect(seen.id).toBe(material.id);
   });
 
-  it('un estudiante no ve material no activo (obsoleto)', () => {
-    const { platform, admin, student, opp } = makePlatformSetup();
-    const material = platform.uploadPdf(admin, uploadInput(opp.id));
-    platform.markMaterialObsolete(admin, material.id);
-    expect(() => platform.getMaterial(student, material.id)).toThrow(
+  it('un estudiante no ve material no activo (obsoleto)', async () => {
+    const { platform, admin, student, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
+    await platform.markMaterialObsolete(admin, material.id);
+    await expect(platform.getMaterial(student, material.id)).rejects.toThrow(
       AccessError,
     );
     // y no aparece en su listado
-    expect(platform.listMaterials(student, opp.id)).toHaveLength(0);
+    expect(await platform.listMaterials(student, opp.id)).toHaveLength(0);
   });
 
-  it('un usuario sin acceso a la oposicion no ve el PDF', () => {
-    const { platform, admin, outsider, opp } = makePlatformSetup();
-    const material = platform.uploadPdf(admin, uploadInput(opp.id));
+  it('un usuario sin acceso a la oposicion no ve el PDF', async () => {
+    const { platform, admin, outsider, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
     try {
-      platform.getMaterial(outsider, material.id);
+      await platform.getMaterial(outsider, material.id);
       throw new Error('Expected AccessError');
     } catch (error) {
       expect(error).toBeInstanceOf(AccessError);
@@ -568,10 +567,10 @@ describe('PlatformService - PDF (permisos y visibilidad)', () => {
     }
   });
 
-  it('se puede marcar el PDF como obsoleto', () => {
-    const { platform, admin, opp } = makePlatformSetup();
-    const material = platform.uploadPdf(admin, uploadInput(opp.id));
-    const obsolete = platform.markMaterialObsolete(admin, material.id);
+  it('se puede marcar el PDF como obsoleto', async () => {
+    const { platform, admin, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
+    const obsolete = await platform.markMaterialObsolete(admin, material.id);
     expect(obsolete.status).toBe('obsolete');
   });
 });

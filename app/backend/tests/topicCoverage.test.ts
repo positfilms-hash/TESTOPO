@@ -40,7 +40,7 @@ function question(topicId: string | null, status: Question['status']): Question 
 }
 
 describe('computeTopicCoverage', () => {
-  it('cuenta preguntas por estado y materiales vinculados por tema', () => {
+  it('cuenta preguntas por estado y materiales vinculados por tema', async () => {
     const topics = [topic('t1', 'Tema 1'), topic('t2', 'Tema 2 sin nada')];
     const questions = [
       question('t1', 'validated'),

@@ -17,15 +17,15 @@ import type { Difficulty, QuestionStatus } from '../src/models/enums.js';
 import type { Source } from '../src/models/source.js';
 import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
-function makeSetup() {
+async function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
   const topicRepository = new InMemoryTopicRepository();
   const questionRepository = new InMemoryQuestionRepository();
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
   const questions = new QuestionService(questionRepository, {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
   });
   const validation = new QuestionValidationService({
     questionService: questions,
@@ -43,72 +43,72 @@ function makeSetup() {
 
 // Crea una pregunta y la deja en el estado indicado (sin pasar por validacion,
 // usando el cambio de estado directo del banco para preparar el escenario).
-function makeQuestion(
+async function makeQuestion(
   questions: QuestionService,
   status: QuestionStatus = 'pending_review',
   overrides: Partial<CreateQuestionInput> = {},
 ) {
-  const q = questions.createQuestion(validInput(overrides));
+  const q = await questions.createQuestion(validInput(overrides));
   if (status !== 'draft') {
-    questions.changeStatus(q.id, status);
+    await questions.changeStatus(q.id, status);
   }
-  return questions.getQuestion(q.id)!;
+  return (await questions.getQuestion(q.id))!;
 }
 
 describe('QuestionReviewService - listado y detalle', () => {
-  it('lista por defecto solo draft/pending_review/needs_fix', () => {
-    const { questions, review } = makeSetup();
-    makeQuestion(questions, 'pending_review');
-    makeQuestion(questions, 'needs_fix');
-    makeQuestion(questions, 'rejected');
+  it('lista por defecto solo draft/pending_review/needs_fix', async () => {
+    const { questions, review } = await makeSetup();
+    await makeQuestion(questions, 'pending_review');
+    await makeQuestion(questions, 'needs_fix');
+    await makeQuestion(questions, 'rejected');
 
-    const list = review.listForReview();
+    const list = await review.listForReview();
     expect(list).toHaveLength(2);
     expect(list.every((q) => q.status !== 'rejected')).toBe(true);
   });
 
-  it('devuelve el detalle de una pregunta', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
-    const detail = review.getReviewDetail(q.id);
+  it('devuelve el detalle de una pregunta', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
+    const detail = await review.getReviewDetail(q.id);
     expect(detail.question.id).toBe(q.id);
     expect(detail.reviews).toHaveLength(0);
   });
 });
 
 describe('QuestionReviewService - edicion', () => {
-  it('editar no convierte en validated y registra accion edit', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
+  it('editar no convierte en validated y registra accion edit', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
 
-    const { question, review: log } = review.editFromReview(q.id, {
+    const { question, review: log } = await review.editFromReview(q.id, {
       explanation: 'Explicacion revisada y suficientemente larga.',
     });
 
     expect(question.status).not.toBe('validated');
     expect(log.action).toBe('edit');
-    expect(review.listReviews(q.id)).toHaveLength(1);
+    expect(await review.listReviews(q.id)).toHaveLength(1);
   });
 });
 
 describe('QuestionReviewService - aprobacion', () => {
-  it('aprueba una pregunta valida y registra accion approve', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
+  it('aprueba una pregunta valida y registra accion approve', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
 
-    const result = review.approve(q.id, { reviewer_name: 'Miguel' });
+    const result = await review.approve(q.id, { reviewer_name: 'Miguel' });
 
     expect(result.question.status).toBe('validated');
     expect(result.review.action).toBe('approve');
     expect(result.review.validation_result_id).toBe(result.validation?.id);
   });
 
-  function expectApprovalBlocked(
+  async function expectApprovalBlocked(
     fn: () => unknown,
     code?: QuestionValidationCode,
-  ): void {
+  ): Promise<void> {
     try {
-      fn();
+      await fn();
     } catch (error) {
       expect(error).toBeInstanceOf(QuestionReviewError);
       const reviewError = error as QuestionReviewError;
@@ -125,67 +125,67 @@ describe('QuestionReviewService - aprobacion', () => {
     throw new Error('Expected QuestionReviewError (APPROVAL_BLOCKED)');
   }
 
-  it('no aprueba sin enunciado', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', { statement: '  ' });
-    expectApprovalBlocked(
+  it('no aprueba sin enunciado', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', { statement: '  ' });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.STATEMENT_REQUIRED,
     );
   });
 
-  it('no aprueba sin explicacion', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', { explanation: null });
-    expectApprovalBlocked(
+  it('no aprueba sin explicacion', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', { explanation: null });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.EXPLANATION_REQUIRED,
     );
   });
 
-  it('no aprueba sin fuente', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', { source: null });
-    expectApprovalBlocked(
+  it('no aprueba sin fuente', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', { source: null });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.SOURCE_REQUIRED,
     );
   });
 
-  it('no aprueba sin tema', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', { topic: null });
-    expectApprovalBlocked(
+  it('no aprueba sin tema', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', { topic: null });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.TOPIC_REQUIRED,
     );
   });
 
-  it('no aprueba sin dificultad', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', { difficulty: null });
-    expectApprovalBlocked(
+  it('no aprueba sin dificultad', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', { difficulty: null });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.DIFFICULTY_REQUIRED,
     );
   });
 
-  it('no aprueba con mas de una respuesta correcta', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review', {
+  it('no aprueba con mas de una respuesta correcta', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review', {
       options: [
         { text: 'A', is_correct: true },
         { text: 'B', is_correct: true },
       ],
     });
-    expectApprovalBlocked(
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.SINGLE_CORRECT_OPTION_REQUIRED,
     );
   });
 
-  it('no aprueba con fuente obsoleta', () => {
-    const { questions, review } = makeSetup();
+  it('no aprueba con fuente obsoleta', async () => {
+    const { questions, review } = await makeSetup();
     const source: Source = {
       id: 'src',
       title: 'Norma ficticia',
@@ -193,22 +193,22 @@ describe('QuestionReviewService - aprobacion', () => {
       reference: 'Ley ficticia',
       status: 'obsolete',
     };
-    const q = makeQuestion(questions, 'pending_review', { source });
-    expectApprovalBlocked(
+    const q = await makeQuestion(questions, 'pending_review', { source });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.SOURCE_OBSOLETE,
     );
   });
 
-  it('no aprueba con material obsoleto', () => {
-    const { materials, questions, review } = makeSetup();
-    const material = materials.createMaterial({
+  it('no aprueba con material obsoleto', async () => {
+    const { materials, questions, review } = await makeSetup();
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Material ficticio',
       type: 'syllabus',
       content_text: 'texto',
     });
-    materials.markObsolete(material.id);
+    await materials.markObsolete(material.id);
     const source: Source = {
       id: 'src',
       material_id: material.id,
@@ -218,31 +218,31 @@ describe('QuestionReviewService - aprobacion', () => {
       excerpt: 'fragmento',
       status: 'active',
     };
-    const q = makeQuestion(questions, 'pending_review', { source });
-    expectApprovalBlocked(
+    const q = await makeQuestion(questions, 'pending_review', { source });
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.SOURCE_MATERIAL_OBSOLETE,
     );
   });
 
-  it('no aprueba con tema obsoleto', () => {
-    const { topics, questions, review } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
-    topics.markObsolete(topic.id);
-    const q = makeQuestion(questions, 'pending_review', {
+  it('no aprueba con tema obsoleto', async () => {
+    const { topics, questions, review } = await makeSetup();
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
+    await topics.markObsolete(topic.id);
+    const q = await makeQuestion(questions, 'pending_review', {
       topic_id: topic.id,
     });
-    expectApprovalBlocked(
+    await expectApprovalBlocked(
       () => review.approve(q.id),
       QuestionValidationCode.TOPIC_OBSOLETE,
     );
   });
 
-  it('no permite pasar directamente de rejected a validated', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'rejected');
+  it('no permite pasar directamente de rejected a validated', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'rejected');
     try {
-      review.approve(q.id);
+      await review.approve(q.id);
     } catch (error) {
       expect((error as QuestionReviewError).codes).toContain(
         QuestionReviewErrorCode.REJECTED_REQUIRES_REVIEW_REOPEN,
@@ -252,11 +252,11 @@ describe('QuestionReviewService - aprobacion', () => {
     throw new Error('Expected QuestionReviewError');
   });
 
-  it('no permite pasar directamente de obsolete a validated', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'obsolete');
+  it('no permite pasar directamente de obsolete a validated', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'obsolete');
     try {
-      review.approve(q.id);
+      await review.approve(q.id);
     } catch (error) {
       expect((error as QuestionReviewError).codes).toContain(
         QuestionReviewErrorCode.OBSOLETE_CANNOT_BE_VALIDATED,
@@ -268,42 +268,42 @@ describe('QuestionReviewService - aprobacion', () => {
 });
 
 describe('QuestionReviewService - otras acciones', () => {
-  it('rechaza una pregunta', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
-    const { question, review: log } = review.reject(q.id, {
+  it('rechaza una pregunta', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
+    const { question, review: log } = await review.reject(q.id, {
       notes: 'Ambigua',
     });
     expect(question.status).toBe('rejected');
     expect(log.action).toBe('reject');
   });
 
-  it('marca como needs_fix', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
-    expect(review.markNeedsFix(q.id).question.status).toBe('needs_fix');
+  it('marca como needs_fix', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
+    expect((await review.markNeedsFix(q.id)).question.status).toBe('needs_fix');
   });
 
-  it('marca como obsolete', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
-    expect(review.markObsolete(q.id).question.status).toBe('obsolete');
+  it('marca como obsolete', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
+    expect((await review.markObsolete(q.id)).question.status).toBe('obsolete');
   });
 
-  it('devuelve una pregunta valida a pending_review', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'needs_fix');
-    const { question, review: log } = review.returnToPendingReview(q.id);
+  it('devuelve una pregunta valida a pending_review', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'needs_fix');
+    const { question, review: log } = await review.returnToPendingReview(q.id);
     expect(question.status).toBe('pending_review');
     expect(log.action).toBe('return_to_pending_review');
   });
 
-  it('cada accion crea un registro de revision', () => {
-    const { questions, review } = makeSetup();
-    const q = makeQuestion(questions, 'pending_review');
-    review.markNeedsFix(q.id, { notes: 'falta fuente' });
-    review.returnToPendingReview(q.id);
-    review.approve(q.id);
-    expect(review.listReviews(q.id)).toHaveLength(3);
+  it('cada accion crea un registro de revision', async () => {
+    const { questions, review } = await makeSetup();
+    const q = await makeQuestion(questions, 'pending_review');
+    await review.markNeedsFix(q.id, { notes: 'falta fuente' });
+    await review.returnToPendingReview(q.id);
+    await review.approve(q.id);
+    expect(await review.listReviews(q.id)).toHaveLength(3);
   });
 });

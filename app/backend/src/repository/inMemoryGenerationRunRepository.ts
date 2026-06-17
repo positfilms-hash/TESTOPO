@@ -8,16 +8,16 @@ export class InMemoryGenerationRunRepository
 {
   private readonly runs = new Map<string, QuestionGenerationRun>();
 
-  create(run: QuestionGenerationRun): QuestionGenerationRun {
+  async create(run: QuestionGenerationRun): Promise<QuestionGenerationRun> {
     this.runs.set(run.id, clone(run));
     return clone(run);
   }
 
-  findAll(): QuestionGenerationRun[] {
+  async findAll(): Promise<QuestionGenerationRun[]> {
     return [...this.runs.values()].map(clone);
   }
 
-  findById(id: string): QuestionGenerationRun | null {
+  async findById(id: string): Promise<QuestionGenerationRun | null> {
     const run = this.runs.get(id);
     return run ? clone(run) : null;
   }
@@ -26,3 +26,4 @@ export class InMemoryGenerationRunRepository
 function clone(run: QuestionGenerationRun): QuestionGenerationRun {
   return structuredClone(run);
 }
+

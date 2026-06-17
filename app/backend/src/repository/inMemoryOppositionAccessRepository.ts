@@ -6,29 +6,29 @@ export class InMemoryOppositionAccessRepository
 {
   private readonly access = new Map<string, OppositionAccess>();
 
-  create(access: OppositionAccess): OppositionAccess {
+  async create(access: OppositionAccess): Promise<OppositionAccess> {
     this.access.set(key(access.user_id, access.opposition_id), clone(access));
     return clone(access);
   }
 
-  find(userId: string, oppositionId: string): OppositionAccess | null {
+  async find(userId: string, oppositionId: string): Promise<OppositionAccess | null> {
     const found = this.access.get(key(userId, oppositionId));
     return found ? clone(found) : null;
   }
 
-  findByUser(userId: string): OppositionAccess[] {
+  async findByUser(userId: string): Promise<OppositionAccess[]> {
     return [...this.access.values()]
       .filter((a) => a.user_id === userId)
       .map(clone);
   }
 
-  findByOpposition(oppositionId: string): OppositionAccess[] {
+  async findByOpposition(oppositionId: string): Promise<OppositionAccess[]> {
     return [...this.access.values()]
       .filter((a) => a.opposition_id === oppositionId)
       .map(clone);
   }
 
-  save(access: OppositionAccess): OppositionAccess {
+  async save(access: OppositionAccess): Promise<OppositionAccess> {
     this.access.set(key(access.user_id, access.opposition_id), clone(access));
     return clone(access);
   }
@@ -41,3 +41,4 @@ function key(userId: string, oppositionId: string): string {
 function clone(access: OppositionAccess): OppositionAccess {
   return structuredClone(access);
 }
+

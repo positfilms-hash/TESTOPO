@@ -8,8 +8,9 @@ export interface TopicMaterialLinkFilter {
 }
 
 export interface TopicMaterialLinkRepository {
-  create(link: TopicMaterialLink): TopicMaterialLink;
-  findAll(filter?: TopicMaterialLinkFilter): TopicMaterialLink[];
-  find(materialId: string, topicId: string): TopicMaterialLink | null;
-  delete(materialId: string, topicId: string): boolean;
+  create(link: TopicMaterialLink): Promise<TopicMaterialLink>;
+  findAll(filter?: TopicMaterialLinkFilter): Promise<TopicMaterialLink[]>;
+  find(materialId: string, topicId: string): Promise<TopicMaterialLink | null>;
+  delete(materialId: string, topicId: string): Promise<boolean>;
 }
+

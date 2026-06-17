@@ -16,7 +16,7 @@ import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 let seq = 0;
 
-function makeSetup() {
+async function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
   const topicRepository = new InMemoryTopicRepository();
   const questionRepository = new InMemoryQuestionRepository();
@@ -25,8 +25,8 @@ function makeSetup() {
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
   const questions = new QuestionService(questionRepository, {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
   });
   let s = 1;
   const random = (): number => {
@@ -50,32 +50,35 @@ function makeSetup() {
   return { questions, generator, attempts };
 }
 
-function seedValidated(questions: QuestionService, n: number): void {
+async function seedValidated(
+  questions: QuestionService,
+  n: number,
+): Promise<void> {
   for (let i = 0; i < n; i++) {
-    const q = questions.createQuestion(
+    const q = await questions.createQuestion(
       validInput({ statement: `Pregunta ficticia numero ${++seq}` }),
     );
-    questions.changeStatus(q.id, 'validated');
+    await questions.changeStatus(q.id, 'validated');
   }
 }
 
 // Devuelve el id de la opcion correcta y una incorrecta de una pregunta.
-function answerIds(
+async function answerIds(
   questions: QuestionService,
   questionId: string,
-): { correct: string; wrong: string } {
-  const q = questions.getQuestion(questionId)!;
+): Promise<{ correct: string; wrong: string }> {
+  const q = (await questions.getQuestion(questionId))!;
   const correct = q.correct_answer!;
   const wrong = q.options.find((o) => o.id !== correct)!.id;
   return { correct, wrong };
 }
 
-function expectAttemptError(
+async function expectAttemptError(
   fn: () => unknown,
   code: TestAttemptErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(TestAttemptError);
     expect((error as TestAttemptError).codes).toContain(code);
@@ -85,44 +88,44 @@ function expectAttemptError(
 }
 
 describe('TestAttemptService - inicio', () => {
-  it('inicia un intento en progreso', () => {
-    const { questions, generator, attempts } = makeSetup();
-    seedValidated(questions, 3);
-    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 3 });
+  it('inicia un intento en progreso', async () => {
+    const { questions, generator, attempts } = await makeSetup();
+    await seedValidated(questions, 3);
+    const { test } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 3 });
 
-    const attempt = attempts.startAttempt(test.id);
+    const attempt = await attempts.startAttempt(test.id);
 
     expect(attempt.status).toBe('in_progress');
     expect(attempt.total_questions).toBe(3);
     expect(attempt.submitted_at).toBeNull();
   });
 
-  it('no inicia sobre test inexistente', () => {
-    const { attempts } = makeSetup();
-    expectAttemptError(
+  it('no inicia sobre test inexistente', async () => {
+    const { attempts } = await makeSetup();
+    await expectAttemptError(
       () => attempts.startAttempt('no-existe'),
       TestAttemptErrorCode.TEST_NOT_FOUND,
     );
   });
 
-  it('no inicia sobre test cancelado', () => {
-    const { questions, generator, attempts } = makeSetup();
-    seedValidated(questions, 2);
-    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 2 });
-    generator.cancelTest(test.id);
-    expectAttemptError(
+  it('no inicia sobre test cancelado', async () => {
+    const { questions, generator, attempts } = await makeSetup();
+    await seedValidated(questions, 2);
+    const { test } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 2 });
+    await generator.cancelTest(test.id);
+    await expectAttemptError(
       () => attempts.startAttempt(test.id),
       TestAttemptErrorCode.TEST_CANCELLED_CANNOT_BE_STARTED,
     );
   });
 
-  it('la vista para responder no expone respuesta correcta ni explicacion', () => {
-    const { questions, generator, attempts } = makeSetup();
-    seedValidated(questions, 1);
-    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
-    const attempt = attempts.startAttempt(test.id);
+  it('la vista para responder no expone respuesta correcta ni explicacion', async () => {
+    const { questions, generator, attempts } = await makeSetup();
+    await seedValidated(questions, 1);
+    const { test } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
+    const attempt = await attempts.startAttempt(test.id);
 
-    const view = attempts.getTestForTaking(attempt.id);
+    const view = await attempts.getTestForTaking(attempt.id);
     const item = view.questions[0] as unknown as Record<string, unknown>;
     const option = view.questions[0].options[0] as unknown as Record<
       string,
@@ -138,57 +141,57 @@ describe('TestAttemptService - inicio', () => {
 });
 
 describe('TestAttemptService - respuestas', () => {
-  function setupWithAttempt(count = 3) {
-    const ctx = makeSetup();
-    seedValidated(ctx.questions, count);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+  async function setupWithAttempt(count = 3) {
+    const ctx = await makeSetup();
+    await seedValidated(ctx.questions, count);
+    const { test, questions: testQuestions } = await ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: count,
     });
-    const attempt = ctx.attempts.startAttempt(test.id);
+    const attempt = await ctx.attempts.startAttempt(test.id);
     return { ...ctx, test, testQuestions, attempt };
   }
 
-  it('guarda y actualiza una respuesta sin duplicar', () => {
-    const { questions, attempts, testQuestions, attempt } = setupWithAttempt(1);
+  it('guarda y actualiza una respuesta sin duplicar', async () => {
+    const { questions, attempts, testQuestions, attempt } = await setupWithAttempt(1);
     const tq = testQuestions[0];
-    const { correct, wrong } = answerIds(questions, tq.question_id);
+    const { correct, wrong } = await answerIds(questions, tq.question_id);
 
-    attempts.saveAnswer({
+    await attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: tq.id,
       selected_option_id: wrong,
     });
-    attempts.saveAnswer({
+    await attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: tq.id,
       selected_option_id: correct,
     });
 
     // Tras enviar, debe contar como 1 acierto (la respuesta se actualizo).
-    const result = attempts.submitAttempt(attempt.id);
+    const result = await attempts.submitAttempt(attempt.id);
     expect(result.correct_count).toBe(1);
     expect(result.total_questions).toBe(1);
   });
 
-  it('borra una respuesta (queda no respondida)', () => {
-    const { questions, attempts, testQuestions, attempt } = setupWithAttempt(1);
+  it('borra una respuesta (queda no respondida)', async () => {
+    const { questions, attempts, testQuestions, attempt } = await setupWithAttempt(1);
     const tq = testQuestions[0];
-    const { correct } = answerIds(questions, tq.question_id);
-    attempts.saveAnswer({
+    const { correct } = await answerIds(questions, tq.question_id);
+    await attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: tq.id,
       selected_option_id: correct,
     });
-    attempts.clearAnswer({ attempt_id: attempt.id, test_question_id: tq.id });
+    await attempts.clearAnswer({ attempt_id: attempt.id, test_question_id: tq.id });
 
-    const result = attempts.submitAttempt(attempt.id);
+    const result = await attempts.submitAttempt(attempt.id);
     expect(result.unanswered_count).toBe(1);
     expect(result.correct_count).toBe(0);
   });
 
-  it('no permite responder una pregunta que no pertenece al test', () => {
-    const { attempts, attempt } = setupWithAttempt(1);
-    expectAttemptError(
+  it('no permite responder una pregunta que no pertenece al test', async () => {
+    const { attempts, attempt } = await setupWithAttempt(1);
+    await expectAttemptError(
       () =>
         attempts.saveAnswer({
           attempt_id: attempt.id,
@@ -199,9 +202,9 @@ describe('TestAttemptService - respuestas', () => {
     );
   });
 
-  it('no permite una opcion que no pertenece a la pregunta', () => {
-    const { attempts, testQuestions, attempt } = setupWithAttempt(1);
-    expectAttemptError(
+  it('no permite una opcion que no pertenece a la pregunta', async () => {
+    const { attempts, testQuestions, attempt } = await setupWithAttempt(1);
+    await expectAttemptError(
       () =>
         attempts.saveAnswer({
           attempt_id: attempt.id,
@@ -212,10 +215,10 @@ describe('TestAttemptService - respuestas', () => {
     );
   });
 
-  it('no permite modificar respuestas despues de enviar', () => {
-    const { attempts, testQuestions, attempt } = setupWithAttempt(1);
-    attempts.submitAttempt(attempt.id);
-    expectAttemptError(
+  it('no permite modificar respuestas despues de enviar', async () => {
+    const { attempts, testQuestions, attempt } = await setupWithAttempt(1);
+    await attempts.submitAttempt(attempt.id);
+    await expectAttemptError(
       () =>
         attempts.saveAnswer({
           attempt_id: attempt.id,
@@ -228,23 +231,23 @@ describe('TestAttemptService - respuestas', () => {
 });
 
 describe('TestAttemptService - envio y correccion', () => {
-  function setupAnswered() {
-    const ctx = makeSetup();
-    seedValidated(ctx.questions, 3);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+  async function setupAnswered() {
+    const ctx = await makeSetup();
+    await seedValidated(ctx.questions, 3);
+    const { test, questions: testQuestions } = await ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 3,
     });
-    const attempt = ctx.attempts.startAttempt(test.id);
+    const attempt = await ctx.attempts.startAttempt(test.id);
     const tq: PracticeTestQuestion[] = testQuestions;
     // Q0 correcta, Q1 incorrecta, Q2 sin responder.
-    const a0 = answerIds(ctx.questions, tq[0].question_id);
-    const a1 = answerIds(ctx.questions, tq[1].question_id);
-    ctx.attempts.saveAnswer({
+    const a0 = await answerIds(ctx.questions, tq[0].question_id);
+    const a1 = await answerIds(ctx.questions, tq[1].question_id);
+    await ctx.attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: tq[0].id,
       selected_option_id: a0.correct,
     });
-    ctx.attempts.saveAnswer({
+    await ctx.attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: tq[1].id,
       selected_option_id: a1.wrong,
@@ -252,9 +255,9 @@ describe('TestAttemptService - envio y correccion', () => {
     return { ...ctx, attempt };
   }
 
-  it('al enviar calcula aciertos, fallos, no respondidas y puntuacion', () => {
-    const { attempts, attempt } = setupAnswered();
-    const result = attempts.submitAttempt(attempt.id);
+  it('al enviar calcula aciertos, fallos, no respondidas y puntuacion', async () => {
+    const { attempts, attempt } = await setupAnswered();
+    const result = await attempts.submitAttempt(attempt.id);
     expect(result.correct_count).toBe(1);
     expect(result.incorrect_count).toBe(1);
     expect(result.unanswered_count).toBe(1);
@@ -262,19 +265,19 @@ describe('TestAttemptService - envio y correccion', () => {
     expect(result.status).toBe('submitted');
   });
 
-  it('no permite enviar dos veces', () => {
-    const { attempts, attempt } = setupAnswered();
-    attempts.submitAttempt(attempt.id);
-    expectAttemptError(
+  it('no permite enviar dos veces', async () => {
+    const { attempts, attempt } = await setupAnswered();
+    await attempts.submitAttempt(attempt.id);
+    await expectAttemptError(
       () => attempts.submitAttempt(attempt.id),
       TestAttemptErrorCode.ALREADY_SUBMITTED,
     );
   });
 
-  it('no permite enviar un intento cancelado', () => {
-    const { attempts, attempt } = setupAnswered();
-    attempts.cancelAttempt(attempt.id);
-    expectAttemptError(
+  it('no permite enviar un intento cancelado', async () => {
+    const { attempts, attempt } = await setupAnswered();
+    await attempts.cancelAttempt(attempt.id);
+    await expectAttemptError(
       () => attempts.submitAttempt(attempt.id),
       TestAttemptErrorCode.CANCELLED,
     );
@@ -282,15 +285,15 @@ describe('TestAttemptService - envio y correccion', () => {
 });
 
 describe('TestAttemptService - resultado, revision y cancelacion', () => {
-  function setupSubmitted() {
-    const ctx = makeSetup();
-    seedValidated(ctx.questions, 2);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+  async function setupSubmitted() {
+    const ctx = await makeSetup();
+    await seedValidated(ctx.questions, 2);
+    const { test, questions: testQuestions } = await ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 2,
     });
-    const attempt = ctx.attempts.startAttempt(test.id);
-    const a0 = answerIds(ctx.questions, testQuestions[0].question_id);
-    ctx.attempts.saveAnswer({
+    const attempt = await ctx.attempts.startAttempt(test.id);
+    const a0 = await answerIds(ctx.questions, testQuestions[0].question_id);
+    await ctx.attempts.saveAnswer({
       attempt_id: attempt.id,
       test_question_id: testQuestions[0].id,
       selected_option_id: a0.correct,
@@ -298,34 +301,34 @@ describe('TestAttemptService - resultado, revision y cancelacion', () => {
     return { ...ctx, attempt };
   }
 
-  it('consulta resultado despues de enviar', () => {
-    const { attempts, attempt } = setupSubmitted();
-    attempts.submitAttempt(attempt.id);
-    const result = attempts.getResult(attempt.id);
+  it('consulta resultado despues de enviar', async () => {
+    const { attempts, attempt } = await setupSubmitted();
+    await attempts.submitAttempt(attempt.id);
+    const result = await attempts.getResult(attempt.id);
     expect(result.attempt_id).toBe(attempt.id);
     expect(result.correct_count).toBe(1);
     expect(result.percentage).toBe(50);
   });
 
-  it('la revision muestra respuesta correcta y explicacion tras enviar', () => {
-    const { attempts, attempt } = setupSubmitted();
-    attempts.submitAttempt(attempt.id);
-    const review = attempts.getReview(attempt.id);
+  it('la revision muestra respuesta correcta y explicacion tras enviar', async () => {
+    const { attempts, attempt } = await setupSubmitted();
+    await attempts.submitAttempt(attempt.id);
+    const review = await attempts.getReview(attempt.id);
     expect(review.questions).toHaveLength(2);
     expect(review.questions[0].correct_option_id).toBeTruthy();
     expect(review.questions[0].explanation).toBeTruthy();
   });
 
-  it('no permite consultar revision antes de enviar', () => {
-    const { attempts, attempt } = setupSubmitted();
-    expectAttemptError(
+  it('no permite consultar revision antes de enviar', async () => {
+    const { attempts, attempt } = await setupSubmitted();
+    await expectAttemptError(
       () => attempts.getReview(attempt.id),
       TestAttemptErrorCode.REVIEW_NOT_AVAILABLE,
     );
   });
 
-  it('cancela un intento en progreso', () => {
-    const { attempts, attempt } = setupSubmitted();
-    expect(attempts.cancelAttempt(attempt.id).status).toBe('cancelled');
+  it('cancela un intento en progreso', async () => {
+    const { attempts, attempt } = await setupSubmitted();
+    expect((await attempts.cancelAttempt(attempt.id)).status).toBe('cancelled');
   });
 });

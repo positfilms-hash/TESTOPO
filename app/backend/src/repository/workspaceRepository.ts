@@ -1,9 +1,10 @@
 import type { Workspace } from '../models/workspace.js';
 
 export interface WorkspaceRepository {
-  create(workspace: Workspace): Workspace;
-  findById(id: string): Workspace | null;
-  findBySlug(slug: string): Workspace | null;
-  findAll(): Workspace[];
-  save(workspace: Workspace): Workspace;
+  create(workspace: Workspace): Promise<Workspace>;
+  findById(id: string): Promise<Workspace | null>;
+  findBySlug(slug: string): Promise<Workspace | null>;
+  findAll(): Promise<Workspace[]>;
+  save(workspace: Workspace): Promise<Workspace>;
 }
+

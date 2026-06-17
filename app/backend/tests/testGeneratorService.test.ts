@@ -17,15 +17,15 @@ import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 let seq = 0;
 
-function makeSetup() {
+async function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
   const topicRepository = new InMemoryTopicRepository();
   const questionRepository = new InMemoryQuestionRepository();
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
   const questions = new QuestionService(questionRepository, {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
   });
   // RNG determinista (LCG) para que los tests sean reproducibles.
   let s = 1;
@@ -43,35 +43,35 @@ function makeSetup() {
 }
 
 // Crea una pregunta valida y la deja en estado `validated` (pasando el gate).
-function makeValidated(
+async function makeValidated(
   questions: QuestionService,
   overrides: Partial<CreateQuestionInput> = {},
 ) {
-  const q = questions.createQuestion(
+  const q = await questions.createQuestion(
     validInput({ statement: `Pregunta ficticia numero ${++seq}`, ...overrides }),
   );
-  return questions.changeStatus(q.id, 'validated');
+  return await questions.changeStatus(q.id, 'validated');
 }
 
-function makeWithStatus(
+async function makeWithStatus(
   questions: QuestionService,
   status: QuestionStatus,
 ) {
-  const q = questions.createQuestion(
+  const q = await questions.createQuestion(
     validInput({ statement: `Pregunta ficticia numero ${++seq}` }),
   );
   if (status !== 'draft') {
-    questions.changeStatus(q.id, status);
+    await questions.changeStatus(q.id, status);
   }
-  return questions.getQuestion(q.id)!;
+  return (await questions.getQuestion(q.id))!;
 }
 
-function expectTestError(
+async function expectTestError(
   fn: () => unknown,
   code: TestGenerationErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(TestGenerationError);
     expect((error as TestGenerationError).codes).toContain(code);
@@ -81,16 +81,16 @@ function expectTestError(
 }
 
 describe('TestGeneratorService - creacion y validacion', () => {
-  it('crea un test aleatorio con preguntas validadas', () => {
-    const { questions, generator } = makeSetup();
+  it('crea un test aleatorio con preguntas validadas', async () => {
+    const { questions, generator } = await makeSetup();
     const validated = [
-      makeValidated(questions),
-      makeValidated(questions),
-      makeValidated(questions),
+      await makeValidated(questions),
+      await makeValidated(questions),
+      await makeValidated(questions),
     ];
     const validatedIds = new Set(validated.map((q) => q.id));
 
-    const { test, questions: items } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+    const { test, questions: items } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 3,
     });
 
@@ -100,18 +100,18 @@ describe('TestGeneratorService - creacion y validacion', () => {
     expect(items.every((i) => validatedIds.has(i.question_id))).toBe(true);
   });
 
-  it('excluye preguntas no validadas (draft/pending_review/needs_fix/rejected/obsolete)', () => {
-    const { questions, generator } = makeSetup();
-    const validated = makeValidated(questions);
+  it('excluye preguntas no validadas (draft/pending_review/needs_fix/rejected/obsolete)', async () => {
+    const { questions, generator } = await makeSetup();
+    const validated = await makeValidated(questions);
     const excluded = [
-      makeWithStatus(questions, 'draft'),
-      makeWithStatus(questions, 'pending_review'),
-      makeWithStatus(questions, 'needs_fix'),
-      makeWithStatus(questions, 'rejected'),
-      makeWithStatus(questions, 'obsolete'),
+      await makeWithStatus(questions, 'draft'),
+      await makeWithStatus(questions, 'pending_review'),
+      await makeWithStatus(questions, 'needs_fix'),
+      await makeWithStatus(questions, 'rejected'),
+      await makeWithStatus(questions, 'obsolete'),
     ];
 
-    const { questions: items } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+    const { questions: items } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 1,
     });
     const selectedIds = items.map((i) => i.question_id);
@@ -122,35 +122,35 @@ describe('TestGeneratorService - creacion y validacion', () => {
     }
   });
 
-  it('falla si no hay suficientes preguntas validadas', () => {
-    const { questions, generator } = makeSetup();
-    makeValidated(questions);
-    expectTestError(
+  it('falla si no hay suficientes preguntas validadas', async () => {
+    const { questions, generator } = await makeSetup();
+    await makeValidated(questions);
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 5 }),
       TestGenerationErrorCode.NOT_ENOUGH_VALIDATED_QUESTIONS,
     );
   });
 
-  it('falla con question_count menor que 1', () => {
-    const { generator } = makeSetup();
-    expectTestError(
+  it('falla con question_count menor que 1', async () => {
+    const { generator } = await makeSetup();
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 0 }),
       TestGenerationErrorCode.INVALID_QUESTION_COUNT,
     );
   });
 
-  it('falla con question_count mayor que 100', () => {
-    const { generator } = makeSetup();
-    expectTestError(
+  it('falla con question_count mayor que 100', async () => {
+    const { generator } = await makeSetup();
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 101 }),
       TestGenerationErrorCode.MAX_QUESTION_COUNT_EXCEEDED,
     );
   });
 
-  it('un test no contiene preguntas duplicadas', () => {
-    const { questions, generator } = makeSetup();
-    for (let i = 0; i < 5; i++) makeValidated(questions);
-    const { questions: items } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
+  it('un test no contiene preguntas duplicadas', async () => {
+    const { questions, generator } = await makeSetup();
+    for (let i = 0; i < 5; i++) await makeValidated(questions);
+    const { questions: items } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 5,
     });
     const ids = items.map((i) => i.question_id);
@@ -159,17 +159,17 @@ describe('TestGeneratorService - creacion y validacion', () => {
 });
 
 describe('TestGeneratorService - filtros', () => {
-  it('crea un test filtrando por tema', () => {
-    const { topics, questions, generator } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+  it('crea un test filtrando por tema', async () => {
+    const { topics, questions, generator } = await makeSetup();
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
     const inTopic = [
-      makeValidated(questions, { topic_id: topic.id }),
-      makeValidated(questions, { topic_id: topic.id }),
+      await makeValidated(questions, { topic_id: topic.id }),
+      await makeValidated(questions, { topic_id: topic.id }),
     ];
-    makeValidated(questions); // sin topic_id, no debe entrar
+    await makeValidated(questions); // sin topic_id, no debe entrar
     const inTopicIds = new Set(inTopic.map((q) => q.id));
 
-    const { test, questions: items } = generator.createTestByTopic({ opposition_id: TEST_OPPOSITION_ID,
+    const { test, questions: items } = await generator.createTestByTopic({ opposition_id: TEST_OPPOSITION_ID,
       topic_id: topic.id,
       question_count: 2,
     });
@@ -178,12 +178,12 @@ describe('TestGeneratorService - filtros', () => {
     expect(items.every((i) => inTopicIds.has(i.question_id))).toBe(true);
   });
 
-  it('crea un test filtrando por dificultad', () => {
-    const { questions, generator } = makeSetup();
-    makeValidated(questions, { difficulty: 'easy' });
-    const hard = makeValidated(questions, { difficulty: 'hard' });
+  it('crea un test filtrando por dificultad', async () => {
+    const { questions, generator } = await makeSetup();
+    await makeValidated(questions, { difficulty: 'easy' });
+    const hard = await makeValidated(questions, { difficulty: 'hard' });
 
-    const { questions: items } = generator.createTestByDifficulty({ opposition_id: TEST_OPPOSITION_ID,
+    const { questions: items } = await generator.createTestByDifficulty({ opposition_id: TEST_OPPOSITION_ID,
       difficulty: 'hard',
       question_count: 1,
     });
@@ -191,16 +191,16 @@ describe('TestGeneratorService - filtros', () => {
     expect(items.map((i) => i.question_id)).toEqual([hard.id]);
   });
 
-  it('crea un test con dificultad mixed', () => {
-    const { questions, generator } = makeSetup();
+  it('crea un test con dificultad mixed', async () => {
+    const { questions, generator } = await makeSetup();
     for (let i = 0; i < 5; i++)
-      makeValidated(questions, { difficulty: 'easy' });
+      await makeValidated(questions, { difficulty: 'easy' });
     for (let i = 0; i < 5; i++)
-      makeValidated(questions, { difficulty: 'medium' });
+      await makeValidated(questions, { difficulty: 'medium' });
     for (let i = 0; i < 5; i++)
-      makeValidated(questions, { difficulty: 'hard' });
+      await makeValidated(questions, { difficulty: 'hard' });
 
-    const { questions: items } = generator.createMixedTest({ opposition_id: TEST_OPPOSITION_ID,
+    const { questions: items } = await generator.createMixedTest({ opposition_id: TEST_OPPOSITION_ID,
       difficulty: 'mixed',
       question_count: 10,
     });
@@ -209,9 +209,9 @@ describe('TestGeneratorService - filtros', () => {
     expect(new Set(items.map((i) => i.question_id)).size).toBe(10);
   });
 
-  it('falla si el tema no existe', () => {
-    const { generator } = makeSetup();
-    expectTestError(
+  it('falla si el tema no existe', async () => {
+    const { generator } = await makeSetup();
+    await expectTestError(
       () =>
         generator.createTestByTopic({ opposition_id: TEST_OPPOSITION_ID,
           topic_id: 'no-existe',
@@ -221,11 +221,11 @@ describe('TestGeneratorService - filtros', () => {
     );
   });
 
-  it('falla si el tema esta obsoleto', () => {
-    const { topics, generator } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
-    topics.markObsolete(topic.id);
-    expectTestError(
+  it('falla si el tema esta obsoleto', async () => {
+    const { topics, generator } = await makeSetup();
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
+    await topics.markObsolete(topic.id);
+    await expectTestError(
       () =>
         generator.createTestByTopic({ opposition_id: TEST_OPPOSITION_ID,
           topic_id: topic.id,
@@ -237,9 +237,9 @@ describe('TestGeneratorService - filtros', () => {
 });
 
 describe('TestGeneratorService - exclusiones por obsolescencia', () => {
-  it('excluye preguntas con material obsoleto', () => {
-    const { materials, questions, generator } = makeSetup();
-    const material = materials.createMaterial({
+  it('excluye preguntas con material obsoleto', async () => {
+    const { materials, questions, generator } = await makeSetup();
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Material ficticio',
       type: 'syllabus',
@@ -254,32 +254,32 @@ describe('TestGeneratorService - exclusiones por obsolescencia', () => {
       excerpt: 'fragmento',
       status: 'active',
     };
-    makeValidated(questions, { source }); // valida con material activo
-    materials.markObsolete(material.id); // luego el material se vuelve obsoleto
+    await makeValidated(questions, { source }); // valida con material activo
+    await materials.markObsolete(material.id); // luego el material se vuelve obsoleto
 
-    expectTestError(
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 }),
       TestGenerationErrorCode.NOT_ENOUGH_VALIDATED_QUESTIONS,
     );
   });
 
-  it('excluye preguntas con tema obsoleto', () => {
-    const { topics, questions, generator } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
-    makeValidated(questions, { topic_id: topic.id }); // valida con tema activo
-    topics.markObsolete(topic.id);
+  it('excluye preguntas con tema obsoleto', async () => {
+    const { topics, questions, generator } = await makeSetup();
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    await makeValidated(questions, { topic_id: topic.id }); // valida con tema activo
+    await topics.markObsolete(topic.id);
 
-    expectTestError(
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 }),
       TestGenerationErrorCode.NOT_ENOUGH_VALIDATED_QUESTIONS,
     );
   });
 
-  it('excluye preguntas con fuente obsoleta', () => {
-    const { questions, generator } = makeSetup();
-    const q = makeValidated(questions);
+  it('excluye preguntas con fuente obsoleta', async () => {
+    const { questions, generator } = await makeSetup();
+    const q = await makeValidated(questions);
     // La fuente se vuelve obsoleta despues de validar (editar no revalida).
-    questions.editQuestion(q.id, {
+    await questions.editQuestion(q.id, {
       source: {
         id: 'src',
         title: 'Norma derogada',
@@ -288,7 +288,7 @@ describe('TestGeneratorService - exclusiones por obsolescencia', () => {
         status: 'obsolete',
       },
     });
-    expectTestError(
+    await expectTestError(
       () => generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 }),
       TestGenerationErrorCode.NOT_ENOUGH_VALIDATED_QUESTIONS,
     );
@@ -296,12 +296,12 @@ describe('TestGeneratorService - exclusiones por obsolescencia', () => {
 });
 
 describe('TestGeneratorService - consulta y cancelacion', () => {
-  it('consulta un test sin exponer la respuesta correcta', () => {
-    const { questions, generator } = makeSetup();
-    makeValidated(questions);
-    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
+  it('consulta un test sin exponer la respuesta correcta', async () => {
+    const { questions, generator } = await makeSetup();
+    await makeValidated(questions);
+    const { test } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
 
-    const view = generator.getTest(test.id);
+    const view = await generator.getTest(test.id);
 
     expect(view.test.id).toBe(test.id);
     expect(view.questions).toHaveLength(1);
@@ -316,11 +316,11 @@ describe('TestGeneratorService - consulta y cancelacion', () => {
     ).toBeUndefined();
   });
 
-  it('cancela un test', () => {
-    const { questions, generator } = makeSetup();
-    makeValidated(questions);
-    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
+  it('cancela un test', async () => {
+    const { questions, generator } = await makeSetup();
+    await makeValidated(questions);
+    const { test } = await generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
 
-    expect(generator.cancelTest(test.id).status).toBe('cancelled');
+    expect((await generator.cancelTest(test.id)).status).toBe('cancelled');
   });
 });

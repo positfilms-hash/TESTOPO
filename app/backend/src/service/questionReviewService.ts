@@ -101,13 +101,13 @@ export class QuestionReviewService {
 
   // 9.1 Listar preguntas para revisar. Por defecto solo draft/pending_review/
   // needs_fix; con filtro de estado puede pedirse cualquiera.
-  listForReview(filter: ReviewListFilter = {}): Question[] {
+  async listForReview(filter: ReviewListFilter = {}): Promise<Question[]> {
     const statuses = filter.status
       ? [filter.status]
       : REVIEW_QUEUE_STATUSES;
     const search = filter.search?.trim().toLowerCase();
 
-    return this.questions.listQuestions().filter((question) => {
+    return (await this.questions.listQuestions()).filter((question) => {
       if (!statuses.includes(question.status)) {
         return false;
       }
@@ -129,38 +129,38 @@ export class QuestionReviewService {
   }
 
   // 9.2 Detalle completo para revision.
-  getReviewDetail(questionId: string): ReviewDetail {
-    const question = this.requireQuestion(questionId);
+  async getReviewDetail(questionId: string): Promise<ReviewDetail> {
+    const question = await this.requireQuestion(questionId);
     const materialId = question.source?.material_id;
     return {
       question,
-      material: materialId ? this.materials.findById(materialId) : null,
+      material: materialId ? await this.materials.findById(materialId) : null,
       topic: question.topic_id
-        ? this.topics.findById(question.topic_id)
+        ? await this.topics.findById(question.topic_id)
         : null,
-      last_validation: this.validation.getLastReport(questionId),
-      reviews: this.reviews.findByQuestion(questionId),
+      last_validation: await this.validation.getLastReport(questionId),
+      reviews: await this.reviews.findByQuestion(questionId),
     };
   }
 
   // 9.3 Editar desde revision. Nunca deja la pregunta en `validated`: tras
   // editar queda en `pending_review` (si pasa validacion) o `draft`.
-  editFromReview(
+  async editFromReview(
     questionId: string,
     changes: EditQuestionInput,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
-    const existing = this.requireQuestion(questionId);
+  ): Promise<ReviewActionResult> {
+    const existing = await this.requireQuestion(questionId);
     const previousStatus = existing.status;
 
-    this.questions.editQuestion(questionId, changes);
-    const validation = this.validation.validateQuestion(questionId);
+    await this.questions.editQuestion(questionId, changes);
+    const validation = await this.validation.validateQuestion(questionId);
     const newStatus: QuestionStatus = validation.passed
       ? 'pending_review'
       : 'draft';
-    const question = this.questions.changeStatus(questionId, newStatus);
+    const question = await this.questions.changeStatus(questionId, newStatus);
 
-    const review = this.recordReview(
+    const review = await this.recordReview(
       questionId,
       'edit',
       previousStatus,
@@ -172,14 +172,14 @@ export class QuestionReviewService {
   }
 
   // 9.4 Aprobar: unica via a `validated`. Reusa la validacion de SPEC 005.
-  approve(
+  async approve(
     questionId: string,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
-    const existing = this.requireQuestion(questionId);
+  ): Promise<ReviewActionResult> {
+    const existing = await this.requireQuestion(questionId);
     this.assertTransition(existing.status, 'validated');
 
-    const validation = this.validation.validateQuestion(questionId);
+    const validation = await this.validation.validateQuestion(questionId);
     if (!validation.passed) {
       throw new QuestionReviewError(
         [QuestionReviewErrorCode.APPROVAL_BLOCKED],
@@ -187,8 +187,8 @@ export class QuestionReviewService {
       );
     }
 
-    const question = this.questions.changeStatus(questionId, 'validated');
-    const review = this.recordReview(
+    const question = await this.questions.changeStatus(questionId, 'validated');
+    const review = await this.recordReview(
       questionId,
       'approve',
       existing.status,
@@ -203,7 +203,7 @@ export class QuestionReviewService {
   reject(
     questionId: string,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
+  ): Promise<ReviewActionResult> {
     return this.transition(questionId, 'rejected', 'reject', input);
   }
 
@@ -211,7 +211,7 @@ export class QuestionReviewService {
   markNeedsFix(
     questionId: string,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
+  ): Promise<ReviewActionResult> {
     return this.transition(questionId, 'needs_fix', 'mark_needs_fix', input);
   }
 
@@ -219,17 +219,17 @@ export class QuestionReviewService {
   markObsolete(
     questionId: string,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
+  ): Promise<ReviewActionResult> {
     return this.transition(questionId, 'obsolete', 'mark_obsolete', input);
   }
 
   // 9.8 Devolver a pendiente de revision. Solo si pasa la validacion formal
   // minima (no exige resolucion de fuente/tema).
-  returnToPendingReview(
+  async returnToPendingReview(
     questionId: string,
     input: ReviewActionInput = {},
-  ): ReviewActionResult {
-    const existing = this.requireQuestion(questionId);
+  ): Promise<ReviewActionResult> {
+    const existing = await this.requireQuestion(questionId);
     this.assertTransition(existing.status, 'pending_review');
 
     const formalErrors = formalFindings(existing);
@@ -239,8 +239,11 @@ export class QuestionReviewService {
       ]);
     }
 
-    const question = this.questions.changeStatus(questionId, 'pending_review');
-    const review = this.recordReview(
+    const question = await this.questions.changeStatus(
+      questionId,
+      'pending_review',
+    );
+    const review = await this.recordReview(
       questionId,
       'return_to_pending_review',
       existing.status,
@@ -251,21 +254,21 @@ export class QuestionReviewService {
     return { question, review };
   }
 
-  listReviews(questionId: string): QuestionReview[] {
+  async listReviews(questionId: string): Promise<QuestionReview[]> {
     return this.reviews.findByQuestion(questionId);
   }
 
   // Transicion simple (reject / needs_fix / obsolete) con registro.
-  private transition(
+  private async transition(
     questionId: string,
     newStatus: QuestionStatus,
     action: ReviewAction,
     input: ReviewActionInput,
-  ): ReviewActionResult {
-    const existing = this.requireQuestion(questionId);
+  ): Promise<ReviewActionResult> {
+    const existing = await this.requireQuestion(questionId);
     this.assertTransition(existing.status, newStatus);
-    const question = this.questions.changeStatus(questionId, newStatus);
-    const review = this.recordReview(
+    const question = await this.questions.changeStatus(questionId, newStatus);
+    const review = await this.recordReview(
       questionId,
       action,
       existing.status,
@@ -282,14 +285,14 @@ export class QuestionReviewService {
     }
   }
 
-  private recordReview(
+  private async recordReview(
     questionId: string,
     action: ReviewAction,
     previousStatus: QuestionStatus,
     newStatus: QuestionStatus,
     input: ReviewActionInput,
     validationResultId: string | null,
-  ): QuestionReview {
+  ): Promise<QuestionReview> {
     return this.reviews.create({
       id: this.generateId(),
       question_id: questionId,
@@ -303,8 +306,8 @@ export class QuestionReviewService {
     });
   }
 
-  private requireQuestion(questionId: string): Question {
-    const question = this.questions.getQuestion(questionId);
+  private async requireQuestion(questionId: string): Promise<Question> {
+    const question = await this.questions.getQuestion(questionId);
     if (!question) {
       throw new QuestionReviewError([
         QuestionReviewErrorCode.QUESTION_NOT_FOUND,

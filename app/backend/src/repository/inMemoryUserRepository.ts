@@ -4,17 +4,17 @@ import type { UserRepository } from './userRepository.js';
 export class InMemoryUserRepository implements UserRepository {
   private readonly users = new Map<string, User>();
 
-  create(user: User): User {
+  async create(user: User): Promise<User> {
     this.users.set(user.id, clone(user));
     return clone(user);
   }
 
-  findById(id: string): User | null {
+  async findById(id: string): Promise<User | null> {
     const user = this.users.get(id);
     return user ? clone(user) : null;
   }
 
-  findByEmail(email: string): User | null {
+  async findByEmail(email: string): Promise<User | null> {
     const needle = email.trim().toLowerCase();
     for (const user of this.users.values()) {
       if (user.email.toLowerCase() === needle) {
@@ -24,7 +24,7 @@ export class InMemoryUserRepository implements UserRepository {
     return null;
   }
 
-  save(user: User): User {
+  async save(user: User): Promise<User> {
     this.users.set(user.id, clone(user));
     return clone(user);
   }
@@ -33,3 +33,4 @@ export class InMemoryUserRepository implements UserRepository {
 function clone(user: User): User {
   return structuredClone(user);
 }
+

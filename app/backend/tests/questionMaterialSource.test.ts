@@ -16,8 +16,7 @@ function makeWiredServices(): {
 } {
   const materials = new MaterialService(new InMemoryMaterialRepository());
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
-    resolveMaterialStatus: (materialId) =>
-      materials.getMaterial(materialId)?.status ?? null,
+    resolveMaterialStatus: async (materialId) => (await materials.getMaterial(materialId))?.status ?? null,
   });
   return { questions, materials };
 }
@@ -35,37 +34,37 @@ function sourceForMaterial(materialId: string): Source {
 }
 
 describe('Question source vinculada a material', () => {
-  it('valida una pregunta cuya fuente apunta a material activo', () => {
+  it('valida una pregunta cuya fuente apunta a material activo', async () => {
     const { questions, materials } = makeWiredServices();
-    const material = materials.createMaterial({
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Tema 1 - Documento ficticio',
       type: 'syllabus',
     });
-    const question = questions.createQuestion(
+    const question = await questions.createQuestion(
       validInput({ source: sourceForMaterial(material.id) }),
     );
 
-    const validated = questions.changeStatus(question.id, 'validated');
+    const validated = await questions.changeStatus(question.id, 'validated');
 
     expect(validated.status).toBe('validated');
   });
 
-  it('no valida una pregunta cuya fuente apunta a material obsolete', () => {
+  it('no valida una pregunta cuya fuente apunta a material obsolete', async () => {
     const { questions, materials } = makeWiredServices();
-    const material = materials.createMaterial({
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Norma ficticia derogada',
       type: 'law',
     });
-    const question = questions.createQuestion(
+    const question = await questions.createQuestion(
       validInput({ source: sourceForMaterial(material.id) }),
     );
 
-    materials.markObsolete(material.id);
+    await materials.markObsolete(material.id);
 
     try {
-      questions.changeStatus(question.id, 'validated');
+      await questions.changeStatus(question.id, 'validated');
     } catch (error) {
       expect(error).toBeInstanceOf(QuestionValidationError);
       expect((error as QuestionValidationError).errors).toContain(

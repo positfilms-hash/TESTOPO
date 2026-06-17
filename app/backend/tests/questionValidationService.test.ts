@@ -45,148 +45,148 @@ function hasWarning(
 }
 
 // Crea una pregunta (draft) a partir del input valido base con overrides.
-function createQuestion(
+async function createQuestion(
   questions: QuestionService,
   overrides: Partial<CreateQuestionInput> = {},
 ) {
-  return questions.createQuestion(validInput(overrides));
+  return await questions.createQuestion(validInput(overrides));
 }
 
 describe('QuestionValidationService - validacion formal', () => {
-  it('una pregunta correcta pasa sin errores criticos', () => {
+  it('una pregunta correcta pasa sin errores criticos', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions);
+    const q = await createQuestion(questions);
 
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
 
     expect(result.passed).toBe(true);
     expect(result.errors).toHaveLength(0);
     expect(result.recommended_status).toBe('pending_review');
   });
 
-  it('sin enunciado falla', () => {
+  it('sin enunciado falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { statement: '   ' });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { statement: '   ' });
+    const result = await validation.validateQuestion(q.id);
     expect(result.passed).toBe(false);
     expect(hasError(result, QuestionValidationCode.STATEMENT_REQUIRED)).toBe(
       true,
     );
   });
 
-  it('sin opciones falla', () => {
+  it('sin opciones falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { options: [] });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { options: [] });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.OPTIONS_REQUIRED)).toBe(
       true,
     );
   });
 
-  it('con menos de 2 opciones falla', () => {
+  it('con menos de 2 opciones falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, {
+    const q = await createQuestion(questions, {
       options: [{ text: 'Unica', is_correct: true }],
     });
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.MIN_OPTIONS_NOT_MET)).toBe(
       true,
     );
   });
 
-  it('con cero respuestas correctas falla', () => {
+  it('con cero respuestas correctas falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, {
+    const q = await createQuestion(questions, {
       options: [
         { text: 'A', is_correct: false },
         { text: 'B', is_correct: false },
       ],
     });
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
     expect(
       hasError(result, QuestionValidationCode.SINGLE_CORRECT_OPTION_REQUIRED),
     ).toBe(true);
   });
 
-  it('con mas de una respuesta correcta falla', () => {
+  it('con mas de una respuesta correcta falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, {
+    const q = await createQuestion(questions, {
       options: [
         { text: 'A', is_correct: true },
         { text: 'B', is_correct: true },
       ],
     });
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
     expect(
       hasError(result, QuestionValidationCode.SINGLE_CORRECT_OPTION_REQUIRED),
     ).toBe(true);
   });
 
-  it('sin explicacion falla', () => {
+  it('sin explicacion falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { explanation: null });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { explanation: null });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.EXPLANATION_REQUIRED)).toBe(
       true,
     );
   });
 
-  it('sin fuente falla', () => {
+  it('sin fuente falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { source: null });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { source: null });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.SOURCE_REQUIRED)).toBe(true);
   });
 
-  it('sin tema falla', () => {
+  it('sin tema falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { topic: null });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { topic: null });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.TOPIC_REQUIRED)).toBe(true);
   });
 
-  it('sin dificultad falla', () => {
+  it('sin dificultad falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { difficulty: null });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { difficulty: null });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.DIFFICULTY_REQUIRED)).toBe(
       true,
     );
   });
 
-  it('con dificultad invalida falla (mixed no es valida)', () => {
+  it('con dificultad invalida falla (mixed no es valida)', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, {
+    const q = await createQuestion(questions, {
       difficulty: 'mixed' as Difficulty,
     });
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.INVALID_DIFFICULTY)).toBe(
       true,
     );
   });
 
-  it('con opciones duplicadas falla', () => {
+  it('con opciones duplicadas falla', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, {
+    const q = await createQuestion(questions, {
       options: [
         { text: 'Madrid', is_correct: true },
         { text: ' madrid ', is_correct: false },
         { text: 'Sevilla', is_correct: false },
       ],
     });
-    const result = validation.validateQuestion(q.id);
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.DUPLICATE_OPTIONS)).toBe(
       true,
     );
   });
 
-  it('con enunciado duplicado exacto falla', () => {
+  it('con enunciado duplicado exacto falla', async () => {
     const { questions, validation } = makeSetup();
-    createQuestion(questions, { statement: 'Mismo enunciado ficticio comun' });
-    const second = createQuestion(questions, {
+    await createQuestion(questions, { statement: 'Mismo enunciado ficticio comun' });
+    const second = await createQuestion(questions, {
       statement: 'Mismo enunciado ficticio comun',
     });
-    const result = validation.validateQuestion(second.id);
+    const result = await validation.validateQuestion(second.id);
     expect(hasError(result, QuestionValidationCode.DUPLICATE_STATEMENT)).toBe(
       true,
     );
@@ -194,7 +194,7 @@ describe('QuestionValidationService - validacion formal', () => {
 });
 
 describe('QuestionValidationService - fuente y tema', () => {
-  it('con fuente obsoleta falla', () => {
+  it('con fuente obsoleta falla', async () => {
     const { questions, validation } = makeSetup();
     const source: Source = {
       id: 'src-old',
@@ -203,20 +203,20 @@ describe('QuestionValidationService - fuente y tema', () => {
       reference: 'Ley ficticia',
       status: 'obsolete',
     };
-    const q = createQuestion(questions, { source });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { source });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.SOURCE_OBSOLETE)).toBe(true);
   });
 
-  it('con material vinculado obsoleto falla', () => {
+  it('con material vinculado obsoleto falla', async () => {
     const { materials, questions, validation } = makeSetup();
-    const material = materials.createMaterial({
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Material ficticio',
       type: 'syllabus',
       content_text: 'texto',
     });
-    materials.markObsolete(material.id);
+    await materials.markObsolete(material.id);
     const source: Source = {
       id: 'src-mat',
       material_id: material.id,
@@ -226,28 +226,28 @@ describe('QuestionValidationService - fuente y tema', () => {
       excerpt: 'fragmento',
       status: 'active',
     };
-    const q = createQuestion(questions, { source });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { source });
+    const result = await validation.validateQuestion(q.id);
     expect(
       hasError(result, QuestionValidationCode.SOURCE_MATERIAL_OBSOLETE),
     ).toBe(true);
   });
 
-  it('con tema obsoleto (topic_id) falla', () => {
+  it('con tema obsoleto (topic_id) falla', async () => {
     const { topics, questions, validation } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
-    topics.markObsolete(topic.id);
-    const q = createQuestion(questions, { topic_id: topic.id });
-    const result = validation.validateQuestion(q.id);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
+    await topics.markObsolete(topic.id);
+    const q = await createQuestion(questions, { topic_id: topic.id });
+    const result = await validation.validateQuestion(q.id);
     expect(hasError(result, QuestionValidationCode.TOPIC_OBSOLETE)).toBe(true);
   });
 });
 
 describe('QuestionValidationService - advertencias', () => {
-  it('explicacion muy corta genera warning', () => {
+  it('explicacion muy corta genera warning', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { explanation: 'Corto.' });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { explanation: 'Corto.' });
+    const result = await validation.validateQuestion(q.id);
     expect(result.passed).toBe(true);
     expect(hasWarning(result, QuestionValidationCode.EXPLANATION_TOO_SHORT)).toBe(
       true,
@@ -255,10 +255,10 @@ describe('QuestionValidationService - advertencias', () => {
     expect(result.status).toBe('passed_with_warnings');
   });
 
-  it('enunciado muy corto genera warning', () => {
+  it('enunciado muy corto genera warning', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { statement: 'Corto?' });
-    const result = validation.validateQuestion(q.id);
+    const q = await createQuestion(questions, { statement: 'Corto?' });
+    const result = await validation.validateQuestion(q.id);
     expect(hasWarning(result, QuestionValidationCode.STATEMENT_TOO_SHORT)).toBe(
       true,
     );
@@ -266,46 +266,46 @@ describe('QuestionValidationService - advertencias', () => {
 });
 
 describe('QuestionValidationService - aplicar resultado', () => {
-  it('con errores criticos cambia la pregunta a needs_fix', () => {
+  it('con errores criticos cambia la pregunta a needs_fix', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions, { explanation: null });
-    const { question } = validation.applyValidation(q.id);
+    const q = await createQuestion(questions, { explanation: null });
+    const { question } = await validation.applyValidation(q.id);
     expect(question.status).toBe('needs_fix');
   });
 
-  it('sin errores criticos cambia la pregunta a pending_review', () => {
+  it('sin errores criticos cambia la pregunta a pending_review', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions);
-    const { question } = validation.applyValidation(q.id);
+    const q = await createQuestion(questions);
+    const { question } = await validation.applyValidation(q.id);
     expect(question.status).toBe('pending_review');
   });
 
-  it('aplicar resultado nunca pasa la pregunta a validated', () => {
+  it('aplicar resultado nunca pasa la pregunta a validated', async () => {
     const { questions, validation } = makeSetup();
-    const valid = createQuestion(questions);
-    const invalid = createQuestion(questions, { source: null });
-    expect(validation.applyValidation(valid.id).question.status).not.toBe(
+    const valid = await createQuestion(questions);
+    const invalid = await createQuestion(questions, { source: null });
+    expect((await validation.applyValidation(valid.id)).question.status).not.toBe(
       'validated',
     );
-    expect(validation.applyValidation(invalid.id).question.status).not.toBe(
+    expect((await validation.applyValidation(invalid.id)).question.status).not.toBe(
       'validated',
     );
   });
 
-  it('guarda y recupera el ultimo informe (historial)', () => {
+  it('guarda y recupera el ultimo informe (historial)', async () => {
     const { questions, validation } = makeSetup();
-    const q = createQuestion(questions);
-    validation.validateQuestion(q.id);
-    const last = validation.getLastReport(q.id);
+    const q = await createQuestion(questions);
+    await validation.validateQuestion(q.id);
+    const last = await validation.getLastReport(q.id);
     expect(last?.question_id).toBe(q.id);
     expect(last?.validator_version).toBe('quality-gate-1');
   });
 
-  it('valida un lote sin detenerse por preguntas inexistentes', () => {
+  it('valida un lote sin detenerse por preguntas inexistentes', async () => {
     const { questions, validation } = makeSetup();
-    const a = createQuestion(questions);
-    const b = createQuestion(questions, { source: null });
-    const results = validation.validateMany([a.id, 'no-existe', b.id]);
+    const a = await createQuestion(questions);
+    const b = await createQuestion(questions, { source: null });
+    const results = await validation.validateMany([a.id, 'no-existe', b.id]);
     expect(results).toHaveLength(2);
   });
 });

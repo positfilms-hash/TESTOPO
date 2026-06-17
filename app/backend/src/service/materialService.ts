@@ -75,7 +75,7 @@ export class MaterialService {
   }
 
   // 9.1 Crear material manual. `status` por defecto es `active`.
-  createMaterial(input: CreateMaterialInput): Material {
+  async createMaterial(input: CreateMaterialInput): Promise<Material> {
     const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({
@@ -107,7 +107,7 @@ export class MaterialService {
   // 9.2 Registrar un archivo como material. No mueve el archivo: solo guarda
   // sus metadatos y la ruta de almacenamiento (que debe estar fuera del repo).
   // Para .txt/.md puede guardarse el texto; .pdf/.docx quedan sin extraer.
-  registerFileMaterial(input: RegisterFileInput): Material {
+  async registerFileMaterial(input: RegisterFileInput): Promise<Material> {
     const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({
@@ -152,19 +152,19 @@ export class MaterialService {
   }
 
   // 9.3 Listar materiales, con filtros opcionales por tipo y estado.
-  listMaterials(filter: MaterialFilter = {}): Material[] {
+  async listMaterials(filter: MaterialFilter = {}): Promise<Material[]> {
     return this.repository.findAll(filter);
   }
 
   // 9.4 Ver material por id.
-  getMaterial(id: string): Material | null {
+  async getMaterial(id: string): Promise<Material | null> {
     return this.repository.findById(id);
   }
 
   // 9.5 Editar material. Actualiza siempre `updated_at`. Pasar `null` en un
   // campo opcional lo limpia; omitirlo lo deja intacto.
-  editMaterial(id: string, changes: EditMaterialInput): Material {
-    const existing = this.requireMaterial(id);
+  async editMaterial(id: string, changes: EditMaterialInput): Promise<Material> {
+    const existing = await this.requireMaterial(id);
 
     const nextTitle = changes.title ?? existing.title;
     const nextType = changes.type ?? existing.type;
@@ -198,8 +198,8 @@ export class MaterialService {
   }
 
   // 9.6 Cambiar estado del material.
-  changeStatus(id: string, status: MaterialStatus): Material {
-    const existing = this.requireMaterial(id);
+  async changeStatus(id: string, status: MaterialStatus): Promise<Material> {
+    const existing = await this.requireMaterial(id);
     this.assertValidMetadata({
       title: existing.title,
       type: existing.type,
@@ -215,12 +215,12 @@ export class MaterialService {
   }
 
   // 9.7 Marcar como obsoleto (atajo de changeStatus). No se borra fisicamente.
-  markObsolete(id: string): Material {
+  async markObsolete(id: string): Promise<Material> {
     return this.changeStatus(id, 'obsolete');
   }
 
-  private requireMaterial(id: string): Material {
-    const material = this.repository.findById(id);
+  private async requireMaterial(id: string): Promise<Material> {
+    const material = await this.repository.findById(id);
     if (!material) {
       throw new Error(`Material not found: ${id}`);
     }

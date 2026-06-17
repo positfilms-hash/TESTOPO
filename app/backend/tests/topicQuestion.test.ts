@@ -20,30 +20,30 @@ function makeWiredServices(): {
   const questionRepository = new InMemoryQuestionRepository();
   const topics = new TopicService(topicRepository, { questionRepository });
   const questions = new QuestionService(questionRepository, {
-    resolveTopicStatus: (topicId) => topics.getTopic(topicId)?.status ?? null,
+    resolveTopicStatus: async (topicId) => (await topics.getTopic(topicId))?.status ?? null,
   });
   return { topics, questions };
 }
 
 describe('Topic <-> Question', () => {
-  it('vincula una pregunta a un tema existente', () => {
+  it('vincula una pregunta a un tema existente', async () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
-    const question = questions.createQuestion(validInput());
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const question = await questions.createQuestion(validInput());
 
-    topics.assignTopicToQuestion(question.id, topic.id);
+    await topics.assignTopicToQuestion(question.id, topic.id);
 
-    const updated = questions.getQuestion(question.id);
+    const updated = await questions.getQuestion(question.id);
     expect(updated?.topic_id).toBe(topic.id);
     expect(updated?.topic).toBe('Tema 1');
   });
 
-  it('no permite vincular una pregunta a un tema inexistente', () => {
+  it('no permite vincular una pregunta a un tema inexistente', async () => {
     const { topics, questions } = makeWiredServices();
-    const question = questions.createQuestion(validInput());
+    const question = await questions.createQuestion(validInput());
 
     try {
-      topics.assignTopicToQuestion(question.id, 'no-existe');
+      await topics.assignTopicToQuestion(question.id, 'no-existe');
     } catch (error) {
       expect(error).toBeInstanceOf(TopicValidationError);
       expect((error as TopicValidationError).errors).toContain(
@@ -54,12 +54,12 @@ describe('Topic <-> Question', () => {
     throw new Error('Expected TopicValidationError to be thrown');
   });
 
-  it('no permite vincular un tema a una pregunta inexistente', () => {
+  it('no permite vincular un tema a una pregunta inexistente', async () => {
     const { topics } = makeWiredServices();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
     try {
-      topics.assignTopicToQuestion('no-existe', topic.id);
+      await topics.assignTopicToQuestion('no-existe', topic.id);
     } catch (error) {
       expect(error).toBeInstanceOf(TopicValidationError);
       expect((error as TopicValidationError).errors).toContain(
@@ -70,28 +70,28 @@ describe('Topic <-> Question', () => {
     throw new Error('Expected TopicValidationError to be thrown');
   });
 
-  it('una pregunta validada mantiene su tema asociado', () => {
+  it('una pregunta validada mantiene su tema asociado', async () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
-    const question = questions.createQuestion(validInput());
-    topics.assignTopicToQuestion(question.id, topic.id);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const question = await questions.createQuestion(validInput());
+    await topics.assignTopicToQuestion(question.id, topic.id);
 
-    const validated = questions.changeStatus(question.id, 'validated');
+    const validated = await questions.changeStatus(question.id, 'validated');
 
     expect(validated.status).toBe('validated');
     expect(validated.topic_id).toBe(topic.id);
   });
 
-  it('no valida una pregunta vinculada a un tema obsolete', () => {
+  it('no valida una pregunta vinculada a un tema obsolete', async () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema antiguo' });
-    const question = questions.createQuestion(validInput());
-    topics.assignTopicToQuestion(question.id, topic.id);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema antiguo' });
+    const question = await questions.createQuestion(validInput());
+    await topics.assignTopicToQuestion(question.id, topic.id);
 
-    topics.markObsolete(topic.id);
+    await topics.markObsolete(topic.id);
 
     try {
-      questions.changeStatus(question.id, 'validated');
+      await questions.changeStatus(question.id, 'validated');
     } catch (error) {
       expect(error).toBeInstanceOf(QuestionValidationError);
       expect((error as QuestionValidationError).errors).toContain(

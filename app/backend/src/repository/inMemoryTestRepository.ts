@@ -6,17 +6,17 @@ import type { TestRepository } from './testRepository.js';
 export class InMemoryTestRepository implements TestRepository {
   private readonly tests = new Map<string, PracticeTest>();
 
-  create(test: PracticeTest): PracticeTest {
+  async create(test: PracticeTest): Promise<PracticeTest> {
     this.tests.set(test.id, clone(test));
     return clone(test);
   }
 
-  findById(id: string): PracticeTest | null {
+  async findById(id: string): Promise<PracticeTest | null> {
     const test = this.tests.get(id);
     return test ? clone(test) : null;
   }
 
-  save(test: PracticeTest): PracticeTest {
+  async save(test: PracticeTest): Promise<PracticeTest> {
     if (!this.tests.has(test.id)) {
       throw new Error(`Cannot save unknown test: ${test.id}`);
     }
@@ -28,3 +28,4 @@ export class InMemoryTestRepository implements TestRepository {
 function clone(test: PracticeTest): PracticeTest {
   return structuredClone(test);
 }
+

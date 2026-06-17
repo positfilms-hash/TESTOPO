@@ -90,15 +90,15 @@ export class MaterialImportService {
   }
 
   // 21.3 Subida (multiple) de archivos a un tema concreto.
-  importFiles(input: ImportFilesInput): ImportResult {
-    const oppositionId = this.requireOpposition(input.opposition_id);
-    const topic = this.requireTopic(input.topic_id, oppositionId);
+  async importFiles(input: ImportFilesInput): Promise<ImportResult> {
+    const oppositionId = await this.requireOpposition(input.opposition_id);
+    const topic = await this.requireTopic(input.topic_id, oppositionId);
     const files = input.files ?? [];
     if (files.length === 0) {
       throw new ImportError([ImportErrorCode.FILE_REQUIRED]);
     }
 
-    const batch = this.startBatch(
+    const batch = await this.startBatch(
       oppositionId,
       'multi_file',
       null,
@@ -107,7 +107,7 @@ export class MaterialImportService {
     const items: MaterialImportItem[] = [];
     for (const file of files) {
       items.push(
-        this.ingestFile({
+        await this.ingestFile({
           batchId: batch.id,
           oppositionId,
           topicId: topic.id,
@@ -124,11 +124,11 @@ export class MaterialImportService {
   }
 
   // 21.4 Importacion de ZIP: carpetas -> temas/subtemas, archivos -> materiales.
-  importZip(input: ImportZipInput): ImportResult {
-    const oppositionId = this.requireOpposition(input.opposition_id);
+  async importZip(input: ImportZipInput): Promise<ImportResult> {
+    const oppositionId = await this.requireOpposition(input.opposition_id);
     const parentTopic =
       input.parent_topic_id != null
-        ? this.requireTopic(input.parent_topic_id, oppositionId)
+        ? await this.requireTopic(input.parent_topic_id, oppositionId)
         : null;
 
     const zip = input.zip;
@@ -165,7 +165,7 @@ export class MaterialImportService {
       throw new ImportError([ImportErrorCode.ZIP_TOO_MANY_FILES]);
     }
 
-    const batch = this.startBatch(
+    const batch = await this.startBatch(
       oppositionId,
       'zip',
       zip.original_filename,
@@ -180,7 +180,12 @@ export class MaterialImportService {
     for (const entry of entries) {
       if (isDirectory(entry.path)) {
         const segments = splitPath(entry.path);
-        this.ensureTopicChain(segments, rootParentId, oppositionId, topicCache);
+        await this.ensureTopicChain(
+          segments,
+          rootParentId,
+          oppositionId,
+          topicCache,
+        );
       }
     }
 
@@ -192,7 +197,7 @@ export class MaterialImportService {
 
       let topicId: string;
       if (dirSegments.length > 0) {
-        topicId = this.ensureTopicChain(
+        topicId = await this.ensureTopicChain(
           dirSegments,
           rootParentId,
           oppositionId,
@@ -202,7 +207,7 @@ export class MaterialImportService {
         topicId = rootParentId;
       } else {
         // Archivos en raiz sin tema seleccionado -> tema "sin clasificar".
-        topicId = this.ensureTopicChain(
+        topicId = await this.ensureTopicChain(
           [UNCLASSIFIED_TOPIC_TITLE],
           null,
           oppositionId,
@@ -211,7 +216,7 @@ export class MaterialImportService {
       }
 
       items.push(
-        this.ingestFile({
+        await this.ingestFile({
           batchId: batch.id,
           oppositionId,
           topicId,
@@ -228,17 +233,17 @@ export class MaterialImportService {
   }
 
   // 21.5 Consultar lote de importacion (resumen + items).
-  getBatch(batchId: string): ImportResult | null {
-    const batch = this.deps.batches.findById(batchId);
+  async getBatch(batchId: string): Promise<ImportResult | null> {
+    const batch = await this.deps.batches.findById(batchId);
     if (!batch) {
       return null;
     }
-    return { batch, items: this.deps.items.findByBatch(batchId) };
+    return { batch, items: await this.deps.items.findByBatch(batchId) };
   }
 
   // --- Internos ------------------------------------------------------------
 
-  private ingestFile(args: {
+  private async ingestFile(args: {
     batchId: string;
     oppositionId: string;
     topicId: string;
@@ -248,7 +253,7 @@ export class MaterialImportService {
     bytes: Uint8Array;
     type: MaterialType;
     uploadedBy: string | null;
-  }): MaterialImportItem {
+  }): Promise<MaterialImportItem> {
     const ext = extensionOf(args.filename);
 
     if (!args.filename.trim()) {
@@ -266,7 +271,7 @@ export class MaterialImportService {
     if (args.bytes.length > MAX_IMPORT_FILE_SIZE_BYTES) {
       return this.recordItem(args, null, null, 'failed', ImportErrorCode.FILE_TOO_LARGE);
     }
-    if (this.isDuplicate(args.topicId, args.filename)) {
+    if (await this.isDuplicate(args.topicId, args.filename)) {
       return this.recordItem(
         args,
         null,
@@ -308,8 +313,8 @@ export class MaterialImportService {
       created_at: timestamp,
       updated_at: timestamp,
     };
-    const created = this.deps.materials.create(material);
-    this.deps.topicMaterialLinks.create({
+    const created = await this.deps.materials.create(material);
+    await this.deps.topicMaterialLinks.create({
       id: this.generateId(),
       material_id: created.id,
       topic_id: args.topicId,
@@ -350,21 +355,29 @@ export class MaterialImportService {
     };
   }
 
-  private isDuplicate(topicId: string, filename: string): boolean {
-    const links = this.deps.topicMaterialLinks.findAll({ topic_id: topicId });
-    return links.some((link) => {
-      const material = this.deps.materials.findById(link.material_id);
-      return material?.original_filename === filename;
+  private async isDuplicate(
+    topicId: string,
+    filename: string,
+  ): Promise<boolean> {
+    const links = await this.deps.topicMaterialLinks.findAll({
+      topic_id: topicId,
     });
+    for (const link of links) {
+      const material = await this.deps.materials.findById(link.material_id);
+      if (material?.original_filename === filename) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Crea o reutiliza la cadena de temas que representa una ruta de carpetas.
-  private ensureTopicChain(
+  private async ensureTopicChain(
     segments: string[],
     rootParentId: string | null,
     oppositionId: string,
     cache: Map<string, string>,
-  ): string {
+  ): Promise<string> {
     let parentId = rootParentId;
     for (const rawSegment of segments) {
       const title = rawSegment.trim();
@@ -377,21 +390,19 @@ export class MaterialImportService {
         parentId = cached;
         continue;
       }
-      const existing = this.deps.topics
-        .listTopics()
-        .find(
-          (t) =>
-            t.opposition_id === oppositionId &&
-            (t.parent_id ?? null) === parentId &&
-            t.title === title,
-        );
+      const existing = (await this.deps.topics.listTopics()).find(
+        (t) =>
+          t.opposition_id === oppositionId &&
+          (t.parent_id ?? null) === parentId &&
+          t.title === title,
+      );
       const topic: Topic =
         existing ??
-        this.deps.topics.createTopic({
+        (await this.deps.topics.createTopic({
           opposition_id: oppositionId,
           title,
           parent_id: parentId,
-        });
+        }));
       cache.set(key, topic.id);
       parentId = topic.id;
     }
@@ -400,13 +411,13 @@ export class MaterialImportService {
     return parentId as string;
   }
 
-  private startBatch(
+  private async startBatch(
     oppositionId: string,
     sourceType: ImportSourceType,
     originalFilename: string | null,
     uploadedBy: string | null,
-  ): MaterialImportBatch {
-    const opposition = this.deps.oppositions.findById(oppositionId);
+  ): Promise<MaterialImportBatch> {
+    const opposition = await this.deps.oppositions.findById(oppositionId);
     const timestamp = this.now();
     return this.deps.batches.create({
       id: this.generateId(),
@@ -426,10 +437,10 @@ export class MaterialImportService {
     });
   }
 
-  private finishBatch(
+  private async finishBatch(
     batch: MaterialImportBatch,
     items: MaterialImportItem[],
-  ): ImportResult {
+  ): Promise<ImportResult> {
     const imported = items.filter((i) => i.status === 'imported').length;
     const skipped = items.filter((i) => i.status === 'skipped').length;
     const failed = items.filter((i) => i.status === 'failed').length;
@@ -444,7 +455,7 @@ export class MaterialImportService {
     } else {
       status = 'completed';
     }
-    const saved = this.deps.batches.save({
+    const saved = await this.deps.batches.save({
       ...batch,
       status,
       total_files: items.length,
@@ -468,7 +479,7 @@ export class MaterialImportService {
     topicId: string | null,
     status: MaterialImportItem['status'],
     error: ImportErrorCode | null,
-  ): MaterialImportItem {
+  ): Promise<MaterialImportItem> {
     const timestamp = this.now();
     return this.deps.items.create({
       id: this.generateId(),
@@ -484,24 +495,26 @@ export class MaterialImportService {
     });
   }
 
-  private requireOpposition(oppositionId: string | undefined): string {
+  private async requireOpposition(
+    oppositionId: string | undefined,
+  ): Promise<string> {
     if (!isNonEmptyString(oppositionId)) {
       throw new ImportError([ImportErrorCode.OPPOSITION_REQUIRED]);
     }
-    if (!this.deps.oppositions.findById(oppositionId)) {
+    if (!(await this.deps.oppositions.findById(oppositionId))) {
       throw new ImportError([ImportErrorCode.OPPOSITION_NOT_FOUND]);
     }
     return oppositionId;
   }
 
-  private requireTopic(
+  private async requireTopic(
     topicId: string | undefined | null,
     oppositionId: string,
-  ): Topic {
+  ): Promise<Topic> {
     if (!isNonEmptyString(topicId)) {
       throw new ImportError([ImportErrorCode.TOPIC_NOT_FOUND]);
     }
-    const topic = this.deps.topics.getTopic(topicId);
+    const topic = await this.deps.topics.getTopic(topicId);
     if (!topic) {
       throw new ImportError([ImportErrorCode.TOPIC_NOT_FOUND]);
     }

@@ -3,6 +3,7 @@
 import type { PracticeTestQuestion } from '../models/practiceTestQuestion.js';
 
 export interface TestQuestionRepository {
-  create(testQuestion: PracticeTestQuestion): PracticeTestQuestion;
-  findByTest(testId: string): PracticeTestQuestion[];
+  create(testQuestion: PracticeTestQuestion): Promise<PracticeTestQuestion>;
+  findByTest(testId: string): Promise<PracticeTestQuestion[]>;
 }
+

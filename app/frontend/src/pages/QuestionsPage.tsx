@@ -1,9 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   QuestionReviewError,
   QuestionGenerationError,
   type Difficulty,
   type RequestedDifficulty,
+  type Question,
+  type QuestionValidationResult,
+  type Material,
+  type Topic,
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import {
@@ -46,12 +50,20 @@ function QuestionsList({
   onReview: (id: string) => void;
   onGenerate: () => void;
 }) {
-  const { store, currentOpposition } = useStore();
+  const { store, currentOpposition, version } = useStore();
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
-
-  const all = store.questions
-    .listQuestions()
-    .filter((q) => q.opposition_id === currentOpposition?.id);
+  const [all, setAll] = useState<Question[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void store.questions.listQuestions().then((list) => {
+      if (!cancelled) {
+        setAll(list.filter((q) => q.opposition_id === currentOpposition?.id));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition, version]);
   const questions = tab === 'pending' ? all.filter((q) => PENDING.includes(q.status)) : all;
 
   return (
@@ -109,13 +121,23 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
 
-  const question = store.questions.getQuestion(id);
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [report, setReport] = useState<QuestionValidationResult | null>(null);
   // La validacion (SPEC 005) decide si se puede aprobar.
-  const report = useMemo(
-    () => (question ? store.validation.validateQuestion(id) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, version],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const q = await store.questions.getQuestion(id);
+      const r = q ? await store.validation.validateQuestion(id) : null;
+      if (!cancelled) {
+        setQuestion(q);
+        setReport(r);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, id, version]);
 
   if (!question || !report) {
     return <EmptyState message="Pregunta no encontrada." />;
@@ -123,10 +145,10 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
 
   const hasErrors = report.errors.length > 0;
 
-  const approve = () => {
+  const approve = async () => {
     if (!currentUser) return;
     try {
-      store.platform.approve(currentUser, id, { reviewer_name: currentUser.name });
+      await store.platform.approve(currentUser, id, { reviewer_name: currentUser.name });
       refresh();
       setNotice({ type: 'success', text: 'Pregunta aprobada y validada.' });
     } catch (error) {
@@ -142,13 +164,13 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
     }
   };
 
-  const act = (
-    fn: () => void,
+  const act = async (
+    fn: () => unknown,
     confirmMsg: string | null,
     successMsg: string,
   ) => {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
-    fn();
+    await fn();
     refresh();
     setNotice({ type: 'success', text: successMsg });
   };
@@ -257,14 +279,27 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
 
 function EditForm({ id, onDone }: { id: string; onDone: () => void }) {
   const { store, currentUser } = useStore();
-  const question = store.questions.getQuestion(id)!;
-  const [statement, setStatement] = useState(question.statement);
-  const [explanation, setExplanation] = useState(question.explanation ?? '');
-  const [difficulty, setDifficulty] = useState<Difficulty>(question.difficulty ?? 'medium');
+  const [statement, setStatement] = useState('');
+  const [explanation, setExplanation] = useState('');
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
 
-  const save = () => {
+  useEffect(() => {
+    let cancelled = false;
+    void store.questions.getQuestion(id).then((question) => {
+      if (!cancelled && question) {
+        setStatement(question.statement);
+        setExplanation(question.explanation ?? '');
+        setDifficulty(question.difficulty ?? 'medium');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, id]);
+
+  const save = async () => {
     if (!currentUser) return;
-    store.platform.editFromReview(currentUser, id, {
+    await store.platform.editFromReview(currentUser, id, {
       statement,
       explanation,
       difficulty,
@@ -295,20 +330,36 @@ function EditForm({ id, onDone }: { id: string; onDone: () => void }) {
 
 function GenerateForm({ onBack }: { onBack: () => void }) {
   const { store, refresh, currentUser, currentOpposition } = useStore();
-  const materials = store.materials
-    .listMaterials()
-    .filter((m) => m.opposition_id === currentOpposition?.id && m.status !== 'obsolete');
-  const topics = store.topics
-    .listTopics()
-    .filter((t) => t.opposition_id === currentOpposition?.id && t.status !== 'obsolete');
-  const [materialId, setMaterialId] = useState(materials[0]?.id ?? '');
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [materialId, setMaterialId] = useState('');
   const [topicId, setTopicId] = useState('');
   const [difficulty, setDifficulty] = useState<RequestedDifficulty>('mixed');
   const [count, setCount] = useState(5);
   const [fragment, setFragment] = useState('');
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  const generate = () => {
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const m = (await store.materials.listMaterials()).filter(
+        (x) => x.opposition_id === currentOpposition?.id && x.status !== 'obsolete',
+      );
+      const t = (await store.topics.listTopics()).filter(
+        (x) => x.opposition_id === currentOpposition?.id && x.status !== 'obsolete',
+      );
+      if (!cancelled) {
+        setMaterials(m);
+        setTopics(t);
+        setMaterialId((prev) => prev || m[0]?.id || '');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition]);
+
+  const generate = async () => {
     setNotice(null);
     if (!currentUser) return;
     try {
@@ -319,8 +370,8 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
         question_count: count,
       };
       const result = fragment.trim()
-        ? store.platform.generateFromExcerpt(currentUser, { ...base, excerpt: fragment.trim() })
-        : store.platform.generateFromMaterial(currentUser, base);
+        ? await store.platform.generateFromExcerpt(currentUser, { ...base, excerpt: fragment.trim() })
+        : await store.platform.generateFromMaterial(currentUser, base);
       refresh();
       setNotice({
         type: 'success',

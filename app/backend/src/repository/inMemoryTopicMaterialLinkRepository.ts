@@ -12,12 +12,12 @@ export class InMemoryTopicMaterialLinkRepository
 {
   private readonly links = new Map<string, TopicMaterialLink>();
 
-  create(link: TopicMaterialLink): TopicMaterialLink {
+  async create(link: TopicMaterialLink): Promise<TopicMaterialLink> {
     this.links.set(key(link.material_id, link.topic_id), clone(link));
     return clone(link);
   }
 
-  findAll(filter: TopicMaterialLinkFilter = {}): TopicMaterialLink[] {
+  async findAll(filter: TopicMaterialLinkFilter = {}): Promise<TopicMaterialLink[]> {
     let result = [...this.links.values()];
     if (filter.topic_id !== undefined) {
       result = result.filter((link) => link.topic_id === filter.topic_id);
@@ -30,12 +30,12 @@ export class InMemoryTopicMaterialLinkRepository
     return result.map(clone);
   }
 
-  find(materialId: string, topicId: string): TopicMaterialLink | null {
+  async find(materialId: string, topicId: string): Promise<TopicMaterialLink | null> {
     const link = this.links.get(key(materialId, topicId));
     return link ? clone(link) : null;
   }
 
-  delete(materialId: string, topicId: string): boolean {
+  async delete(materialId: string, topicId: string): Promise<boolean> {
     return this.links.delete(key(materialId, topicId));
   }
 }
@@ -47,3 +47,4 @@ function key(materialId: string, topicId: string): string {
 function clone(link: TopicMaterialLink): TopicMaterialLink {
   return structuredClone(link);
 }
+

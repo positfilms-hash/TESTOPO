@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { MyResultSummary } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Button, EmptyState, PageHeader } from '../components/ui.js';
 import { AttemptResultView } from './AttemptResultView.js';
@@ -24,19 +25,31 @@ export function ResultadosPage() {
     );
   }
 
-  const results = currentUser
-    ? store.platform
-        .listMyResults(currentUser)
-        .filter((r) => {
-          // Limitar a la oposicion actual via el test (si se puede resolver).
-          try {
-            const test = store.platform.getTest(currentUser, r.test_id).test;
-            return test.opposition_id === currentOpposition?.id;
-          } catch {
-            return false;
-          }
-        })
-    : [];
+  const [results, setResults] = useState<MyResultSummary[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!currentUser) {
+        if (!cancelled) setResults([]);
+        return;
+      }
+      const all = await store.platform.listMyResults(currentUser);
+      const filtered: MyResultSummary[] = [];
+      for (const r of all) {
+        // Limitar a la oposicion actual via el test (si se puede resolver).
+        try {
+          const { test } = await store.platform.getTest(currentUser, r.test_id);
+          if (test.opposition_id === currentOpposition?.id) filtered.push(r);
+        } catch {
+          // sin acceso al test: se omite
+        }
+      }
+      if (!cancelled) setResults(filtered);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentOpposition, version]);
 
   return (
     <div>

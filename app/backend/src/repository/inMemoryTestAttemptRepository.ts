@@ -8,23 +8,23 @@ export class InMemoryTestAttemptRepository
 {
   private readonly attempts = new Map<string, TestAttempt>();
 
-  create(attempt: TestAttempt): TestAttempt {
+  async create(attempt: TestAttempt): Promise<TestAttempt> {
     this.attempts.set(attempt.id, clone(attempt));
     return clone(attempt);
   }
 
-  findById(id: string): TestAttempt | null {
+  async findById(id: string): Promise<TestAttempt | null> {
     const attempt = this.attempts.get(id);
     return attempt ? clone(attempt) : null;
   }
 
-  findByUser(userId: string): TestAttempt[] {
+  async findByUser(userId: string): Promise<TestAttempt[]> {
     return [...this.attempts.values()]
       .filter((attempt) => attempt.user_id === userId)
       .map(clone);
   }
 
-  save(attempt: TestAttempt): TestAttempt {
+  async save(attempt: TestAttempt): Promise<TestAttempt> {
     if (!this.attempts.has(attempt.id)) {
       throw new Error(`Cannot save unknown attempt: ${attempt.id}`);
     }
@@ -36,3 +36,4 @@ export class InMemoryTestAttemptRepository
 function clone(attempt: TestAttempt): TestAttempt {
   return structuredClone(attempt);
 }
+

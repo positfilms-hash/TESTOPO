@@ -12,8 +12,9 @@ export interface TopicFilter {
 }
 
 export interface TopicRepository {
-  create(topic: Topic): Topic;
-  findAll(filter?: TopicFilter): Topic[];
-  findById(id: string): Topic | null;
-  save(topic: Topic): Topic;
+  create(topic: Topic): Promise<Topic>;
+  findAll(filter?: TopicFilter): Promise<Topic[]>;
+  findById(id: string): Promise<Topic | null>;
+  save(topic: Topic): Promise<Topic>;
 }
+

@@ -17,7 +17,7 @@ import { AccessError } from '../src/access/accessError.js';
 import { AccessErrorCode } from '../src/access/accessErrors.js';
 import { validInput } from './helpers.js';
 
-function makeSetup() {
+async function makeSetup() {
   const users = new UserService(new InMemoryUserRepository());
   const memberRepo = new InMemoryWorkspaceMemberRepository();
   const workspaces = new WorkspaceService(
@@ -34,16 +34,15 @@ function makeSetup() {
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
-    resolveMaterialOpposition: (id) =>
-      materials.getMaterial(id)?.opposition_id ?? null,
-    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
+    resolveMaterialOpposition: async (id) => (await materials.getMaterial(id))?.opposition_id ?? null,
+    resolveTopicOpposition: async (id) => (await topics.getTopic(id))?.opposition_id ?? null,
   });
   return { users, workspaces, oppositions, materials, topics, questions };
 }
 
-function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
+async function expectAccessError(fn: () => unknown, code: AccessErrorCode): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(AccessError);
     expect((error as AccessError).codes).toContain(code);
@@ -53,14 +52,14 @@ function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
 }
 
 describe('SPEC 010 - usuarios y autenticacion', () => {
-  it('crea admin y student', () => {
-    const { users } = makeSetup();
-    const admin = users.createUser({
+  it('crea admin y student', async () => {
+    const { users } = await makeSetup();
+    const admin = await users.createUser({
       email: 'admin@test.com',
       password: 'x',
       role: 'admin',
     });
-    const student = users.createUser({
+    const student = await users.createUser({
       email: 'student@test.com',
       password: 'y',
       role: 'student',
@@ -70,18 +69,18 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
     expect(admin.password_hash).not.toBe('x');
   });
 
-  it('no permite email duplicado', () => {
-    const { users } = makeSetup();
-    users.createUser({ email: 'a@test.com', password: 'x', role: 'admin' });
-    expectAccessError(
+  it('no permite email duplicado', async () => {
+    const { users } = await makeSetup();
+    await users.createUser({ email: 'a@test.com', password: 'x', role: 'admin' });
+    await expectAccessError(
       () => users.createUser({ email: 'a@test.com', password: 'y', role: 'student' }),
       AccessErrorCode.USER_EMAIL_ALREADY_EXISTS,
     );
   });
 
-  it('no permite rol invalido', () => {
-    const { users } = makeSetup();
-    expectAccessError(
+  it('no permite rol invalido', async () => {
+    const { users } = await makeSetup();
+    await expectAccessError(
       () =>
         users.createUser({
           email: 'b@test.com',
@@ -92,11 +91,11 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
     );
   });
 
-  it('login con credenciales validas e invalidas', () => {
-    const { users } = makeSetup();
-    users.createUser({ email: 'c@test.com', password: 'secreto', role: 'student' });
-    expect(users.authenticate('c@test.com', 'secreto').email).toBe('c@test.com');
-    expectAccessError(
+  it('login con credenciales validas e invalidas', async () => {
+    const { users } = await makeSetup();
+    await users.createUser({ email: 'c@test.com', password: 'secreto', role: 'student' });
+    expect((await users.authenticate('c@test.com', 'secreto')).email).toBe('c@test.com');
+    await expectAccessError(
       () => users.authenticate('c@test.com', 'mal'),
       AccessErrorCode.AUTH_INVALID_CREDENTIALS,
     );
@@ -104,34 +103,34 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
 });
 
 describe('SPEC 010 - oposiciones dentro de workspace (workspace-first)', () => {
-  function withWorkspace() {
-    const ctx = makeSetup();
-    const admin = ctx.users.createUser({
+  async function withWorkspace() {
+    const ctx = await makeSetup();
+    const admin = await ctx.users.createUser({
       email: 'admin@test.com',
       password: 'x',
       role: 'admin',
     });
-    const student = ctx.users.createUser({
+    const student = await ctx.users.createUser({
       email: 'student@test.com',
       password: 'y',
       role: 'student',
     });
-    const workspace = ctx.workspaces.createOrganizationWorkspace(admin, {
+    const workspace = await ctx.workspaces.createOrganizationWorkspace(admin, {
       name: 'Academia',
       slug: 'academia',
     });
     return { ...ctx, admin, student, workspace };
   }
 
-  it('quien gestiona el workspace crea oposicion; un no-miembro no', () => {
-    const { oppositions, admin, student, workspace } = withWorkspace();
-    const opp = oppositions.createOpposition(admin, {
+  it('quien gestiona el workspace crea oposicion; un no-miembro no', async () => {
+    const { oppositions, admin, student, workspace } = await withWorkspace();
+    const opp = await oppositions.createOpposition(admin, {
       workspace_id: workspace.id,
       title: 'Auxiliar',
       slug: 'auxiliar',
     });
     expect(opp.workspace_id).toBe(workspace.id);
-    expectAccessError(
+    await expectAccessError(
       () =>
         oppositions.createOpposition(student, {
           workspace_id: workspace.id,
@@ -142,84 +141,84 @@ describe('SPEC 010 - oposiciones dentro de workspace (workspace-first)', () => {
     );
   });
 
-  it('un estudiante solo ve oposiciones autorizadas de su workspace', () => {
+  it('un estudiante solo ve oposiciones autorizadas de su workspace', async () => {
     const { workspaces, oppositions, admin, student, workspace } =
-      withWorkspace();
-    workspaces.addMember(admin, {
+      await withWorkspace();
+    await workspaces.addMember(admin, {
       workspace_id: workspace.id,
       user_id: student.id,
       role: 'student',
     });
-    const opp1 = oppositions.createOpposition(admin, {
+    const opp1 = await oppositions.createOpposition(admin, {
       workspace_id: workspace.id,
       title: 'Uno',
       slug: 'uno',
     });
-    const opp2 = oppositions.createOpposition(admin, {
+    const opp2 = await oppositions.createOpposition(admin, {
       workspace_id: workspace.id,
       title: 'Dos',
       slug: 'dos',
     });
 
-    expect(oppositions.listForUser(student)).toHaveLength(0);
-    oppositions.grantAccess(admin, {
+    expect(await oppositions.listForUser(student)).toHaveLength(0);
+    await oppositions.grantAccess(admin, {
       user_id: student.id,
       opposition_id: opp1.id,
     });
-    expect(oppositions.listForUser(student).map((o) => o.id)).toEqual([opp1.id]);
-    expectAccessError(
+    expect((await oppositions.listForUser(student)).map((o) => o.id)).toEqual([opp1.id]);
+    await expectAccessError(
       () => oppositions.getOpposition(student, opp2.id),
       AccessErrorCode.ACCESS_DENIED,
     );
   });
 
-  it('revocar acceso a la oposicion deja de mostrarla', () => {
+  it('revocar acceso a la oposicion deja de mostrarla', async () => {
     const { workspaces, oppositions, admin, student, workspace } =
-      withWorkspace();
-    workspaces.addMember(admin, {
+      await withWorkspace();
+    await workspaces.addMember(admin, {
       workspace_id: workspace.id,
       user_id: student.id,
       role: 'student',
     });
-    const opp = oppositions.createOpposition(admin, {
+    const opp = await oppositions.createOpposition(admin, {
       workspace_id: workspace.id,
       title: 'Uno',
       slug: 'uno',
     });
-    oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
-    oppositions.revokeAccess(admin, {
+    await oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
+    await oppositions.revokeAccess(admin, {
       user_id: student.id,
       opposition_id: opp.id,
     });
-    expect(oppositions.listForUser(student)).toHaveLength(0);
+    expect(await oppositions.listForUser(student)).toHaveLength(0);
   });
 });
 
 describe('SPEC 010 - integridad por oposicion', () => {
-  it('no se puede crear material/tema/pregunta sin oposicion', () => {
-    const { materials, topics, questions } = makeSetup();
-    expectAccessError(
+  it('no se puede crear material/tema/pregunta sin oposicion', async () => {
+    const { materials, topics, questions } = await makeSetup();
+    await expectAccessError(
       () => materials.createMaterial({ title: 'X', type: 'notes' }),
       AccessErrorCode.OPPOSITION_REQUIRED,
     );
-    expectAccessError(
+    await expectAccessError(
       () => topics.createTopic({ title: 'X' }),
       AccessErrorCode.OPPOSITION_REQUIRED,
     );
-    expectAccessError(
+    await expectAccessError(
       () => questions.createQuestion(validInput({ opposition_id: undefined })),
       AccessErrorCode.OPPOSITION_REQUIRED,
     );
   });
 
-  it('no se puede vincular pregunta a material de otra oposicion', () => {
-    const { materials, questions } = makeSetup();
-    const material = materials.createMaterial({
+  it('no se puede vincular pregunta a material de otra oposicion', async () => {
+    const { materials, questions } = await makeSetup();
+    const material = await materials.createMaterial({
       opposition_id: 'opp-A',
       title: 'M',
       type: 'syllabus',
     });
-    expectAccessError(
+    await expectAccessError(
       () =>
         questions.createQuestion(
           validInput({
@@ -238,10 +237,10 @@ describe('SPEC 010 - integridad por oposicion', () => {
     );
   });
 
-  it('no se puede vincular pregunta a tema de otra oposicion', () => {
-    const { topics, questions } = makeSetup();
-    const topic = topics.createTopic({ opposition_id: 'opp-A', title: 'T' });
-    expectAccessError(
+  it('no se puede vincular pregunta a tema de otra oposicion', async () => {
+    const { topics, questions } = await makeSetup();
+    const topic = await topics.createTopic({ opposition_id: 'opp-A', title: 'T' });
+    await expectAccessError(
       () =>
         questions.createQuestion(
           validInput({ opposition_id: 'opp-B', topic_id: topic.id }),
