@@ -411,10 +411,10 @@ describe('SPEC 018.4 - proveedor configurable', () => {
     expect(provider.model).toBeNull();
   });
 
-  it('anthropic sin AI_API_KEY lanza error', () => {
+  it('anthropic sin clave lanza error', () => {
     expect(() =>
       createQuestionGenerationProvider({ AI_PROVIDER: 'anthropic' }),
-    ).toThrow(/AI_API_KEY/);
+    ).toThrow(/ANTHROPIC_API_KEY/);
   });
 
   it('proveedor desconocido lanza error', () => {
