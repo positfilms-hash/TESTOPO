@@ -10,6 +10,7 @@ import type {
   GeneratedCandidate,
   GenerationContext,
 } from './generationTypes.js';
+import { AiProviderError, AiProviderErrorCode } from './aiProviderErrors.js';
 
 // Esquema JSON de la salida esperada (SPEC 018.4, 11; 018.4-B, 12). Compatible
 // con salida estructurada estricta: `additionalProperties: false` y todas las
@@ -102,13 +103,21 @@ export function buildGenerationUserPrompt(context: GenerationContext): string {
   return parts.join('\n');
 }
 
-// Parsea el JSON de salida y lo mapea a candidatos internos. Descarta entradas
-// que no encajen; el servicio aplica despues la validacion formal y de calidad.
-// Lanza `Error` si el texto no es JSON valido (cada proveedor lo traduce a su
-// codigo de error).
+// Parsea el JSON de salida y lo mapea a candidatos internos. Falla de forma
+// EXPLICITA si la estructura minima no se cumple (SPEC 018.4-B, 12: "no aceptar
+// respuestas sin validar estructura"):
+// - texto vacio o no-JSON -> Error (cada proveedor lo traduce a su codigo).
+// - sin un array `questions` -> AI_OUTPUT_SCHEMA_INVALID.
+// Un array `questions` vacio SI es valido (la IA puede devolver menos preguntas
+// o ninguna por falta de material); el servicio lo trata como resultado vacio.
+// Los items concretos malformados se descartan aqui (no rompen el lote) y el
+// validador del servicio registra/rechaza los que pasen pero incumplan reglas.
 export function parseGeneratedCandidates(text: string): GeneratedCandidate[] {
   if (!isNonEmptyString(text)) {
-    return [];
+    throw new AiProviderError(
+      AiProviderErrorCode.AI_OUTPUT_SCHEMA_INVALID,
+      'La respuesta de IA esta vacia',
+    );
   }
   let parsed: unknown;
   try {
@@ -118,7 +127,10 @@ export function parseGeneratedCandidates(text: string): GeneratedCandidate[] {
   }
   const questions = (parsed as { questions?: unknown }).questions;
   if (!Array.isArray(questions)) {
-    return [];
+    throw new AiProviderError(
+      AiProviderErrorCode.AI_OUTPUT_SCHEMA_INVALID,
+      'La salida de IA no contiene un array "questions"',
+    );
   }
   const candidates: GeneratedCandidate[] = [];
   for (const raw of questions) {
