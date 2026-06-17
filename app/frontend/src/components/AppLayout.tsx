@@ -40,6 +40,7 @@ export function AppLayout({
   onNavigate,
   canSwitchZone,
   onSwitchZone,
+  onOpenAccount,
   children,
 }: {
   zone: Zone;
@@ -47,6 +48,7 @@ export function AppLayout({
   onNavigate: (section: Section) => void;
   canSwitchZone: boolean;
   onSwitchZone: () => void;
+  onOpenAccount: () => void;
   children: ReactNode;
 }) {
   const {
@@ -109,6 +111,9 @@ export function AppLayout({
           )}
           <button className="nav-item small" onClick={clearWorkspace}>
             Cambiar espacio
+          </button>
+          <button className="nav-item small" onClick={onOpenAccount}>
+            Cuenta
           </button>
           <button className="nav-item small" onClick={logout}>
             Salir

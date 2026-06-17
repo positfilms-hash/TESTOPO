@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
     "paths": {
       "@backend": ["../backend/src/index.ts"],
       "node:crypto": ["./src/shims/nodeCrypto.ts"]

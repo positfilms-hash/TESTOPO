@@ -11,7 +11,18 @@ import { QuestionsPage } from './pages/QuestionsPage.js';
 import { TestsPage } from './pages/TestsPage.js';
 import { AlumnosPage } from './pages/AlumnosPage.js';
 import { ResultadosPage } from './pages/ResultadosPage.js';
+import { ResetPasswordPage } from './pages/ResetPasswordPage.js';
+import { AccountPage } from './pages/AccountPage.js';
+import { isSupabaseConfigured } from './auth/supabaseClient.js';
 import { useStore, type Zone } from './store/StoreContext.js';
+
+// El enlace de recuperacion de Supabase vuelve con `type=recovery` en el hash.
+function isRecoveryRedirect(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.location.hash.includes('type=recovery')
+  );
+}
 
 export function App() {
   const {
@@ -24,6 +35,13 @@ export function App() {
     selectZone,
   } = useStore();
   const [section, setSection] = useState<Section>('inicio');
+  const [showAccount, setShowAccount] = useState(false);
+
+  // Restablecer contrasena: si venimos de un enlace de recuperacion, esta
+  // pantalla tiene prioridad sobre todo lo demas.
+  if (isSupabaseConfigured() && isRecoveryRedirect()) {
+    return <ResetPasswordPage />;
+  }
 
   if (!currentUser) {
     return <LoginPage />;
@@ -62,10 +80,18 @@ export function App() {
     <AppLayout
       zone={effectiveZone}
       active={section}
-      onNavigate={setSection}
+      onNavigate={(s) => {
+        setShowAccount(false);
+        setSection(s);
+      }}
       canSwitchZone={canManage && canStudy}
       onSwitchZone={switchZone}
+      onOpenAccount={() => setShowAccount(true)}
     >
+      {showAccount ? (
+        <AccountPage onBack={() => setShowAccount(false)} />
+      ) : (
+        <>
       {section === 'inicio' && (
         <HomePage onNavigate={setSection} isAdmin={isAdminZone} />
       )}
@@ -75,6 +101,8 @@ export function App() {
       {section === 'alumnos' && isAdminZone && <AlumnosPage />}
       {section === 'tests' && <TestsPage />}
       {section === 'resultados' && !isAdminZone && <ResultadosPage />}
+        </>
+      )}
     </AppLayout>
   );
 }
