@@ -20,23 +20,24 @@ const STUDENT_NAV: { id: Section; label: string }[] = [
 export function AppLayout({
   active,
   onNavigate,
-  isAdmin,
+  isManager,
   children,
 }: {
   active: Section;
   onNavigate: (section: Section) => void;
-  isAdmin: boolean;
+  isManager: boolean;
   children: ReactNode;
 }) {
   const {
     currentUser,
     currentWorkspace,
     currentOpposition,
+    workspaceRole,
     logout,
     clearOpposition,
     clearWorkspace,
   } = useStore();
-  const nav = isAdmin ? ADMIN_NAV : STUDENT_NAV;
+  const nav = isManager ? ADMIN_NAV : STUDENT_NAV;
 
   return (
     <div className="app-shell">
@@ -54,7 +55,7 @@ export function AppLayout({
         ))}
         <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <div className="small muted">
-            {currentUser?.name} · {isAdmin ? 'Admin' : 'Estudiante'}
+            {currentUser?.name} · {workspaceRole ?? 'invitado'}
           </div>
           <div className="small">Espacio: {currentWorkspace?.name}</div>
           <div className="small" style={{ marginBottom: 4 }}>

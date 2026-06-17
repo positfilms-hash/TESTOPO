@@ -24,6 +24,7 @@ import {
   InMemoryWorkspaceRepository,
   InMemoryWorkspaceMemberRepository,
   WorkspaceService,
+  PlatformService,
   type PracticeTest,
   type Opposition,
 } from '@backend';
@@ -47,6 +48,8 @@ export interface AppStore {
   review: QuestionReviewService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
+  /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
+  platform: PlatformService;
   /** Tests creados en esta sesion (registro de conveniencia para la UI). */
   createdTests: PracticeTest[];
 }
@@ -65,9 +68,11 @@ export function createAppStore(seed = true): AppStore {
 
   const users = new UserService(userRepo);
   const workspaces = new WorkspaceService(workspaceRepo, workspaceMemberRepo);
-  const oppositions = new OppositionService(oppositionRepo, accessRepo, {
-    workspaceMemberRepository: workspaceMemberRepo,
-  });
+  const oppositions = new OppositionService(
+    oppositionRepo,
+    accessRepo,
+    workspaceMemberRepo,
+  );
   const materials = new MaterialService(materialRepo);
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -108,6 +113,18 @@ export function createAppStore(seed = true): AppStore {
     questionService: questions,
     testGenerator,
   });
+  const platform = new PlatformService({
+    oppositionRepository: oppositionRepo,
+    workspaceMembers: workspaceMemberRepo,
+    oppositions,
+    materials,
+    topics,
+    questions,
+    generation,
+    review,
+    testGenerator,
+    attempts,
+  });
 
   const store: AppStore = {
     users,
@@ -121,6 +138,7 @@ export function createAppStore(seed = true): AppStore {
     review,
     testGenerator,
     attempts,
+    platform,
     createdTests: [],
   };
 
@@ -205,13 +223,15 @@ function seedFixtures(store: AppStore): Opposition {
     store.questions.createQuestion({
       opposition_id: oppositionId,
       statement: `Pregunta ficticia ${n}: cual es la afirmacion correcta sobre ${topicText}?`,
+      // Textos neutros: el enunciado de la opcion NO debe revelar cual es la
+      // correcta (la respuesta solo se muestra tras enviar el test).
       options: [
-        { text: `Afirmacion correcta ${n}`, is_correct: true },
-        { text: `Afirmacion incorrecta ${n}-A`, is_correct: false },
-        { text: `Afirmacion incorrecta ${n}-B`, is_correct: false },
-        { text: `Afirmacion incorrecta ${n}-C`, is_correct: false },
+        { text: `${topicText}: opcion A (pregunta ${n})`, is_correct: true },
+        { text: `${topicText}: opcion B (pregunta ${n})`, is_correct: false },
+        { text: `${topicText}: opcion C (pregunta ${n})`, is_correct: false },
+        { text: `${topicText}: opcion D (pregunta ${n})`, is_correct: false },
       ],
-      explanation: `La afirmacion correcta ${n} se deduce del material ficticio sobre ${topicText}.`,
+      explanation: `La opcion A se deduce del material ficticio sobre ${topicText}.`,
       source: {
         id: `src-${n}`,
         material_id: material.id,

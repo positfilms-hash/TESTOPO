@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Opposition, User, Workspace } from '@backend';
+import type { Opposition, User, Workspace, WorkspaceRole } from '@backend';
 import { createAppStore, type AppStore } from './appStore.js';
 
 interface StoreContextValue {
@@ -17,6 +17,9 @@ interface StoreContextValue {
   currentUser: User | null;
   currentWorkspace: Workspace | null;
   currentOpposition: Opposition | null;
+  // Rol DENTRO del workspace activo (owner/admin/student). Decide capacidades.
+  workspaceRole: WorkspaceRole | null;
+  isWorkspaceManager: boolean;
   login: (user: User) => void;
   logout: () => void;
   selectWorkspace: (workspace: Workspace) => void;
@@ -61,6 +64,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const clearOpposition = useCallback(() => setCurrentOpposition(null), []);
 
+  const workspaceRole =
+    currentUser && currentWorkspace
+      ? storeRef.current.workspaces.getMemberRole(
+          currentUser.id,
+          currentWorkspace.id,
+        )
+      : null;
+  const isWorkspaceManager =
+    workspaceRole === 'owner' || workspaceRole === 'admin';
+
   return (
     <StoreContext.Provider
       value={{
@@ -70,6 +83,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         currentUser,
         currentWorkspace,
         currentOpposition,
+        workspaceRole,
+        isWorkspaceManager,
         login,
         logout,
         selectWorkspace,

@@ -11,7 +11,8 @@ import { TestsPage } from './pages/TestsPage.js';
 import { useStore } from './store/StoreContext.js';
 
 export function App() {
-  const { currentUser, currentWorkspace, currentOpposition } = useStore();
+  const { currentUser, currentWorkspace, currentOpposition, isWorkspaceManager } =
+    useStore();
   const [section, setSection] = useState<Section>('inicio');
 
   if (!currentUser) {
@@ -24,14 +25,18 @@ export function App() {
     return <OppositionsGate />;
   }
 
-  const isAdmin = currentUser.role === 'admin';
-
+  // Las capacidades se deciden por el ROL DE WORKSPACE (owner/admin gestionan),
+  // no por el User.role global: asi el owner Premium gestiona su propio pool.
   return (
-    <AppLayout active={section} onNavigate={setSection} isAdmin={isAdmin}>
+    <AppLayout
+      active={section}
+      onNavigate={setSection}
+      isManager={isWorkspaceManager}
+    >
       {section === 'inicio' && <HomePage onNavigate={setSection} />}
       {section === 'material' && <MaterialPage />}
-      {section === 'temario' && isAdmin && <TopicPage />}
-      {section === 'preguntas' && isAdmin && <QuestionsPage />}
+      {section === 'temario' && isWorkspaceManager && <TopicPage />}
+      {section === 'preguntas' && isWorkspaceManager && <QuestionsPage />}
       {section === 'tests' && <TestsPage />}
     </AppLayout>
   );

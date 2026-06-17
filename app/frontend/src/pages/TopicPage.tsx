@@ -4,7 +4,7 @@ import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
 export function TopicPage() {
-  const { store, refresh, currentOpposition } = useStore();
+  const { store, refresh, currentUser, currentOpposition } = useStore();
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [parentId, setParentId] = useState('');
@@ -20,8 +20,9 @@ export function TopicPage() {
 
   const addTopic = () => {
     setError(null);
+    if (!currentUser) return;
     try {
-      store.topics.createTopic({
+      store.platform.createTopic(currentUser, {
         opposition_id: oppositionId,
         title,
         parent_id: parentId || null,
@@ -36,16 +37,18 @@ export function TopicPage() {
   };
 
   const editTopic = (id: string, current: string) => {
+    if (!currentUser) return;
     const next = window.prompt('Nuevo titulo del tema', current);
     if (next && next.trim()) {
-      store.topics.editTopic(id, { title: next.trim() });
+      store.platform.editTopic(currentUser, id, { title: next.trim() });
       refresh();
     }
   };
 
   const markObsolete = (id: string) => {
-    if (!window.confirm('Marcar este tema como obsoleto?')) return;
-    store.topics.markObsolete(id);
+    if (!currentUser) return;
+    if (!window.confirm('¿Marcar este tema como obsoleto?')) return;
+    store.platform.markTopicObsolete(currentUser, id);
     refresh();
   };
 
