@@ -1,17 +1,22 @@
-// Factory de proveedor de generacion (SPEC 018.4, 8, 20, 21).
+// Factory de proveedor de generacion (SPEC 018.4 / 018.4-B).
 //
-// Selecciona el proveedor segun variables de entorno, con `mock` por defecto
-// para que los tests y el MVP nunca dependan de una API externa real:
+// Selecciona el proveedor segun variables de entorno. OpenAI es el proveedor
+// PRINCIPAL recomendado; Anthropic queda como alternativa; `mock` es el de
+// tests/desarrollo local y el valor por defecto seguro (CI no depende de APIs):
 //
-//   AI_PROVIDER  -> `mock` (defecto) | `anthropic`
-//   AI_API_KEY   -> clave (solo `anthropic`)
-//   AI_MODEL     -> modelo concreto (solo `anthropic`)
+//   AI_PROVIDER=openai     -> OpenAiQuestionGenerationProvider   (OPENAI_API_KEY/OPENAI_MODEL)
+//   AI_PROVIDER=anthropic  -> AnthropicQuestionGenerationProvider(ANTHROPIC_API_KEY/ANTHROPIC_MODEL)
+//   AI_PROVIDER=mock       -> MockQuestionGenerationProvider
+//   sin configuracion      -> mock
 //
-// Las claves NO se hardcodean: solo se leen de entorno.
+// Compatibilidad temporal: si no hay ANTHROPIC_API_KEY/ANTHROPIC_MODEL se cae a
+// las antiguas AI_API_KEY/AI_MODEL. Las claves NO se hardcodean: solo de entorno.
 
 import type { QuestionGenerationProvider } from './generationTypes.js';
 import { MockQuestionGenerationProvider } from './mockQuestionGenerationProvider.js';
+import { OpenAiQuestionGenerationProvider } from './openAiQuestionGenerationProvider.js';
 import { AnthropicQuestionGenerationProvider } from './anthropicQuestionGenerationProvider.js';
+import { AiProviderError, AiProviderErrorCode } from './aiProviderErrors.js';
 import type { EnvLike } from './generationConfig.js';
 
 function readProcessEnv(): EnvLike {
@@ -30,19 +35,37 @@ export function createQuestionGenerationProvider(
     case '':
     case 'mock':
       return new MockQuestionGenerationProvider();
-    case 'anthropic': {
-      const apiKey = env.AI_API_KEY;
+    case 'openai': {
+      const apiKey = env.OPENAI_API_KEY;
       if (!apiKey) {
-        throw new Error(
-          'AI_PROVIDER=anthropic requiere AI_API_KEY (no se puede hardcodear)',
+        throw new AiProviderError(
+          AiProviderErrorCode.OPENAI_API_KEY_MISSING,
+          'AI_PROVIDER=openai requiere OPENAI_API_KEY (no se puede hardcodear)',
+        );
+      }
+      return new OpenAiQuestionGenerationProvider({
+        apiKey,
+        model: env.OPENAI_MODEL,
+      });
+    }
+    case 'anthropic': {
+      // Compatibilidad: ANTHROPIC_* nuevo, AI_* antiguo (SPEC 018.4).
+      const apiKey = env.ANTHROPIC_API_KEY ?? env.AI_API_KEY;
+      if (!apiKey) {
+        throw new AiProviderError(
+          AiProviderErrorCode.ANTHROPIC_API_KEY_MISSING,
+          'AI_PROVIDER=anthropic requiere ANTHROPIC_API_KEY (no se puede hardcodear)',
         );
       }
       return new AnthropicQuestionGenerationProvider({
         apiKey,
-        model: env.AI_MODEL,
+        model: env.ANTHROPIC_MODEL ?? env.AI_MODEL,
       });
     }
     default:
-      throw new Error(`AI_PROVIDER no soportado: ${provider}`);
+      throw new AiProviderError(
+        AiProviderErrorCode.PROVIDER_INVALID,
+        `AI_PROVIDER no soportado: ${provider}`,
+      );
   }
 }
