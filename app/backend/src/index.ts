@@ -113,3 +113,4 @@ export * from './repository/inMemoryWorkspaceRepository.js';
 export * from './repository/workspaceMemberRepository.js';
 export * from './repository/inMemoryWorkspaceMemberRepository.js';
 export * from './service/workspaceService.js';
+export * from './service/platformService.js';

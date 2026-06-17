@@ -1,5 +1,9 @@
-// Gestion de oposiciones y de acceso de usuarios a oposiciones (SPEC 010, 9-10,
-// 14.4-14.10). La logica de permisos vive en `access/permissions`.
+// Gestion de oposiciones y de acceso de usuarios a oposiciones (SPEC 010 + 011).
+//
+// SPEC 011 (workspace-first): el acceso a una oposicion se decide por la
+// membresia activa del workspace al que pertenece y por el rol DENTRO del
+// workspace (owner/admin gestionan; student estudia con acceso a la oposicion).
+// El `User.role` global ya no decide capacidades aqui.
 
 import { randomUUID } from 'node:crypto';
 import {
@@ -18,11 +22,12 @@ import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRep
 import { AccessError } from '../access/accessError.js';
 import { AccessErrorCode } from '../access/accessErrors.js';
 import {
-  requireAdmin,
-  requireManageOpposition,
+  canManageWorkspace,
+  hasActiveAccess,
+  isActiveWorkspaceMember,
   requireManageWorkspace,
-  requireOppositionAccess,
   requireUser,
+  requireWorkspaceMember,
 } from '../access/permissions.js';
 
 export interface CreateOppositionInput {
@@ -37,39 +42,30 @@ export interface CreateOppositionInput {
 export interface OppositionServiceOptions {
   generateId?: () => string;
   now?: () => Date;
-  /**
-   * Si se proporciona (SPEC 011), crear una oposicion exige que el actor pueda
-   * gestionar el workspace (owner/admin). Si no, solo se exige `workspace_id`.
-   */
-  workspaceMemberRepository?: WorkspaceMemberRepository;
 }
 
 export class OppositionService {
   private readonly generateId: () => string;
   private readonly now: () => Date;
-  private readonly members?: WorkspaceMemberRepository;
 
   constructor(
     private readonly oppositions: OppositionRepository,
     private readonly access: OppositionAccessRepository,
+    private readonly members: WorkspaceMemberRepository,
     options: OppositionServiceOptions = {},
   ) {
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
-    this.members = options.workspaceMemberRepository;
   }
 
-  // 14.4 Crear oposicion (solo admin). El creador queda como `owner`.
-  // SPEC 011: la oposicion debe pertenecer a un workspace; si hay repo de
-  // miembros, el actor debe poder gestionar ese workspace (owner/admin).
+  // Crear oposicion: la crea quien puede gestionar el workspace (owner/admin del
+  // workspace), no un admin global. El creador queda como `owner` de la oposicion.
   createOpposition(actor: User, input: CreateOppositionInput): Opposition {
-    requireAdmin(actor);
+    requireUser(actor);
     if (!isNonEmptyString(input.workspace_id)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_WORKSPACE_REQUIRED]);
     }
-    if (this.members) {
-      requireManageWorkspace(this.members, actor, input.workspace_id);
-    }
+    requireManageWorkspace(this.members, actor, input.workspace_id);
     if (!isNonEmptyString(input.title)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_TITLE_REQUIRED]);
     }
@@ -100,43 +96,45 @@ export class OppositionService {
     return opposition;
   }
 
-  // 14.5 Oposiciones del usuario (admin: las que gestiona; student: con acceso).
+  // Oposiciones visibles: el usuario debe ser miembro activo del workspace de la
+  // oposicion y, o bien gestionarlo (ve todas), o tener acceso a la oposicion.
   listForUser(user: User): Opposition[] {
     requireUser(user);
-    const result: Opposition[] = [];
-    for (const access of this.access.findByUser(user.id)) {
-      if (access.status !== 'active') {
-        continue;
+    return this.oppositions.findAll().filter((opp) => {
+      if (!isActiveWorkspaceMember(this.members, user.id, opp.workspace_id)) {
+        return false;
       }
-      const opposition = this.oppositions.findById(access.opposition_id);
-      if (opposition) {
-        result.push(opposition);
-      }
-    }
-    return result;
+      return (
+        canManageWorkspace(this.members, user, opp.workspace_id) ||
+        hasActiveAccess(this.access, user.id, opp.id)
+      );
+    });
   }
 
-  // 14.6 Ver oposicion (requiere acceso).
+  // Ver oposicion: miembro del workspace + (gestor del workspace o acceso a la
+  // oposicion).
   getOpposition(user: User, oppositionId: string): Opposition {
-    requireOppositionAccess(this.access, user, oppositionId);
     const opposition = this.oppositions.findById(oppositionId);
     if (!opposition) {
       throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
     }
+    requireWorkspaceMember(this.members, user, opposition.workspace_id);
+    if (
+      !canManageWorkspace(this.members, user, opposition.workspace_id) &&
+      !hasActiveAccess(this.access, user.id, oppositionId)
+    ) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
     return opposition;
   }
 
-  // 14.7 Editar oposicion (admin gestor).
+  // Editar oposicion: gestor del workspace de esa oposicion.
   editOpposition(
     actor: User,
     oppositionId: string,
     changes: CreateOppositionInput,
   ): Opposition {
-    requireManageOpposition(this.access, actor, oppositionId);
-    const existing = this.oppositions.findById(oppositionId);
-    if (!existing) {
-      throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
-    }
+    const existing = this.requireManagedOpposition(actor, oppositionId);
     const status = changes.status ?? existing.status;
     if (!isOppositionStatus(status)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_INVALID_STATUS]);
@@ -153,15 +151,12 @@ export class OppositionService {
     });
   }
 
-  // 14.8 Dar acceso a un estudiante (admin gestor).
+  // Dar acceso a un usuario a una oposicion (gestor del workspace).
   grantAccess(
     actor: User,
     input: { user_id: string; opposition_id: string; role?: OppositionRole },
   ): OppositionAccess {
-    requireManageOpposition(this.access, actor, input.opposition_id);
-    if (!this.oppositions.findById(input.opposition_id)) {
-      throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
-    }
+    this.requireManagedOpposition(actor, input.opposition_id);
     const existing = this.access.find(input.user_id, input.opposition_id);
     if (existing && existing.status === 'active') {
       throw new AccessError([
@@ -176,12 +171,11 @@ export class OppositionService {
     );
   }
 
-  // 14.9 Revocar acceso (no borra historico).
   revokeAccess(
     actor: User,
     input: { user_id: string; opposition_id: string },
   ): OppositionAccess {
-    requireManageOpposition(this.access, actor, input.opposition_id);
+    this.requireManagedOpposition(actor, input.opposition_id);
     const existing = this.access.find(input.user_id, input.opposition_id);
     if (!existing) {
       throw new AccessError([AccessErrorCode.OPPOSITION_ACCESS_NOT_FOUND]);
@@ -193,12 +187,24 @@ export class OppositionService {
     });
   }
 
-  // 14.10 Listar estudiantes de una oposicion (admin gestor).
   listStudents(actor: User, oppositionId: string): OppositionAccess[] {
-    requireManageOpposition(this.access, actor, oppositionId);
+    this.requireManagedOpposition(actor, oppositionId);
     return this.access
       .findByOpposition(oppositionId)
       .filter((a) => a.role_in_opposition === 'student');
+  }
+
+  // Resuelve la oposicion y exige que el actor gestione su workspace.
+  private requireManagedOpposition(
+    actor: User,
+    oppositionId: string,
+  ): Opposition {
+    const opposition = this.oppositions.findById(oppositionId);
+    if (!opposition) {
+      throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
+    }
+    requireManageWorkspace(this.members, actor, opposition.workspace_id);
+    return opposition;
   }
 
   private upsertAccess(

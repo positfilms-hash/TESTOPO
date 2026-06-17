@@ -8,6 +8,9 @@ coverage/
 .vite/
 *.log
 
+# Capturas de revision visual (Codex/Playwright), no se versionan
+smoke-*.png
+
 # Private uploaded materials (never commit real user material)
 /private-materials/
 /uploads/
