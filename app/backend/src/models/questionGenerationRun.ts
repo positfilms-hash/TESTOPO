@@ -19,5 +19,11 @@ export interface QuestionGenerationRun {
   created_count: number;
   status: GenerationRunStatus;
   errors: QuestionGenerationErrorCode[];
+  /** Proveedor IA usado (SPEC 018.4, 23). P.ej. `mock`, `anthropic`. */
+  provider: string;
+  /** Modelo concreto, si aplica (null en mock). */
+  model: string | null;
+  /** Si la generacion uso feedback de revisiones anteriores. */
+  feedback_used: boolean;
   created_at: Date;
 }

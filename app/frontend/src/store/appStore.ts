@@ -21,6 +21,8 @@ import {
   QuestionGenerationService,
   QuestionValidationService,
   QuestionReviewService,
+  InMemoryQuestionReviewFeedbackRepository,
+  QuestionFeedbackService,
   InMemoryTestRepository,
   InMemoryTestQuestionRepository,
   TestGeneratorService,
@@ -58,6 +60,8 @@ export interface AppStore {
   generation: QuestionGenerationService;
   validation: QuestionValidationService;
   review: QuestionReviewService;
+  /** Resumen de feedback de revision (SPEC 018.4). */
+  feedback: QuestionFeedbackService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -123,21 +127,31 @@ export function createAppStore(seed = true): AppStore {
     resolveTopicOpposition: async (id) =>
       (await topics.getTopic(id))?.opposition_id ?? null,
   });
-  const generation = new QuestionGenerationService({
-    questionService: questions,
-    materialRepository: materialRepo,
-    topicRepository: topicRepo,
-  });
   const validation = new QuestionValidationService({
     questionService: questions,
     materialRepository: materialRepo,
     topicRepository: topicRepo,
+  });
+  const feedbackRepo = new InMemoryQuestionReviewFeedbackRepository();
+  const feedback = new QuestionFeedbackService({
+    feedbackRepository: feedbackRepo,
+    questionService: questions,
+  });
+  // Generacion IA (SPEC 018.4): valida cada borrador y usa el feedback previo.
+  // El proveedor se queda en mock en el navegador (sin claves en el bundle).
+  const generation = new QuestionGenerationService({
+    questionService: questions,
+    materialRepository: materialRepo,
+    topicRepository: topicRepo,
+    validationService: validation,
+    feedbackService: feedback,
   });
   const review = new QuestionReviewService({
     questionService: questions,
     validationService: validation,
     materialRepository: materialRepo,
     topicRepository: topicRepo,
+    feedbackRepository: feedbackRepo,
   });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
@@ -163,6 +177,7 @@ export function createAppStore(seed = true): AppStore {
     questions,
     generation,
     review,
+    feedback,
     testGenerator,
     attempts,
   });
@@ -180,6 +195,7 @@ export function createAppStore(seed = true): AppStore {
     generation,
     validation,
     review,
+    feedback,
     testGenerator,
     attempts,
     platform,

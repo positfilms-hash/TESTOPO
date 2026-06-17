@@ -14,8 +14,10 @@ export class MockQuestionGenerationProvider
   implements QuestionGenerationProvider
 {
   readonly version = 'mock-generator-1';
+  readonly name = 'mock';
+  readonly model = null;
 
-  generate(context: GenerationContext): GeneratedCandidate[] {
+  async generate(context: GenerationContext): Promise<GeneratedCandidate[]> {
     const difficulties = distributeDifficulty(
       context.difficulty,
       context.count,

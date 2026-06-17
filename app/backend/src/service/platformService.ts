@@ -52,6 +52,11 @@ import type {
   ReviewActionInput,
   ReviewActionResult,
 } from './questionReviewService.js';
+import type { QuestionFeedbackService } from './questionFeedbackService.js';
+import type {
+  QuestionGenerationFeedbackSummary,
+  QuestionReviewFeedback,
+} from '../models/questionReviewFeedback.js';
 import type {
   GenerateTestRequest,
   GeneratedTest,
@@ -82,6 +87,8 @@ export interface PlatformServiceDeps {
   questions: QuestionService;
   generation: QuestionGenerationService;
   review: QuestionReviewService;
+  /** Resumen de feedback de revision (SPEC 018.4). Opcional. */
+  feedback?: QuestionFeedbackService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -259,6 +266,30 @@ export class PlatformService {
   ): Promise<ReviewActionResult> {
     await this.requireManageQuestion(actor, questionId);
     return this.deps.review.editFromReview(questionId, changes, input);
+  }
+
+  // Feedback estructurado de una pregunta (SPEC 018.4). Solo gestion.
+  async listQuestionFeedback(
+    actor: User,
+    questionId: string,
+  ): Promise<QuestionReviewFeedback[]> {
+    await this.requireManageQuestion(actor, questionId);
+    return this.deps.review.listFeedback(questionId);
+  }
+
+  // Resumen de feedback para alimentar la generacion (SPEC 018.4, 16). Solo
+  // gestion del workspace de la oposicion.
+  async getGenerationFeedbackSummary(
+    actor: User,
+    oppositionId: string,
+  ): Promise<QuestionGenerationFeedbackSummary[]> {
+    await this.requireManageOpposition(actor, oppositionId);
+    if (!this.deps.feedback) {
+      return [];
+    }
+    return this.deps.feedback.getFeedbackSummaryForGeneration({
+      opposition_id: oppositionId,
+    });
   }
 
   // --- Estudio (miembro del workspace con acceso a la oposicion) -----------

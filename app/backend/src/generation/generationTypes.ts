@@ -5,6 +5,7 @@ import type {
   GenerationMode,
   RequestedDifficulty,
 } from '../models/generationMetadata.js';
+import type { QuestionGenerationFeedbackSummary } from '../models/questionReviewFeedback.js';
 
 // Solicitud generica de generacion. Los wrappers del servicio rellenan `mode`.
 export interface GenerateQuestionsRequest {
@@ -29,6 +30,12 @@ export interface GenerationContext {
   difficulty: RequestedDifficulty;
   count: number;
   topic_title: string | null;
+  /**
+   * Resumen de errores detectados en revisiones anteriores (SPEC 018.4, 15-16).
+   * El proveedor lo usa como contexto adicional para evitar repetir fallos.
+   * No es entrenamiento: es mejora por contexto y reglas.
+   */
+  previous_feedback?: QuestionGenerationFeedbackSummary[];
 }
 
 export interface GeneratedOption {
@@ -44,9 +51,15 @@ export interface GeneratedCandidate {
   difficulty: Difficulty;
 }
 
-// Proveedor desacoplado de generacion (SPEC 004, 10). Permite enchufar una IA
-// real en el futuro sin reescribir la logica de orquestacion.
+// Proveedor desacoplado de generacion (SPEC 004, 10; SPEC 018.4, 8). Permite
+// enchufar una IA real (o el mock de tests) sin reescribir la orquestacion.
+// `generate` es asincrono (SPEC 018.3/018.4): una IA real llama por red.
 export interface QuestionGenerationProvider {
+  /** Version del generador, para trazabilidad de la pregunta. */
   readonly version: string;
-  generate(context: GenerationContext): GeneratedCandidate[];
+  /** Nombre del proveedor (p.ej. `mock`, `anthropic`). */
+  readonly name: string;
+  /** Modelo concreto usado, si aplica (null en mock). */
+  readonly model: string | null;
+  generate(context: GenerationContext): Promise<GeneratedCandidate[]>;
 }

@@ -19,9 +19,16 @@ import type { Question } from '../models/question.js';
 import type { QuestionReview, ReviewAction } from '../models/questionReview.js';
 import type { QuestionValidationResult } from '../models/questionValidationResult.js';
 import type { Topic } from '../models/topic.js';
+import type {
+  FeedbackSeverity,
+  FeedbackType,
+  QuestionReviewFeedback,
+} from '../models/questionReviewFeedback.js';
+import { resolveFeedbackSeverity } from '../models/questionReviewFeedback.js';
 import type { MaterialRepository } from '../repository/materialRepository.js';
 import type { TopicRepository } from '../repository/topicRepository.js';
 import type { QuestionReviewRepository } from '../repository/questionReviewRepository.js';
+import type { QuestionReviewFeedbackRepository } from '../repository/questionReviewFeedbackRepository.js';
 import { InMemoryQuestionReviewRepository } from '../repository/inMemoryQuestionReviewRepository.js';
 import { formalFindings } from '../quality/qualityChecks.js';
 import {
@@ -58,15 +65,28 @@ export interface ReviewDetail {
   reviews: QuestionReview[];
 }
 
+// Motivo estructurado de un rechazo/correccion (SPEC 018.4, 12-13, 17). La
+// severidad es opcional: si se omite se usa la del catalogo por tipo.
+export interface ReviewFeedbackInput {
+  feedback_type: FeedbackType;
+  severity?: FeedbackSeverity;
+  comment?: string | null;
+  created_by?: string | null;
+}
+
 export interface ReviewActionInput {
   reviewer_name?: string | null;
   notes?: string | null;
+  /** Motivos estructurados (SPEC 018.4). Se persisten ligados a la revision. */
+  feedback?: ReviewFeedbackInput[];
 }
 
 export interface ReviewActionResult {
   question: Question;
   review: QuestionReview;
   validation?: QuestionValidationResult;
+  /** Feedback registrado en esta accion, si lo hubo. */
+  feedback?: QuestionReviewFeedback[];
 }
 
 export interface QuestionReviewServiceOptions {
@@ -75,6 +95,11 @@ export interface QuestionReviewServiceOptions {
   materialRepository: MaterialRepository;
   topicRepository: TopicRepository;
   reviewRepository?: QuestionReviewRepository;
+  /**
+   * Persistencia del feedback de revision (SPEC 018.4). Si se omite, registrar
+   * feedback en una accion lanza error en vez de perderlo silenciosamente.
+   */
+  feedbackRepository?: QuestionReviewFeedbackRepository;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -85,6 +110,7 @@ export class QuestionReviewService {
   private readonly materials: MaterialRepository;
   private readonly topics: TopicRepository;
   private readonly reviews: QuestionReviewRepository;
+  private readonly feedbackRepository?: QuestionReviewFeedbackRepository;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -95,6 +121,7 @@ export class QuestionReviewService {
     this.topics = options.topicRepository;
     this.reviews =
       options.reviewRepository ?? new InMemoryQuestionReviewRepository();
+    this.feedbackRepository = options.feedbackRepository;
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
   }
@@ -160,7 +187,7 @@ export class QuestionReviewService {
       : 'draft';
     const question = await this.questions.changeStatus(questionId, newStatus);
 
-    const review = await this.recordReview(
+    const { review, feedback } = await this.recordReview(
       questionId,
       'edit',
       previousStatus,
@@ -168,7 +195,7 @@ export class QuestionReviewService {
       input,
       validation.id,
     );
-    return { question, review, validation };
+    return { question, review, validation, feedback };
   }
 
   // 9.4 Aprobar: unica via a `validated`. Reusa la validacion de SPEC 005.
@@ -188,7 +215,7 @@ export class QuestionReviewService {
     }
 
     const question = await this.questions.changeStatus(questionId, 'validated');
-    const review = await this.recordReview(
+    const { review, feedback } = await this.recordReview(
       questionId,
       'approve',
       existing.status,
@@ -196,7 +223,7 @@ export class QuestionReviewService {
       input,
       validation.id,
     );
-    return { question, review, validation };
+    return { question, review, validation, feedback };
   }
 
   // 9.5 Rechazar.
@@ -243,7 +270,7 @@ export class QuestionReviewService {
       questionId,
       'pending_review',
     );
-    const review = await this.recordReview(
+    const { review, feedback } = await this.recordReview(
       questionId,
       'return_to_pending_review',
       existing.status,
@@ -251,7 +278,7 @@ export class QuestionReviewService {
       input,
       null,
     );
-    return { question, review };
+    return { question, review, feedback };
   }
 
   async listReviews(questionId: string): Promise<QuestionReview[]> {
@@ -268,7 +295,7 @@ export class QuestionReviewService {
     const existing = await this.requireQuestion(questionId);
     this.assertTransition(existing.status, newStatus);
     const question = await this.questions.changeStatus(questionId, newStatus);
-    const review = await this.recordReview(
+    const { review, feedback } = await this.recordReview(
       questionId,
       action,
       existing.status,
@@ -276,13 +303,21 @@ export class QuestionReviewService {
       input,
       null,
     );
-    return { question, review };
+    return { question, review, feedback };
   }
 
   private assertTransition(from: QuestionStatus, to: QuestionStatus): void {
     if (!isAllowedTransition(from, to)) {
       throw new QuestionReviewError([transitionErrorCode(from, to)]);
     }
+  }
+
+  // Lista el feedback estructurado registrado sobre una pregunta (SPEC 018.4).
+  async listFeedback(questionId: string): Promise<QuestionReviewFeedback[]> {
+    if (!this.feedbackRepository) {
+      return [];
+    }
+    return this.feedbackRepository.findByQuestion(questionId);
   }
 
   private async recordReview(
@@ -292,8 +327,8 @@ export class QuestionReviewService {
     newStatus: QuestionStatus,
     input: ReviewActionInput,
     validationResultId: string | null,
-  ): Promise<QuestionReview> {
-    return this.reviews.create({
+  ): Promise<{ review: QuestionReview; feedback: QuestionReviewFeedback[] }> {
+    const review = await this.reviews.create({
       id: this.generateId(),
       question_id: questionId,
       action,
@@ -304,6 +339,41 @@ export class QuestionReviewService {
       validation_result_id: validationResultId,
       created_at: this.now(),
     });
+    const feedback = await this.persistFeedback(review.id, questionId, input);
+    return { review, feedback };
+  }
+
+  // Persiste los motivos estructurados ligados a la revision (SPEC 018.4, 12).
+  private async persistFeedback(
+    reviewId: string,
+    questionId: string,
+    input: ReviewActionInput,
+  ): Promise<QuestionReviewFeedback[]> {
+    const entries = input.feedback ?? [];
+    if (entries.length === 0) {
+      return [];
+    }
+    if (!this.feedbackRepository) {
+      throw new Error(
+        'Se indico feedback de revision pero no hay feedbackRepository configurado',
+      );
+    }
+    const created: QuestionReviewFeedback[] = [];
+    for (const entry of entries) {
+      created.push(
+        await this.feedbackRepository.create({
+          id: this.generateId(),
+          question_id: questionId,
+          review_id: reviewId,
+          feedback_type: entry.feedback_type,
+          severity: resolveFeedbackSeverity(entry.feedback_type, entry.severity),
+          comment: entry.comment ?? null,
+          created_by: entry.created_by ?? null,
+          created_at: this.now(),
+        }),
+      );
+    }
+    return created;
   }
 
   private async requireQuestion(questionId: string): Promise<Question> {
