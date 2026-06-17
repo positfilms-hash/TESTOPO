@@ -111,6 +111,40 @@ export class OppositionService {
     });
   }
 
+  // ¿El usuario tiene acceso de ESTUDIO (matricula activa) a alguna oposicion
+  // del workspace? (SPEC 014: decide la zona estudiante y el selector de modo).
+  // Es independiente de gestionar el workspace: un gestor puede ademas estudiar.
+  hasStudyAccess(user: User, workspaceId: string): boolean {
+    requireUser(user);
+    return this.oppositions
+      .findAll()
+      .some(
+        (opp) =>
+          opp.workspace_id === workspaceId &&
+          this.isActiveStudent(user.id, opp.id),
+      );
+  }
+
+  // Oposiciones en las que el usuario estudia (matricula de estudiante activa),
+  // sin contar las que solo puede gestionar como owner (SPEC 014: la creacion
+  // de una oposicion matricula al creador como `owner`, eso NO es estudiar).
+  listStudyOppositions(user: User): Opposition[] {
+    requireUser(user);
+    return this.oppositions
+      .findAll()
+      .filter((opp) => this.isActiveStudent(user.id, opp.id));
+  }
+
+  // Matricula de ESTUDIANTE activa (excluye owner/manager).
+  private isActiveStudent(userId: string, oppositionId: string): boolean {
+    const access = this.access.find(userId, oppositionId);
+    return (
+      access !== null &&
+      access.status === 'active' &&
+      access.role_in_opposition === 'student'
+    );
+  }
+
   // Ver oposicion: miembro del workspace + (gestor del workspace o acceso a la
   // oposicion).
   getOpposition(user: User, oppositionId: string): Opposition {
