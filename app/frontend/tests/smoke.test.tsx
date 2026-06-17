@@ -68,6 +68,21 @@ describe('MVP frontend - smoke (SPEC 010)', () => {
     expect(screen.getAllByText('Revisar').length).toBeGreaterThan(0);
   });
 
+  it('admin: Temario unificado muestra material y acciones al elegir tema (SPEC 017)', () => {
+    renderApp();
+    enter('admin');
+    goTo('Temario');
+    // Panel de temas con la accion de anadir.
+    expect(screen.getByText('Temas')).toBeInTheDocument();
+    expect(screen.getByText('Anadir tema')).toBeInTheDocument();
+    // Al seleccionar un tema aparecen las acciones de material.
+    fireEvent.click(
+      screen.getByRole('button', { name: /Tema 1 - Constitucion/ }),
+    );
+    expect(screen.getByText('Subir material')).toBeInTheDocument();
+    expect(screen.getByText('Importar ZIP')).toBeInTheDocument();
+  });
+
   it('estudiante: zona estudio sin secciones de administracion', () => {
     renderApp();
     enter('student');

@@ -16,6 +16,10 @@ import {
   InMemoryMaterialRepository,
   MaterialService,
   PdfMaterialService,
+  MaterialImportService,
+  FflateZipReader,
+  InMemoryMaterialImportBatchRepository,
+  InMemoryMaterialImportItemRepository,
   NaivePdfTextExtractor,
   InMemoryFileStorage,
   InMemoryTopicRepository,
@@ -62,6 +66,17 @@ function makeSetup() {
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
   });
+  const materialImport = new MaterialImportService({
+    materials: materialRepo,
+    topics,
+    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+    oppositions: oppositionRepo,
+    storage: new InMemoryFileStorage(),
+    extractor: new NaivePdfTextExtractor(),
+    zipReader: new FflateZipReader(),
+    batches: new InMemoryMaterialImportBatchRepository(),
+    items: new InMemoryMaterialImportItemRepository(),
+  });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
     resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
@@ -106,6 +121,7 @@ function makeSetup() {
     oppositions,
     materials,
     pdfMaterials,
+    materialImport,
     topics,
     questions,
     generation,
@@ -275,6 +291,23 @@ describe('SPEC 013 - el estudiante no puede administrar', () => {
         material_id: activeMaterial.id,
         difficulty: 'easy',
         question_count: 2,
+      }),
+    ).toThrow(AccessError);
+  });
+
+  it('no puede importar material (subida multiple ni ZIP) - SPEC 017', () => {
+    const { platform, student, opp } = makeSetup();
+    expect(() =>
+      platform.importFilesToTopic(student, {
+        opposition_id: opp.id,
+        topic_id: 't',
+        files: [{ original_filename: 'a.pdf', bytes: new Uint8Array([1]) }],
+      }),
+    ).toThrow(AccessError);
+    expect(() =>
+      platform.importZip(student, {
+        opposition_id: opp.id,
+        zip: { original_filename: 'z.zip', bytes: new Uint8Array([1]) },
       }),
     ).toThrow(AccessError);
   });

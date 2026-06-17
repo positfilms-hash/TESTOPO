@@ -18,6 +18,10 @@ import {
   PdfUploadError,
   PdfErrorCode,
   MAX_PDF_SIZE_BYTES,
+  MaterialImportService,
+  FflateZipReader,
+  InMemoryMaterialImportBatchRepository,
+  InMemoryMaterialImportItemRepository,
   InMemoryUserRepository,
   UserService,
   InMemoryWorkspaceRepository,
@@ -396,6 +400,17 @@ function makePlatformSetup() {
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
   });
+  const materialImport = new MaterialImportService({
+    materials: materialRepo,
+    topics,
+    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+    oppositions: oppositionRepo,
+    storage: new InMemoryFileStorage(),
+    extractor: new NaivePdfTextExtractor(),
+    zipReader: new FflateZipReader(),
+    batches: new InMemoryMaterialImportBatchRepository(),
+    items: new InMemoryMaterialImportItemRepository(),
+  });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
     resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
@@ -440,6 +455,7 @@ function makePlatformSetup() {
     oppositions,
     materials,
     pdfMaterials,
+    materialImport,
     topics,
     questions,
     generation,

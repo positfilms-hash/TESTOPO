@@ -32,6 +32,12 @@ import type {
   PdfMaterialService,
   UploadPdfInput,
 } from './pdfMaterialService.js';
+import type {
+  ImportFilesInput,
+  ImportResult,
+  ImportZipInput,
+  MaterialImportService,
+} from './materialImportService.js';
 import type { CreateTopicInput, TopicService } from './topicService.js';
 import type {
   EditQuestionInput,
@@ -71,6 +77,7 @@ export interface PlatformServiceDeps {
   oppositions: OppositionService;
   materials: MaterialService;
   pdfMaterials: PdfMaterialService;
+  materialImport: MaterialImportService;
   topics: TopicService;
   questions: QuestionService;
   generation: QuestionGenerationService;
@@ -96,6 +103,34 @@ export class PlatformService {
       ...input,
       uploaded_by: actor.id,
     });
+  }
+
+  // Importar varios archivos a un tema (SPEC 017). Solo owner/admin.
+  importFilesToTopic(actor: User, input: ImportFilesInput): ImportResult {
+    this.requireManageOpposition(actor, input.opposition_id);
+    return this.deps.materialImport.importFiles({
+      ...input,
+      uploaded_by: actor.id,
+    });
+  }
+
+  // Importar un ZIP a una oposicion (SPEC 017). Solo owner/admin.
+  importZip(actor: User, input: ImportZipInput): ImportResult {
+    this.requireManageOpposition(actor, input.opposition_id);
+    return this.deps.materialImport.importZip({
+      ...input,
+      uploaded_by: actor.id,
+    });
+  }
+
+  // Consultar un lote de importacion (resumen + items). Solo owner/admin.
+  getImportBatch(actor: User, batchId: string): ImportResult | null {
+    const result = this.deps.materialImport.getBatch(batchId);
+    if (!result) {
+      return null;
+    }
+    this.requireManageOpposition(actor, result.batch.opposition_id);
+    return result;
   }
 
   // Listar materiales de una oposicion. Gestor: todos. Estudiante con acceso:
