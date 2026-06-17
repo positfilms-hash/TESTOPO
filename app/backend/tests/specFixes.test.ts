@@ -11,7 +11,7 @@ import { validateQuestion } from '../src/validation/validateQuestion.js';
 import { ValidationErrorCode } from '../src/validation/errors.js';
 import type { Question } from '../src/models/question.js';
 import type { Source } from '../src/models/source.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 const now = new Date(Date.UTC(2026, 0, 1));
 
@@ -19,6 +19,7 @@ describe('Fix: validateQuestion comprueba correct_answer', () => {
   it('falla si correct_answer no apunta a la unica opcion correcta', () => {
     const question: Question = {
       id: 'q1',
+      opposition_id: TEST_OPPOSITION_ID,
       statement: 'Enunciado ficticio',
       options: [
         { id: 'o-1', text: 'A', is_correct: true, order: 0 },
@@ -93,7 +94,7 @@ describe('Fix: no validar si material/tema no se puede resolver', () => {
 describe('Fix: TopicService.linkMaterial exige repositorio de material', () => {
   it('lanza si no hay materialRepository configurado', () => {
     const topics = new TopicService(new InMemoryTopicRepository());
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
     expect(() => topics.linkMaterial('cualquier', topic.id)).toThrow();
   });

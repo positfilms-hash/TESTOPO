@@ -15,7 +15,8 @@ const TYPE_LABELS: Record<MaterialType, string> = {
 };
 
 export function MaterialPage() {
-  const { store, refresh } = useStore();
+  const { store, refresh, currentUser, currentOpposition } = useStore();
+  const isAdmin = currentUser?.role === 'admin';
   const [view, setView] = useState<View>({ kind: 'list' });
 
   if (view.kind === 'new') {
@@ -39,13 +40,21 @@ export function MaterialPage() {
     );
   }
 
-  const materials = store.materials.listMaterials();
+  const materials = store.materials
+    .listMaterials()
+    .filter((m) => m.opposition_id === currentOpposition?.id)
+    // El estudiante solo ve material activo (SPEC 010, 13.3).
+    .filter((m) => isAdmin || m.status === 'active');
   return (
     <div>
       <PageHeader
         title="Material"
         subtitle="Tus temarios, leyes y apuntes."
-        action={<Button onClick={() => setView({ kind: 'new' })}>Anadir material</Button>}
+        action={
+          isAdmin ? (
+            <Button onClick={() => setView({ kind: 'new' })}>Anadir material</Button>
+          ) : undefined
+        }
       />
       {materials.length === 0 ? (
         <EmptyState message="Todavia no has anadido material. Empieza con 'Anadir material'." />
@@ -80,7 +89,7 @@ function MaterialForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const { store } = useStore();
+  const { store, currentOpposition } = useStore();
   const [title, setTitle] = useState('');
   const [type, setType] = useState<MaterialType>('syllabus');
   const [reference, setReference] = useState('');
@@ -92,6 +101,7 @@ function MaterialForm({
     setError(null);
     try {
       store.materials.createMaterial({
+        opposition_id: currentOpposition?.id,
         title,
         type,
         status: 'active',
@@ -143,7 +153,8 @@ function MaterialForm({
 }
 
 function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { store, refresh } = useStore();
+  const { store, refresh, currentUser } = useStore();
+  const isAdmin = currentUser?.role === 'admin';
   const material = store.materials.getMaterial(id);
   const [title, setTitle] = useState(material?.title ?? '');
   const [reference, setReference] = useState(material?.reference ?? '');
@@ -188,14 +199,16 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
         <Field label="Referencia">
           <input value={reference} onChange={(e) => setReference(e.target.value)} />
         </Field>
-        <div className="row">
-          <Button onClick={save}>Guardar cambios</Button>
-          {material.status !== 'obsolete' && (
-            <Button variant="danger" onClick={markObsolete}>
-              Marcar obsoleto
-            </Button>
-          )}
-        </div>
+        {isAdmin && (
+          <div className="row">
+            <Button onClick={save}>Guardar cambios</Button>
+            {material.status !== 'obsolete' && (
+              <Button variant="danger" onClick={markObsolete}>
+                Marcar obsoleto
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       <details className="card" style={{ maxWidth: 560 }}>
         <summary className="muted small">Detalles tecnicos</summary>

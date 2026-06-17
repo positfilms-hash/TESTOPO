@@ -20,8 +20,13 @@ import type { QuestionRepository } from '../repository/questionRepository.js';
 import { validateTopicMetadata } from '../validation/validateTopic.js';
 import { TopicValidationErrorCode } from '../validation/topicErrors.js';
 import { TopicValidationError } from './topicValidationError.js';
+import {
+  assertSameOpposition,
+  requireOpposition,
+} from '../access/oppositionGuards.js';
 
 export interface CreateTopicInput {
+  opposition_id?: string;
   title?: string;
   description?: string | null;
   code?: string | null;
@@ -70,19 +75,26 @@ export class TopicService {
 
   // 11.1 Crear tema (raiz o subtema). Estado por defecto `active`.
   createTopic(input: CreateTopicInput): Topic {
+    const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({ title: input.title, status });
 
     const parentId = input.parent_id ?? null;
-    if (parentId !== null && !this.topics.findById(parentId)) {
-      throw new TopicValidationError([
-        TopicValidationErrorCode.PARENT_NOT_FOUND,
-      ]);
+    if (parentId !== null) {
+      const parent = this.topics.findById(parentId);
+      if (!parent) {
+        throw new TopicValidationError([
+          TopicValidationErrorCode.PARENT_NOT_FOUND,
+        ]);
+      }
+      // El subtema debe pertenecer a la misma oposicion que su padre.
+      assertSameOpposition(parent.opposition_id, oppositionId);
     }
 
     const timestamp = this.now();
     const topic: Topic = {
       id: this.generateId(),
+      opposition_id: oppositionId,
       title: input.title as string,
       description: input.description ?? null,
       code: input.code ?? null,
@@ -188,17 +200,20 @@ export class TopicService {
     topicId: string,
     reference: string | null = null,
   ): TopicMaterialLink {
-    this.requireTopic(topicId);
+    const topic = this.requireTopic(topicId);
     if (!this.materials) {
       throw new Error(
         'linkMaterial requires a materialRepository in TopicService options',
       );
     }
-    if (!this.materials.findById(materialId)) {
+    const material = this.materials.findById(materialId);
+    if (!material) {
       throw new TopicValidationError([
         TopicValidationErrorCode.MATERIAL_NOT_FOUND,
       ]);
     }
+    // No se puede vincular material de otra oposicion (SPEC 010, 17.1).
+    assertSameOpposition(material.opposition_id, topic.opposition_id);
     if (this.links.find(materialId, topicId)) {
       throw new TopicValidationError([
         TopicValidationErrorCode.MATERIAL_LINK_ALREADY_EXISTS,
@@ -239,6 +254,8 @@ export class TopicService {
         TopicValidationErrorCode.QUESTION_NOT_FOUND,
       ]);
     }
+    // No se puede vincular una pregunta a un tema de otra oposicion (17.1).
+    assertSameOpposition(topic.opposition_id, question.opposition_id);
 
     this.questions.save({
       ...question,

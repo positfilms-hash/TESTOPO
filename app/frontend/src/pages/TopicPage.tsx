@@ -4,19 +4,25 @@ import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
 export function TopicPage() {
-  const { store, refresh } = useStore();
+  const { store, refresh, currentOpposition } = useStore();
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [parentId, setParentId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const tree = store.topics.getTopicTree();
-  const allTopics = store.topics.listTopics();
+  const oppositionId = currentOpposition?.id;
+  const tree = store.topics
+    .getTopicTree()
+    .filter((node) => node.opposition_id === oppositionId);
+  const allTopics = store.topics
+    .listTopics()
+    .filter((t) => t.opposition_id === oppositionId);
 
   const addTopic = () => {
     setError(null);
     try {
       store.topics.createTopic({
+        opposition_id: oppositionId,
         title,
         parent_id: parentId || null,
       });

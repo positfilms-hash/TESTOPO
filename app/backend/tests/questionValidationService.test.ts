@@ -13,7 +13,7 @@ import { QuestionValidationCode } from '../src/quality/qualityCodes.js';
 import type { QuestionValidationResult } from '../src/models/questionValidationResult.js';
 import type { Difficulty } from '../src/models/enums.js';
 import type { Source } from '../src/models/source.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
@@ -211,6 +211,7 @@ describe('QuestionValidationService - fuente y tema', () => {
   it('con material vinculado obsoleto falla', () => {
     const { materials, questions, validation } = makeSetup();
     const material = materials.createMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Material ficticio',
       type: 'syllabus',
       content_text: 'texto',
@@ -234,7 +235,7 @@ describe('QuestionValidationService - fuente y tema', () => {
 
   it('con tema obsoleto (topic_id) falla', () => {
     const { topics, questions, validation } = makeSetup();
-    const topic = topics.createTopic({ title: 'Tema viejo' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
     topics.markObsolete(topic.id);
     const q = createQuestion(questions, { topic_id: topic.id });
     const result = validation.validateQuestion(q.id);

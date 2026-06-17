@@ -1,4 +1,4 @@
-// Cablea los servicios del backend (SPEC 001-008) en el navegador (SPEC 009:
+// Cablea los servicios del backend (SPEC 001-010) en el navegador (SPEC 009:
 // adapter en el navegador, sin API). Todo el estado vive en memoria por sesion.
 // La logica de negocio NO se reimplementa aqui: solo se instancia y se usa.
 
@@ -16,10 +16,25 @@ import {
   InMemoryTestQuestionRepository,
   TestGeneratorService,
   TestAttemptService,
+  InMemoryUserRepository,
+  UserService,
+  InMemoryOppositionRepository,
+  InMemoryOppositionAccessRepository,
+  OppositionService,
   type PracticeTest,
+  type Opposition,
 } from '@backend';
 
+// Credenciales sembradas para entrar rapido en la demo (ficticias).
+export const SEED_ADMIN = { email: 'admin@testopo.dev', password: 'admin1234' };
+export const SEED_STUDENT = {
+  email: 'alumno@testopo.dev',
+  password: 'alumno1234',
+};
+
 export interface AppStore {
+  users: UserService;
+  oppositions: OppositionService;
   materials: MaterialService;
   topics: TopicService;
   questions: QuestionService;
@@ -38,7 +53,12 @@ export function createAppStore(seed = true): AppStore {
   const questionRepo = new InMemoryQuestionRepository();
   const testRepo = new InMemoryTestRepository();
   const testQuestionRepo = new InMemoryTestQuestionRepository();
+  const userRepo = new InMemoryUserRepository();
+  const oppositionRepo = new InMemoryOppositionRepository();
+  const accessRepo = new InMemoryOppositionAccessRepository();
 
+  const users = new UserService(userRepo);
+  const oppositions = new OppositionService(oppositionRepo, accessRepo);
   const materials = new MaterialService(materialRepo);
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -46,6 +66,9 @@ export function createAppStore(seed = true): AppStore {
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
     resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
+    resolveMaterialOpposition: (id) =>
+      materials.getMaterial(id)?.opposition_id ?? null,
+    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -78,6 +101,8 @@ export function createAppStore(seed = true): AppStore {
   });
 
   const store: AppStore = {
+    users,
+    oppositions,
     materials,
     topics,
     questions,
@@ -95,10 +120,35 @@ export function createAppStore(seed = true): AppStore {
   return store;
 }
 
-// Datos ficticios para poder probar el flujo completo desde el primer momento.
+// Datos ficticios para probar el flujo completo desde el primer momento.
 // Nada de esto es material real (la constitucion lo prohibe).
-function seedFixtures(store: AppStore): void {
+function seedFixtures(store: AppStore): Opposition {
+  const admin = store.users.createUser({
+    name: 'Administrador',
+    email: SEED_ADMIN.email,
+    password: SEED_ADMIN.password,
+    role: 'admin',
+  });
+  const student = store.users.createUser({
+    name: 'Estudiante',
+    email: SEED_STUDENT.email,
+    password: SEED_STUDENT.password,
+    role: 'student',
+  });
+
+  const opposition = store.oppositions.createOpposition(admin, {
+    title: 'Oposicion MVP',
+    slug: 'oposicion-mvp',
+    description: 'Oposicion de ejemplo para la demo.',
+  });
+  store.oppositions.grantAccess(admin, {
+    user_id: student.id,
+    opposition_id: opposition.id,
+  });
+
+  const oppositionId = opposition.id;
   const material = store.materials.createMaterial({
+    opposition_id: oppositionId,
     title: 'Tema 1 - Constitucion (ficticio)',
     type: 'syllabus',
     status: 'active',
@@ -107,26 +157,22 @@ function seedFixtures(store: AppStore): void {
       'Texto ficticio del tema 1 sobre derechos fundamentales y organizacion.',
     description: 'Material de ejemplo para la demo.',
   });
-  store.materials.createMaterial({
-    title: 'Ley ficticia 1/2000 (ejemplo)',
-    type: 'law',
-    status: 'active',
-    reference: 'Ley ficticia',
-    content_text: 'Articulado ficticio de ejemplo.',
-  });
 
   const block = store.topics.createTopic({
+    opposition_id: oppositionId,
     title: 'Tema 1 - Constitucion',
     code: 'T1',
     order: 0,
   });
   store.topics.createTopic({
+    opposition_id: oppositionId,
     title: 'Derechos fundamentales',
     code: 'T1.1',
     parent_id: block.id,
     order: 0,
   });
   const topic2 = store.topics.createTopic({
+    opposition_id: oppositionId,
     title: 'Tema 2 - Procedimiento administrativo',
     code: 'T2',
     order: 1,
@@ -135,6 +181,7 @@ function seedFixtures(store: AppStore): void {
   const difficulties = ['easy', 'medium', 'hard'] as const;
   const makeQuestion = (n: number, topicId: string, topicText: string) =>
     store.questions.createQuestion({
+      opposition_id: oppositionId,
       statement: `Pregunta ficticia ${n}: cual es la afirmacion correcta sobre ${topicText}?`,
       options: [
         { text: `Afirmacion correcta ${n}`, is_correct: true },
@@ -157,7 +204,6 @@ function seedFixtures(store: AppStore): void {
       difficulty: difficulties[n % 3],
     });
 
-  // 8 preguntas validadas (suficientes para crear un test) y algunas pendientes.
   for (let n = 1; n <= 8; n++) {
     const useTopic2 = n > 5;
     const q = makeQuestion(
@@ -167,9 +213,10 @@ function seedFixtures(store: AppStore): void {
     );
     store.questions.changeStatus(q.id, 'validated');
   }
-  // 2 preguntas pendientes de revision para mostrar el flujo de revision.
   for (let n = 9; n <= 10; n++) {
     const q = makeQuestion(n, block.id, 'los derechos fundamentales');
     store.questions.changeStatus(q.id, 'pending_review');
   }
+
+  return opposition;
 }

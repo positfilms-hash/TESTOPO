@@ -31,6 +31,8 @@ export interface TestFilters {
 
 export interface PracticeTest {
   id: string;
+  /** Oposicion a la que pertenece el test (SPEC 010). Obligatorio. */
+  opposition_id: string;
   title: string;
   mode: TestMode;
   status: TestStatus;
