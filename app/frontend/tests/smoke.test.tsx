@@ -64,15 +64,33 @@ describe('MVP frontend - smoke (SPEC 010)', () => {
     enter('student');
     const sidebar = screen.getByLabelText('Navegacion principal');
     expect(within(sidebar).getByText('Material')).toBeInTheDocument();
-    expect(within(sidebar).getByText('Tests')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Crear test')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Mis resultados')).toBeInTheDocument();
     expect(within(sidebar).queryByText('Temario')).toBeNull();
     expect(within(sidebar).queryByText('Preguntas')).toBeNull();
   });
 
-  it('estudiante: estado vacio en Tests cuando no hay tests creados', () => {
+  it('estudiante: inicio muestra la oposicion y accion principal Crear test', () => {
     renderApp();
     enter('student');
-    goTo('Tests');
+    // Titulo de la oposicion sembrada y boton principal del portal.
+    expect(screen.getByText('Oposicion MVP')).toBeInTheDocument();
+    expect(screen.getAllByText('Crear test').length).toBeGreaterThan(0);
+  });
+
+  it('estudiante: estado vacio en Crear test cuando no hay tests creados', () => {
+    renderApp();
+    enter('student');
+    goTo('Crear test');
     expect(screen.getByText('Todavia no has creado ningun test.')).toBeInTheDocument();
+  });
+
+  it('estudiante: Mis resultados vacio al empezar', () => {
+    renderApp();
+    enter('student');
+    goTo('Mis resultados');
+    expect(
+      screen.getByText("Todavia no has enviado ningun test. Crea uno en 'Crear test'."),
+    ).toBeInTheDocument();
   });
 });

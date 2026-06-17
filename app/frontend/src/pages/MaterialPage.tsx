@@ -27,7 +27,8 @@ const TYPE_LABELS: Record<MaterialType, string> = {
 };
 
 export function MaterialPage() {
-  const { store, refresh, currentOpposition, isWorkspaceManager } = useStore();
+  const { store, refresh, currentUser, currentOpposition, isWorkspaceManager } =
+    useStore();
   const isAdmin = isWorkspaceManager;
   const [view, setView] = useState<View>({ kind: 'list' });
 
@@ -64,11 +65,12 @@ export function MaterialPage() {
     );
   }
 
-  const materials = store.materials
-    .listMaterials()
-    .filter((m) => m.opposition_id === currentOpposition?.id)
-    // El estudiante solo ve material activo (SPEC 010, 13.3).
-    .filter((m) => isAdmin || m.status === 'active');
+  // El facade aplica el acceso: el estudiante solo ve material activo de
+  // oposiciones autorizadas (SPEC 012/013); el gestor ve todo.
+  const materials =
+    currentUser && currentOpposition
+      ? store.platform.listMaterials(currentUser, currentOpposition.id)
+      : [];
   return (
     <div>
       <PageHeader
@@ -86,7 +88,13 @@ export function MaterialPage() {
         }
       />
       {materials.length === 0 ? (
-        <EmptyState message="Todavia no has anadido material. Empieza con 'Anadir material'." />
+        <EmptyState
+          message={
+            isAdmin
+              ? "Todavia no has anadido material. Empieza con 'Anadir material'."
+              : 'Todavia no hay material disponible en esta oposicion.'
+          }
+        />
       ) : (
         materials.map((m) => (
           <div className="card" key={m.id}>
@@ -317,14 +325,36 @@ function PdfUploadForm({
 function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const { store, refresh, currentUser, isWorkspaceManager } = useStore();
   const isAdmin = isWorkspaceManager;
-  const material = store.materials.getMaterial(id);
+  // El facade verifica acceso (oposicion autorizada + material activo para el
+  // estudiante). Si no procede, no se expone el material (SPEC 013, 20.4).
+  const material = currentUser
+    ? safeGetMaterial(() => store.platform.getMaterial(currentUser, id))
+    : null;
   const [title, setTitle] = useState(material?.title ?? '');
   const [reference, setReference] = useState(material?.reference ?? '');
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!material) {
-    return <EmptyState message="Material no encontrado." />;
+    return (
+      <div>
+        <PageHeader
+          title="Material"
+          action={
+            <Button variant="secondary" onClick={onBack}>
+              Volver
+            </Button>
+          }
+        />
+        <EmptyState message="Este material no esta disponible." />
+      </div>
+    );
   }
+
+  // Temas asociados (SPEC 003/012/013): resueltos via los vinculos guardados.
+  const topicTitles = store.topicMaterialLinks
+    .findAll({ material_id: material.id })
+    .map((link) => store.topics.getTopic(link.topic_id)?.title)
+    .filter((t): t is string => Boolean(t));
 
   const save = () => {
     if (!currentUser) return;
@@ -360,19 +390,33 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="row spread" style={{ marginBottom: 12 }}>
           <Badge status={material.status} />
         </div>
-        <Field label="Titulo">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} />
-        </Field>
-        <Field label="Referencia">
-          <input value={reference} onChange={(e) => setReference(e.target.value)} />
-        </Field>
-        {isAdmin && (
-          <div className="row">
-            <Button onClick={save}>Guardar cambios</Button>
-            {material.status !== 'obsolete' && (
-              <Button variant="danger" onClick={markObsolete}>
-                Marcar obsoleto
-              </Button>
+        {isAdmin ? (
+          <>
+            <Field label="Titulo">
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </Field>
+            <Field label="Referencia">
+              <input
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+              />
+            </Field>
+            <div className="row">
+              <Button onClick={save}>Guardar cambios</Button>
+              {material.status !== 'obsolete' && (
+                <Button variant="danger" onClick={markObsolete}>
+                  Marcar obsoleto
+                </Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="small muted">
+            {material.description && <div>{material.description}</div>}
+            <div>Tipo: {TYPE_LABELS[material.type]}</div>
+            <div>Referencia: {material.reference || 'sin referencia'}</div>
+            {topicTitles.length > 0 && (
+              <div>Temas: {topicTitles.join(', ')}</div>
             )}
           </div>
         )}
@@ -395,7 +439,7 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
           )}
         </div>
       )}
-      {material.content_text && (
+      {material.content_text ? (
         <details className="card" style={{ maxWidth: 560 }}>
           <summary className="muted small">Texto extraido</summary>
           <pre
@@ -405,16 +449,36 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
             {material.content_text}
           </pre>
         </details>
+      ) : (
+        material.original_filename && (
+          <div className="card small muted" style={{ maxWidth: 560 }}>
+            Este material esta disponible como PDF, pero no tiene texto extraido.
+          </div>
+        )
       )}
-      <details className="card" style={{ maxWidth: 560 }}>
-        <summary className="muted small">Detalles tecnicos</summary>
-        <div className="small muted" style={{ marginTop: 8 }}>
-          <div>original_filename: {material.original_filename ?? '—'}</div>
-          <div>mime_type: {material.mime_type ?? '—'}</div>
-          <div>size_bytes: {material.size_bytes ?? '—'}</div>
-          <div>storage_path: {material.storage_path ?? '—'}</div>
-        </div>
-      </details>
+      {/* Detalles internos solo para gestores; nunca exponer storage_path al
+          estudiante (SPEC 013, 18). */}
+      {isAdmin && (
+        <details className="card" style={{ maxWidth: 560 }}>
+          <summary className="muted small">Detalles tecnicos</summary>
+          <div className="small muted" style={{ marginTop: 8 }}>
+            <div>original_filename: {material.original_filename ?? '—'}</div>
+            <div>mime_type: {material.mime_type ?? '—'}</div>
+            <div>size_bytes: {material.size_bytes ?? '—'}</div>
+            <div>storage_path: {material.storage_path ?? '—'}</div>
+          </div>
+        </details>
+      )}
     </div>
   );
+}
+
+// getMaterial lanza AccessError si el usuario no puede ver el material; aqui
+// lo convertimos en "no disponible" para la UI.
+function safeGetMaterial<T>(fn: () => T): T | null {
+  try {
+    return fn();
+  } catch {
+    return null;
+  }
 }

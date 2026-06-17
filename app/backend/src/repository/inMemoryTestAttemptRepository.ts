@@ -18,6 +18,12 @@ export class InMemoryTestAttemptRepository
     return attempt ? clone(attempt) : null;
   }
 
+  findByUser(userId: string): TestAttempt[] {
+    return [...this.attempts.values()]
+      .filter((attempt) => attempt.user_id === userId)
+      .map(clone);
+  }
+
   save(attempt: TestAttempt): TestAttempt {
     if (!this.attempts.has(attempt.id)) {
       throw new Error(`Cannot save unknown attempt: ${attempt.id}`);

@@ -8,6 +8,7 @@ import { MaterialPage } from './pages/MaterialPage.js';
 import { TopicPage } from './pages/TopicPage.js';
 import { QuestionsPage } from './pages/QuestionsPage.js';
 import { TestsPage } from './pages/TestsPage.js';
+import { ResultadosPage } from './pages/ResultadosPage.js';
 import { useStore } from './store/StoreContext.js';
 
 export function App() {
@@ -38,6 +39,7 @@ export function App() {
       {section === 'temario' && isWorkspaceManager && <TopicPage />}
       {section === 'preguntas' && isWorkspaceManager && <QuestionsPage />}
       {section === 'tests' && <TestsPage />}
+      {section === 'resultados' && <ResultadosPage />}
     </AppLayout>
   );
 }

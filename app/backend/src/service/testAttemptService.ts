@@ -257,6 +257,13 @@ export class TestAttemptService {
     return this.attempts.findById(attemptId);
   }
 
+  // Intentos de un usuario, mas recientes primero (SPEC 013: "Mis resultados").
+  listAttemptsForUser(userId: string): TestAttempt[] {
+    return this.attempts
+      .findByUser(userId)
+      .sort((a, b) => startedAtValue(b) - startedAtValue(a));
+  }
+
   // 10.6 Consultar resultado.
   getResult(attemptId: string): AttemptResult {
     const attempt = this.requireAttempt(attemptId);
@@ -362,4 +369,10 @@ export class TestAttemptService {
     }
     return testQuestion;
   }
+}
+
+function startedAtValue(attempt: TestAttempt): number {
+  return attempt.started_at instanceof Date
+    ? attempt.started_at.getTime()
+    : new Date(attempt.started_at).getTime();
 }
