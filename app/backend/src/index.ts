@@ -129,3 +129,12 @@ export * from './import/zipReader.js';
 export * from './repository/materialImportRepository.js';
 export * from './repository/inMemoryMaterialImportRepository.js';
 export * from './service/materialImportService.js';
+
+// SPEC 018.4 - AI Question Generation & Review Feedback Loop
+export * from './models/questionReviewFeedback.js';
+export * from './repository/questionReviewFeedbackRepository.js';
+export * from './repository/inMemoryQuestionReviewFeedbackRepository.js';
+export * from './generation/generationConfig.js';
+export * from './generation/anthropicQuestionGenerationProvider.js';
+export * from './generation/createQuestionGenerationProvider.js';
+export * from './service/questionFeedbackService.js';

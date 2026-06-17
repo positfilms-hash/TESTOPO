@@ -20,6 +20,7 @@ import {
 // requieren acceso a repositorios y se comprueban en el servicio).
 export function validateGenerationRequest(
   request: GenerateQuestionsRequest,
+  maxCount: number = MAX_QUESTION_COUNT,
 ): QuestionGenerationErrorCode[] {
   const errors: QuestionGenerationErrorCode[] = [];
 
@@ -34,7 +35,7 @@ export function validateGenerationRequest(
   const count = request.question_count;
   if (!Number.isInteger(count) || count < MIN_QUESTION_COUNT) {
     errors.push(QuestionGenerationErrorCode.INVALID_COUNT);
-  } else if (count > MAX_QUESTION_COUNT) {
+  } else if (count > maxCount) {
     errors.push(QuestionGenerationErrorCode.MAX_COUNT_EXCEEDED);
   }
 

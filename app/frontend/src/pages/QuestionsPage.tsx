@@ -6,6 +6,8 @@ import {
   type RequestedDifficulty,
   type Question,
   type QuestionValidationResult,
+  type QuestionReviewFeedback,
+  type FeedbackType,
   type Material,
   type Topic,
 } from '@backend';
@@ -25,6 +27,19 @@ type View =
   | { kind: 'generate' };
 
 const PENDING = ['draft', 'pending_review', 'needs_fix'];
+
+// Motivos de rechazo/correccion ofrecidos en revision (SPEC 018.4, 17).
+const REASON_OPTIONS: { type: FeedbackType; label: string }[] = [
+  { type: 'ambiguous_statement', label: 'Ambigua' },
+  { type: 'multiple_correct_answers', label: 'Varias respuestas correctas' },
+  { type: 'wrong_correct_answer', label: 'Respuesta correcta incorrecta' },
+  { type: 'weak_explanation', label: 'Explicacion insuficiente' },
+  { type: 'missing_source', label: 'Fuente insuficiente' },
+  { type: 'off_topic', label: 'Fuera de tema' },
+  { type: 'invented_content', label: 'Contenido inventado' },
+  { type: 'bad_options', label: 'Opciones mal planteadas' },
+  { type: 'other', label: 'Otro' },
+];
 
 export function QuestionsPage() {
   const [view, setView] = useState<View>({ kind: 'list' });
@@ -120,24 +135,48 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
   const { store, version, refresh, currentUser } = useStore();
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
+  // Motivos estructurados para corregir/rechazar (SPEC 018.4, 17).
+  const [reasons, setReasons] = useState<Set<FeedbackType>>(new Set());
+  const [reasonComment, setReasonComment] = useState('');
 
   const [question, setQuestion] = useState<Question | null>(null);
   const [report, setReport] = useState<QuestionValidationResult | null>(null);
+  const [pastFeedback, setPastFeedback] = useState<QuestionReviewFeedback[]>([]);
   // La validacion (SPEC 005) decide si se puede aprobar.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const q = await store.questions.getQuestion(id);
       const r = q ? await store.validation.validateQuestion(id) : null;
+      const f = q ? await store.review.listFeedback(id) : [];
       if (!cancelled) {
         setQuestion(q);
         setReport(r);
+        setPastFeedback(f);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [store, id, version]);
+
+  const toggleReason = (type: FeedbackType) => {
+    setReasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
+  // Construye el feedback estructurado a registrar con la accion (SPEC 018.4).
+  const buildFeedback = () => {
+    const comment = reasonComment.trim() || null;
+    return [...reasons].map((type) => ({ feedback_type: type, comment }));
+  };
 
   if (!question || !report) {
     return <EmptyState message="Pregunta no encontrada." />;
@@ -228,6 +267,37 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
         ))}
       </div>
 
+      <div className="card">
+        <strong>Motivos (al corregir o rechazar)</strong>
+        <p className="muted small">
+          Marca uno o varios motivos. Ayudan a mejorar futuras generaciones.
+        </p>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          {REASON_OPTIONS.map((r) => (
+            <label key={r.type} className="row small" style={{ gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={reasons.has(r.type)}
+                onChange={() => toggleReason(r.type)}
+              />
+              {r.label}
+            </label>
+          ))}
+        </div>
+        <Field label="Comentario (opcional)">
+          <textarea
+            value={reasonComment}
+            onChange={(e) => setReasonComment(e.target.value)}
+            placeholder="Detalle del motivo…"
+          />
+        </Field>
+        {pastFeedback.length > 0 && (
+          <p className="muted small">
+            Motivos registrados: {pastFeedback.map((f) => f.feedback_type).join(', ')}
+          </p>
+        )}
+      </div>
+
       <div className="row">
         <Button onClick={approve} disabled={hasErrors} title={hasErrors ? 'Hay errores criticos' : undefined}>
           Aprobar
@@ -241,7 +311,11 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
             act(
               () =>
                 currentUser &&
-                store.platform.markNeedsFix(currentUser, id, { notes: 'Revisar' }),
+                store.platform.markNeedsFix(currentUser, id, {
+                  reviewer_name: currentUser.name,
+                  notes: 'Revisar',
+                  feedback: buildFeedback(),
+                }),
               null,
               'Marcada como "necesita correccion".',
             )
@@ -256,7 +330,9 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
               () =>
                 currentUser &&
                 store.platform.reject(currentUser, id, {
+                  reviewer_name: currentUser.name,
                   notes: 'Rechazada en revision',
+                  feedback: buildFeedback(),
                 }),
               '¿Rechazar esta pregunta?',
               'Pregunta rechazada.',

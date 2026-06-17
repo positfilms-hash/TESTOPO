@@ -35,6 +35,13 @@ import {
   validateGeneratedCandidate,
   validateGenerationRequest,
 } from '../generation/validateGeneration.js';
+import {
+  loadGenerationConfig,
+  type GenerationConfig,
+} from '../generation/generationConfig.js';
+import type { QuestionGenerationFeedbackSummary } from '../models/questionReviewFeedback.js';
+import type { QuestionValidationService } from './questionValidationService.js';
+import type { QuestionFeedbackService } from './questionFeedbackService.js';
 import { requireOpposition } from '../access/oppositionGuards.js';
 
 export interface QuestionGenerationServiceOptions {
@@ -43,6 +50,20 @@ export interface QuestionGenerationServiceOptions {
   topicRepository?: TopicRepository;
   provider?: QuestionGenerationProvider;
   runRepository?: GenerationRunRepository;
+  /**
+   * Validador de calidad (SPEC 005). Si se proporciona, cada pregunta generada
+   * pasa por la validacion automatica tras crearse (SPEC 018.4, 22): si hay
+   * errores criticos queda en `needs_fix`; si pasa, en `pending_review`.
+   * Si se omite, se mantiene el comportamiento de SPEC 004 (sin validacion).
+   */
+  validationService?: QuestionValidationService;
+  /**
+   * Resumen de feedback (SPEC 018.4, 15-16). Si se proporciona, se consulta
+   * antes de generar y se inyecta en el contexto del proveedor.
+   */
+  feedbackService?: QuestionFeedbackService;
+  /** Limites configurables (SPEC 018.4, 19). */
+  config?: GenerationConfig;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -58,6 +79,9 @@ export class QuestionGenerationService {
   private readonly topics?: TopicRepository;
   private readonly provider: QuestionGenerationProvider;
   private readonly runs: GenerationRunRepository;
+  private readonly validation?: QuestionValidationService;
+  private readonly feedback?: QuestionFeedbackService;
+  private readonly config: GenerationConfig;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -67,6 +91,9 @@ export class QuestionGenerationService {
     this.topics = options.topicRepository;
     this.provider = options.provider ?? new MockQuestionGenerationProvider();
     this.runs = options.runRepository ?? new InMemoryGenerationRunRepository();
+    this.validation = options.validationService;
+    this.feedback = options.feedbackService;
+    this.config = options.config ?? loadGenerationConfig();
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
   }
@@ -112,7 +139,10 @@ export class QuestionGenerationService {
   }
 
   async generate(request: GenerateQuestionsRequest): Promise<GenerationResult> {
-    const paramErrors = validateGenerationRequest(request);
+    const paramErrors = validateGenerationRequest(
+      request,
+      this.config.max_question_count,
+    );
     if (paramErrors.length > 0) {
       throw new QuestionGenerationError(paramErrors);
     }
@@ -120,19 +150,25 @@ export class QuestionGenerationService {
     const material = await this.resolveMaterial(request);
     const topic = await this.resolveTopic(request);
 
-    const text = this.resolveBaseText(request, material);
-    if (!isNonEmptyString(text)) {
+    const baseText = this.resolveBaseText(request, material);
+    if (!isNonEmptyString(baseText)) {
       throw new QuestionGenerationError([
         QuestionGenerationErrorCode.CONTENT_REQUIRED,
       ]);
     }
+    // Limite de caracteres enviados al proveedor (SPEC 018.4, 19).
+    const text = baseText.slice(0, this.config.max_input_chars);
 
-    const candidates = this.provider.generate({
+    // Feedback de revisiones anteriores (SPEC 018.4, 15-16) como contexto.
+    const previousFeedback = await this.loadFeedback(material, topic, request);
+
+    const candidates = await this.provider.generate({
       text,
       reference: request.reference ?? null,
       difficulty: request.difficulty,
       count: request.question_count,
       topic_title: topic?.title ?? null,
+      previous_feedback: previousFeedback,
     });
     if (candidates.length === 0) {
       throw new QuestionGenerationError([
@@ -201,10 +237,7 @@ export class QuestionGenerationService {
         generation_metadata: metadata,
       });
 
-      const question =
-        targetStatus === 'pending_review'
-          ? await this.questionService.changeStatus(draft.id, 'pending_review')
-          : draft;
+      const question = await this.applyCreatedStatus(draft, targetStatus);
       created.push(question);
     }
 
@@ -217,10 +250,52 @@ export class QuestionGenerationService {
       created_count: created.length,
       status: runStatus(created.length, errors.length),
       errors,
+      provider: this.provider.name,
+      model: this.provider.model,
+      feedback_used: previousFeedback.length > 0,
       created_at: this.now(),
     });
 
     return { run, questions: created };
+  }
+
+  // Consulta el resumen de feedback para el contexto de la generacion
+  // (SPEC 018.4, 15-16). Sin servicio de feedback configurado, no hay contexto.
+  private async loadFeedback(
+    material: Material | null,
+    topic: Topic | null,
+    request: GenerateQuestionsRequest,
+  ): Promise<QuestionGenerationFeedbackSummary[]> {
+    if (!this.feedback) {
+      return [];
+    }
+    return this.feedback.getFeedbackSummaryForGeneration({
+      opposition_id: material?.opposition_id ?? request.opposition_id ?? null,
+      topic_id: topic?.id ?? null,
+      material_id: material?.id ?? null,
+    });
+  }
+
+  // Decide el estado final de una pregunta recien creada (SPEC 018.4, 22).
+  // Con validador y tema vinculado, la pregunta pasa por la validacion
+  // automatica: si falla (errores criticos) queda en `needs_fix`; si pasa, en
+  // `pending_review`. Sin validador o sin tema se respeta el estado base de
+  // SPEC 004 (`draft` sin tema, `pending_review` con tema). Nunca `validated`.
+  private async applyCreatedStatus(
+    draft: Question,
+    baseStatus: QuestionStatus,
+  ): Promise<Question> {
+    if (this.validation && baseStatus === 'pending_review') {
+      const report = await this.validation.validateQuestion(draft.id);
+      const finalStatus: QuestionStatus = report.passed
+        ? 'pending_review'
+        : 'needs_fix';
+      return this.questionService.changeStatus(draft.id, finalStatus);
+    }
+    if (baseStatus === 'pending_review') {
+      return this.questionService.changeStatus(draft.id, 'pending_review');
+    }
+    return draft;
   }
 
   // El material es obligatorio salvo en `manual_seed`. Si se proporciona (en
