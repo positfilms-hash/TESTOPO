@@ -1,7 +1,13 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../store/StoreContext.js';
 
-export type Section = 'inicio' | 'material' | 'temario' | 'preguntas' | 'tests';
+export type Section =
+  | 'inicio'
+  | 'material'
+  | 'temario'
+  | 'preguntas'
+  | 'tests'
+  | 'resultados';
 
 const ADMIN_NAV: { id: Section; label: string }[] = [
   { id: 'inicio', label: 'Inicio' },
@@ -11,10 +17,12 @@ const ADMIN_NAV: { id: Section; label: string }[] = [
   { id: 'tests', label: 'Tests' },
 ];
 
+// Portal del estudiante (SPEC 013): navegacion minima, sin opciones de admin.
 const STUDENT_NAV: { id: Section; label: string }[] = [
   { id: 'inicio', label: 'Inicio' },
   { id: 'material', label: 'Material' },
-  { id: 'tests', label: 'Tests' },
+  { id: 'tests', label: 'Crear test' },
+  { id: 'resultados', label: 'Mis resultados' },
 ];
 
 export function AppLayout({

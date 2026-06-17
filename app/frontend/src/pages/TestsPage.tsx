@@ -6,6 +6,7 @@ import {
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import { AttemptResultView } from './AttemptResultView.js';
 
 type View =
   | { kind: 'list' }
@@ -31,7 +32,13 @@ export function TestsPage() {
     );
   }
   if (view.kind === 'result') {
-    return <ResultView attemptId={view.attemptId} onBack={() => setView({ kind: 'list' })} />;
+    return (
+      <AttemptResultView
+        attemptId={view.attemptId}
+        onBack={() => setView({ kind: 'list' })}
+        backLabel="Volver a tests"
+      />
+    );
   }
   return <TestsList onStart={(attemptId) => setView({ kind: 'take', attemptId })} />;
 }
@@ -215,68 +222,3 @@ function TakeTest({
   );
 }
 
-function ResultView({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
-  const { store, currentUser } = useStore();
-  const result = store.platform.getResult(currentUser!, attemptId);
-  const [showReview, setShowReview] = useState(false);
-  const review = useMemo(
-    () => (showReview ? store.platform.getReview(currentUser!, attemptId) : null),
-    [showReview, store, currentUser, attemptId],
-  );
-
-  return (
-    <div>
-      <PageHeader
-        title="Resultado"
-        action={
-          <Button variant="secondary" onClick={onBack}>
-            Volver a tests
-          </Button>
-        }
-      />
-      <div className="card">
-        <div className="stat">
-          {result.score} / {result.total_questions}
-        </div>
-        <p className="muted">{result.percentage.toFixed(0)}% de aciertos</p>
-        <div className="row">
-          <span>✅ Aciertos: {result.correct_count}</span>
-          <span>❌ Fallos: {result.incorrect_count}</span>
-          <span>⚪ Sin responder: {result.unanswered_count}</span>
-        </div>
-      </div>
-
-      {!showReview ? (
-        <Button onClick={() => setShowReview(true)}>Revisar respuestas</Button>
-      ) : (
-        review?.questions.map((q, index) => (
-          <div className="card" key={q.question_id}>
-            <div className="muted small">Pregunta {index + 1}</div>
-            <h4 style={{ marginTop: 4 }}>{q.statement}</h4>
-            {q.options.map((o) => {
-              const isCorrect = o.id === q.correct_option_id;
-              const isSelected = o.id === q.selected_option_id;
-              const cls = isCorrect ? 'correct' : isSelected ? 'wrong' : '';
-              return (
-                <div key={o.id} className={`option ${cls}`}>
-                  {isCorrect ? '✓ ' : isSelected ? '✗ ' : ''}
-                  {o.text}
-                </div>
-              );
-            })}
-            <p className="small">
-              {q.selected_option_id === null
-                ? 'No respondida'
-                : q.is_correct
-                  ? 'Correcta'
-                  : 'Incorrecta'}
-            </p>
-            <p className="muted small">
-              <strong>Explicacion:</strong> {q.explanation ?? '—'}
-            </p>
-          </div>
-        ))
-      )}
-    </div>
-  );
-}

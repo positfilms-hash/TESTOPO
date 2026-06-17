@@ -1,8 +1,92 @@
 import { useStore } from '../store/StoreContext.js';
-import { Button, PageHeader } from '../components/ui.js';
+import { Button, EmptyState, PageHeader } from '../components/ui.js';
 import type { Section } from '../components/AppLayout.js';
 
 export function HomePage({ onNavigate }: { onNavigate: (s: Section) => void }) {
+  const { isWorkspaceManager } = useStore();
+  return isWorkspaceManager ? (
+    <AdminHome onNavigate={onNavigate} />
+  ) : (
+    <StudentHome onNavigate={onNavigate} />
+  );
+}
+
+// Inicio del estudiante (SPEC 013, 9): accion principal "Crear test", accesos
+// a material y resultados, ultimos resultados y aviso si no hay preguntas.
+// Lenguaje de estudiante; nada de estados internos.
+function StudentHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
+  const { store, currentUser, currentWorkspace, currentOpposition, version } =
+    useStore();
+  void version;
+  const oppositionId = currentOpposition?.id;
+
+  const validated = store.questions
+    .listQuestions()
+    .filter((q) => q.opposition_id === oppositionId && q.status === 'validated')
+    .length;
+  const recent = currentUser
+    ? store.platform.listMyResults(currentUser).slice(0, 3)
+    : [];
+
+  return (
+    <div>
+      <PageHeader
+        title={currentOpposition?.title ?? 'Oposicion'}
+        subtitle={currentWorkspace?.name ?? undefined}
+      />
+
+      {validated === 0 && (
+        <div className="notice error">
+          Todavia no hay preguntas validadas en esta oposicion. Cuando las haya,
+          podras crear tests.
+        </div>
+      )}
+
+      <div className="card-grid" style={{ marginBottom: 24 }}>
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Crear test</h3>
+          <p className="muted">Practica con preguntas validadas.</p>
+          <Button onClick={() => onNavigate('tests')} disabled={validated === 0}>
+            Crear test
+          </Button>
+        </div>
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Material</h3>
+          <p className="muted">Consulta tus temarios y apuntes.</p>
+          <Button variant="secondary" onClick={() => onNavigate('material')}>
+            Ver material
+          </Button>
+        </div>
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Mis resultados</h3>
+          <p className="muted">Revisa tus tests y explicaciones.</p>
+          <Button variant="secondary" onClick={() => onNavigate('resultados')}>
+            Ver resultados
+          </Button>
+        </div>
+      </div>
+
+      <h3>Ultimos resultados</h3>
+      {recent.length === 0 ? (
+        <EmptyState message="Aun no has enviado ningun test." />
+      ) : (
+        recent.map((r) => (
+          <div className="card" key={r.attempt_id}>
+            <div className="row spread">
+              <strong>{r.test_title ?? 'Test'}</strong>
+              <span className="muted small">
+                {r.score} / {r.total_questions} · {r.percentage.toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// Inicio del gestor (owner/admin): guia de los pasos de preparacion.
+function AdminHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
   const { store, currentOpposition } = useStore();
   const oppositionId = currentOpposition?.id;
   const materials = store.materials

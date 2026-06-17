@@ -60,6 +60,11 @@ import type {
 import type { TestAttempt } from '../models/testAttempt.js';
 import type { TestAnswer } from '../models/testAnswer.js';
 
+// Resumen de un resultado para la pantalla "Mis resultados" del estudiante.
+export interface MyResultSummary extends AttemptResult {
+  test_title: string | null;
+}
+
 export interface PlatformServiceDeps {
   oppositionRepository: OppositionRepository;
   workspaceMembers: WorkspaceMemberRepository;
@@ -266,6 +271,25 @@ export class PlatformService {
   getReview(actor: User, attemptId: string): AttemptReview {
     this.requireAttemptOwner(actor, attemptId);
     return this.deps.attempts.getReview(attemptId);
+  }
+
+  // "Mis resultados" (SPEC 013): intentos enviados del propio usuario, con
+  // resultado y titulo del test. Solo del actor, ordenados por mas reciente.
+  listMyResults(actor: User): MyResultSummary[] {
+    requireUser(actor);
+    return this.deps.attempts
+      .listAttemptsForUser(actor.id)
+      .filter((attempt) => attempt.status === 'submitted')
+      .map((attempt) => {
+        const result = this.deps.attempts.getResult(attempt.id);
+        let testTitle: string | null = null;
+        try {
+          testTitle = this.deps.testGenerator.getTest(attempt.test_id).test.title;
+        } catch {
+          testTitle = null;
+        }
+        return { ...result, test_title: testTitle };
+      });
   }
 
   getTest(actor: User, testId: string) {

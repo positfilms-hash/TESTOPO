@@ -10,6 +10,7 @@ import {
   InMemoryFileStorage,
   InMemoryTopicRepository,
   InMemoryTopicMaterialLinkRepository,
+  type TopicMaterialLinkRepository,
   TopicService,
   InMemoryQuestionRepository,
   QuestionService,
@@ -46,6 +47,8 @@ export interface AppStore {
   oppositions: OppositionService;
   materials: MaterialService;
   pdfMaterials: PdfMaterialService;
+  /** Vinculos material-tema (SPEC 003/012): para mostrar temas asociados. */
+  topicMaterialLinks: TopicMaterialLinkRepository;
   topics: TopicService;
   questions: QuestionService;
   generation: QuestionGenerationService;
@@ -147,6 +150,7 @@ export function createAppStore(seed = true): AppStore {
     oppositions,
     materials,
     pdfMaterials,
+    topicMaterialLinks: topicMaterialLinkRepo,
     topics,
     questions,
     generation,
