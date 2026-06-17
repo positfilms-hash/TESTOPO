@@ -14,7 +14,11 @@ import {
   OppositionService,
   InMemoryMaterialRepository,
   MaterialService,
+  PdfMaterialService,
+  NaivePdfTextExtractor,
+  InMemoryFileStorage,
   InMemoryTopicRepository,
+  InMemoryTopicMaterialLinkRepository,
   TopicService,
   InMemoryQuestionRepository,
   QuestionService,
@@ -46,6 +50,14 @@ function makeSetup() {
   const materialRepo = new InMemoryMaterialRepository();
   const topicRepo = new InMemoryTopicRepository();
   const materials = new MaterialService(materialRepo);
+  const pdfMaterials = new PdfMaterialService({
+    materials: materialRepo,
+    topics: topicRepo,
+    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+    oppositions: oppositionRepo,
+    storage: new InMemoryFileStorage(),
+    extractor: new NaivePdfTextExtractor(),
+  });
   const topics = new TopicService(topicRepo, { materialRepository: materialRepo });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
@@ -90,6 +102,7 @@ function makeSetup() {
     workspaceMembers: memberRepo,
     oppositions,
     materials,
+    pdfMaterials,
     topics,
     questions,
     generation,

@@ -5,7 +5,11 @@
 import {
   InMemoryMaterialRepository,
   MaterialService,
+  PdfMaterialService,
+  NaivePdfTextExtractor,
+  InMemoryFileStorage,
   InMemoryTopicRepository,
+  InMemoryTopicMaterialLinkRepository,
   TopicService,
   InMemoryQuestionRepository,
   QuestionService,
@@ -41,6 +45,7 @@ export interface AppStore {
   workspaces: WorkspaceService;
   oppositions: OppositionService;
   materials: MaterialService;
+  pdfMaterials: PdfMaterialService;
   topics: TopicService;
   questions: QuestionService;
   generation: QuestionGenerationService;
@@ -74,6 +79,15 @@ export function createAppStore(seed = true): AppStore {
     workspaceMemberRepo,
   );
   const materials = new MaterialService(materialRepo);
+  const topicMaterialLinkRepo = new InMemoryTopicMaterialLinkRepository();
+  const pdfMaterials = new PdfMaterialService({
+    materials: materialRepo,
+    topics: topicRepo,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    oppositions: oppositionRepo,
+    storage: new InMemoryFileStorage(),
+    extractor: new NaivePdfTextExtractor(),
+  });
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
   });
@@ -118,6 +132,7 @@ export function createAppStore(seed = true): AppStore {
     workspaceMembers: workspaceMemberRepo,
     oppositions,
     materials,
+    pdfMaterials,
     topics,
     questions,
     generation,
@@ -131,6 +146,7 @@ export function createAppStore(seed = true): AppStore {
     workspaces,
     oppositions,
     materials,
+    pdfMaterials,
     topics,
     questions,
     generation,

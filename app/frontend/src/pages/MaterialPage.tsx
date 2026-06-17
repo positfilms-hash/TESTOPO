@@ -3,7 +3,19 @@ import { MATERIAL_TYPES, type MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
-type View = { kind: 'list' } | { kind: 'new' } | { kind: 'detail'; id: string };
+type View =
+  | { kind: 'list' }
+  | { kind: 'new' }
+  | { kind: 'pdf' }
+  | { kind: 'detail'; id: string };
+
+const EXTRACTION_LABELS: Record<string, string> = {
+  not_started: 'Sin procesar',
+  processing: 'Procesando',
+  completed: 'Texto extraido',
+  failed: 'Extraccion fallida',
+  not_supported: 'Sin texto extraible',
+};
 
 const TYPE_LABELS: Record<MaterialType, string> = {
   syllabus: 'Temario',
@@ -24,6 +36,18 @@ export function MaterialPage() {
       <MaterialForm
         onCancel={() => setView({ kind: 'list' })}
         onSaved={() => {
+          refresh();
+          setView({ kind: 'list' });
+        }}
+      />
+    );
+  }
+
+  if (view.kind === 'pdf') {
+    return (
+      <PdfUploadForm
+        onCancel={() => setView({ kind: 'list' })}
+        onDone={() => {
           refresh();
           setView({ kind: 'list' });
         }}
@@ -52,7 +76,12 @@ export function MaterialPage() {
         subtitle="Tus temarios, leyes y apuntes."
         action={
           isAdmin ? (
-            <Button onClick={() => setView({ kind: 'new' })}>Anadir material</Button>
+            <div className="row">
+              <Button onClick={() => setView({ kind: 'pdf' })}>Subir PDF</Button>
+              <Button variant="secondary" onClick={() => setView({ kind: 'new' })}>
+                Anadir material
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -153,6 +182,138 @@ function MaterialForm({
   );
 }
 
+function PdfUploadForm({
+  onCancel,
+  onDone,
+}: {
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const { store, currentUser, currentOpposition } = useStore();
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState<MaterialType>('syllabus');
+  const [reference, setReference] = useState('');
+  const [description, setDescription] = useState('');
+  const [topicId, setTopicId] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; extracted: boolean } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+
+  // Temas de la oposicion actual para vincular opcionalmente.
+  const topics = store.topics
+    .listTopics()
+    .filter((t) => t.opposition_id === currentOpposition?.id);
+
+  const submit = async () => {
+    setError(null);
+    if (!currentUser) return;
+    if (!file) {
+      setError('Selecciona un archivo PDF.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const material = store.platform.uploadPdf(currentUser, {
+        opposition_id: currentOpposition?.id,
+        title,
+        type,
+        reference: reference || null,
+        description: description || null,
+        topic_ids: topicId ? [topicId] : [],
+        file: {
+          original_filename: file.name,
+          mime_type: file.type || 'application/pdf',
+          bytes,
+        },
+      });
+      setResult({
+        ok: true,
+        extracted: material.extraction_status === 'completed',
+      });
+    } catch {
+      setError(
+        'No se pudo subir el PDF. Revisa el titulo, el tipo y que el archivo sea un PDF valido (max. 50 MB).',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (result?.ok) {
+    return (
+      <div>
+        <PageHeader title="Subir PDF" subtitle="Resultado de la subida." />
+        <div className="notice success">PDF subido correctamente.</div>
+        <div className={`notice ${result.extracted ? 'success' : 'error'}`}>
+          {result.extracted
+            ? 'Texto extraido correctamente. Ya puedes usar este material para generar preguntas.'
+            : 'El PDF se ha subido, pero no se ha podido extraer texto. Puede que sea un PDF escaneado.'}
+        </div>
+        <div className="row">
+          <Button onClick={onDone}>Volver al material</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader title="Subir PDF" subtitle="Sube un temario, ley o examen en PDF." />
+      {error && <div className="notice error">{error}</div>}
+      <div className="card" style={{ maxWidth: 560 }}>
+        <Field label="Titulo">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tema 1 - Constitucion" />
+        </Field>
+        <Field label="Tipo">
+          <select value={type} onChange={(e) => setType(e.target.value as MaterialType)}>
+            {MATERIAL_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tema relacionado (opcional)">
+          <select value={topicId} onChange={(e) => setTopicId(e.target.value)}>
+            <option value="">Sin tema</option>
+            {topics.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.code ? `${t.code} · ` : ''}
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Referencia (opcional)">
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Tema 1, articulo 14…" />
+        </Field>
+        <Field label="Archivo PDF">
+          <input
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </Field>
+        <Field label="Descripcion (opcional)">
+          <input value={description} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <div className="row">
+          <Button onClick={submit} disabled={busy}>
+            {busy ? 'Subiendo…' : 'Subir PDF'}
+          </Button>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const { store, refresh, currentUser, isWorkspaceManager } = useStore();
   const isAdmin = isWorkspaceManager;
@@ -216,9 +377,39 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         )}
       </div>
+      {material.extraction_status && (
+        <div className="card" style={{ maxWidth: 560 }}>
+          <div className="row spread">
+            <span className="muted small">Extraccion de texto</span>
+            <Badge status={material.extraction_status} />
+          </div>
+          <div className="small muted" style={{ marginTop: 4 }}>
+            {EXTRACTION_LABELS[material.extraction_status] ??
+              material.extraction_status}
+            {material.page_count != null && ` · ${material.page_count} pag.`}
+          </div>
+          {material.extraction_error && (
+            <div className="small muted" style={{ marginTop: 4 }}>
+              {material.extraction_error}
+            </div>
+          )}
+        </div>
+      )}
+      {material.content_text && (
+        <details className="card" style={{ maxWidth: 560 }}>
+          <summary className="muted small">Texto extraido</summary>
+          <pre
+            className="small"
+            style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}
+          >
+            {material.content_text}
+          </pre>
+        </details>
+      )}
       <details className="card" style={{ maxWidth: 560 }}>
         <summary className="muted small">Detalles tecnicos</summary>
         <div className="small muted" style={{ marginTop: 8 }}>
+          <div>original_filename: {material.original_filename ?? '—'}</div>
           <div>mime_type: {material.mime_type ?? '—'}</div>
           <div>size_bytes: {material.size_bytes ?? '—'}</div>
           <div>storage_path: {material.storage_path ?? '—'}</div>

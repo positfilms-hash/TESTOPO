@@ -17,13 +17,21 @@ import type { OppositionRepository } from '../repository/oppositionRepository.js
 import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRepository.js';
 import { AccessError } from '../access/accessError.js';
 import { AccessErrorCode } from '../access/accessErrors.js';
-import { requireManageWorkspace, requireUser } from '../access/permissions.js';
+import {
+  canManageWorkspace,
+  requireManageWorkspace,
+  requireUser,
+} from '../access/permissions.js';
 import type { OppositionService } from './oppositionService.js';
 import type {
   CreateMaterialInput,
   EditMaterialInput,
   MaterialService,
 } from './materialService.js';
+import type {
+  PdfMaterialService,
+  UploadPdfInput,
+} from './pdfMaterialService.js';
 import type { CreateTopicInput, TopicService } from './topicService.js';
 import type {
   EditQuestionInput,
@@ -57,6 +65,7 @@ export interface PlatformServiceDeps {
   workspaceMembers: WorkspaceMemberRepository;
   oppositions: OppositionService;
   materials: MaterialService;
+  pdfMaterials: PdfMaterialService;
   topics: TopicService;
   questions: QuestionService;
   generation: QuestionGenerationService;
@@ -73,6 +82,45 @@ export class PlatformService {
   createMaterial(actor: User, input: CreateMaterialInput): Material {
     this.requireManageOpposition(actor, input.opposition_id);
     return this.deps.materials.createMaterial(input);
+  }
+
+  // Subir PDF: solo owner/admin del workspace de la oposicion (SPEC 012).
+  uploadPdf(actor: User, input: UploadPdfInput): Material {
+    this.requireManageOpposition(actor, input.opposition_id);
+    return this.deps.pdfMaterials.uploadPdf({
+      ...input,
+      uploaded_by: actor.id,
+    });
+  }
+
+  // Listar materiales de una oposicion. Gestor: todos. Estudiante con acceso:
+  // solo `active` (SPEC 012, reglas de visibilidad).
+  listMaterials(actor: User, oppositionId: string): Material[] {
+    // getOpposition exige membresia + acceso (gestor o estudiante activo).
+    this.deps.oppositions.getOpposition(actor, oppositionId);
+    const all = this.deps.materials.listMaterials({
+      opposition_id: oppositionId,
+    });
+    if (this.canManageOppositionWorkspace(actor, oppositionId)) {
+      return all;
+    }
+    return all.filter((material) => material.status === 'active');
+  }
+
+  // Ver detalle/texto de un material. Estudiante solo si esta `active`.
+  getMaterial(actor: User, materialId: string): Material {
+    const material = this.deps.materials.getMaterial(materialId);
+    if (!material) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
+    this.deps.oppositions.getOpposition(actor, material.opposition_id);
+    if (
+      material.status !== 'active' &&
+      !this.canManageOppositionWorkspace(actor, material.opposition_id)
+    ) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
+    return material;
   }
 
   editMaterial(
@@ -247,6 +295,23 @@ export class PlatformService {
       throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
     }
     requireManageWorkspace(
+      this.deps.workspaceMembers,
+      actor,
+      opposition.workspace_id,
+    );
+  }
+
+  // True si el actor puede gestionar (owner/admin) el workspace de la oposicion.
+  // No lanza: se usa para decidir visibilidad de materiales no activos.
+  private canManageOppositionWorkspace(
+    actor: User,
+    oppositionId: string,
+  ): boolean {
+    const opposition = this.deps.oppositionRepository.findById(oppositionId);
+    if (!opposition) {
+      return false;
+    }
+    return canManageWorkspace(
       this.deps.workspaceMembers,
       actor,
       opposition.workspace_id,
