@@ -116,7 +116,11 @@ export class OpenAiQuestionGenerationProvider
 
     try {
       return parseGeneratedCandidates(content);
-    } catch {
+    } catch (error) {
+      // Conserva el codigo de esquema explicito; lo demas es respuesta invalida.
+      if (error instanceof AiProviderError) {
+        throw error;
+      }
       throw new AiProviderError(AiProviderErrorCode.OPENAI_INVALID_RESPONSE);
     }
   }

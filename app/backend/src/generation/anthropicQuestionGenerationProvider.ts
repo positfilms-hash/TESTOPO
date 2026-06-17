@@ -5,6 +5,10 @@
 // (fetch) con salida JSON estructurada (`output_config.format`). NO valida
 // preguntas: solo propone candidatos que despues valida y guarda el servicio.
 //
+// EXPERIMENTAL: el formato `output_config.format` y el modelo por defecto no se
+// han verificado contra la API real en este repo. OpenAI es el proveedor
+// principal (SPEC 018.4-B); usa Anthropic solo tras validarlo con la API real.
+//
 // - La clave nunca se hardcodea: se inyecta por configuracion (env ANTHROPIC_API_KEY).
 // - El prompt usa solo el material aportado y el feedback previo como contexto.
 

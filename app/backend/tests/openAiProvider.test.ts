@@ -179,6 +179,26 @@ describe('SPEC 018.4-B - OpenAiQuestionGenerationProvider', () => {
     });
   });
 
+  it('JSON sin array questions -> AI_OUTPUT_SCHEMA_INVALID', async () => {
+    const provider = new OpenAiQuestionGenerationProvider({
+      apiKey: 'sk-test',
+      fetchImpl: (async () =>
+        openAiResponse(JSON.stringify({ foo: 'bar' }))) as unknown as typeof fetch,
+    });
+    await expect(provider.generate(context)).rejects.toMatchObject({
+      code: AiProviderErrorCode.AI_OUTPUT_SCHEMA_INVALID,
+    });
+  });
+
+  it('questions vacio es valido (la IA puede no generar) -> [] sin error', async () => {
+    const provider = new OpenAiQuestionGenerationProvider({
+      apiKey: 'sk-test',
+      fetchImpl: (async () =>
+        openAiResponse(JSON.stringify({ questions: [] }))) as unknown as typeof fetch,
+    });
+    await expect(provider.generate(context)).resolves.toEqual([]);
+  });
+
   it('construir sin clave -> OPENAI_API_KEY_MISSING', () => {
     expect(() => new OpenAiQuestionGenerationProvider({ apiKey: '' })).toThrow(
       AiProviderError,

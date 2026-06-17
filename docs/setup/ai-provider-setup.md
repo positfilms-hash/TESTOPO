@@ -38,8 +38,8 @@ OPENAI_MODEL=gpt-4o-mini      # configurable; debe soportar salida estructurada 
 ```
 
 Modelos compatibles con salida estructurada estricta: `gpt-4o-mini`, `gpt-4o`,
-`gpt-5.5`, entre otros. El modelo **no** se fija en el codigo; consulta la
-documentacion oficial de OpenAI para el modelo vigente que prefieras.
+entre otros. El modelo **no** se fija en el codigo; consulta la documentacion
+oficial de OpenAI para el modelo vigente que prefieras.
 
 El proveedor usa la Chat Completions API (`/v1/chat/completions`) con
 `response_format` de tipo `json_schema` (`strict: true`).
@@ -55,6 +55,11 @@ ANTHROPIC_MODEL=claude-opus-4-8
 Compatibilidad temporal: si no defines `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`, se
 usan las antiguas `AI_API_KEY`/`AI_MODEL` si existen. La configuracion nueva
 debe usar el esquema `ANTHROPIC_*`.
+
+> **Experimental:** el proveedor Anthropic (formato de salida estructurada y
+> modelo por defecto) no se ha verificado contra la API real en este repo.
+> OpenAI es el proveedor principal; valida Anthropic con la API real antes de
+> usarlo en serio.
 
 ## Usar mock
 
