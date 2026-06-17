@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppLayout, type Section } from './components/AppLayout.js';
 import { LoginPage } from './pages/LoginPage.js';
+import { WorkspacesGate } from './pages/WorkspacesGate.js';
 import { OppositionsGate } from './pages/OppositionsGate.js';
 import { HomePage } from './pages/HomePage.js';
 import { MaterialPage } from './pages/MaterialPage.js';
@@ -10,11 +11,14 @@ import { TestsPage } from './pages/TestsPage.js';
 import { useStore } from './store/StoreContext.js';
 
 export function App() {
-  const { currentUser, currentOpposition } = useStore();
+  const { currentUser, currentWorkspace, currentOpposition } = useStore();
   const [section, setSection] = useState<Section>('inicio');
 
   if (!currentUser) {
     return <LoginPage />;
+  }
+  if (!currentWorkspace) {
+    return <WorkspacesGate />;
   }
   if (!currentOpposition) {
     return <OppositionsGate />;

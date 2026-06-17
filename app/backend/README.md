@@ -40,11 +40,17 @@ Modulos funcionales del MVP:
   mezclan entidades de oposiciones distintas; el generador de tests filtra por
   oposicion; el estudiante solo accede a oposiciones autorizadas.
 
-> Migracion / oposicion por defecto: el almacen es en memoria, asi que no hay
-> datos persistidos previos que migrar. El seed del frontend crea una
-> `Oposicion MVP` y le asocia todo. Cuando exista persistencia real, la
-> estrategia sera crear esa oposicion por defecto y asignarle las filas previas
-> sin `opposition_id`.
+- **Workspaces & Account Plans (SPEC 011):** `Workspace` (entidad superior a la
+  oposicion) con tipos `personal`/`organization`, planes `free`/`premium`/
+  `organization` y miembros (`owner`/`admin`/`student`). Toda `Opposition`
+  pertenece a un `Workspace` (`workspace_id` obligatorio); no se mezclan
+  entidades entre workspaces; permisos centralizados. Limites por plan
+  preparados (estructura), sin pagos.
+
+> Migracion / por defecto: el almacen es en memoria, no hay datos persistidos
+> que migrar. El seed del frontend crea un `Workspace MVP` (organization) con una
+> `Oposicion MVP` dentro y le asocia todo. Con persistencia real, la estrategia
+> seria crear ese workspace/oposicion por defecto y asignarles las filas previas.
 >
 > Nota de seguridad: el hash de contrasena (`auth/password.ts`) es solo para el
 > MVP (no produccion); debe sustituirse por un hash fuerte en una spec futura.

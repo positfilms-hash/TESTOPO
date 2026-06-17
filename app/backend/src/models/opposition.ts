@@ -5,6 +5,8 @@ export type OppositionStatus = (typeof OPPOSITION_STATUSES)[number];
 
 export interface Opposition {
   id: string;
+  /** Workspace al que pertenece la oposicion (SPEC 011). Obligatorio. */
+  workspace_id: string;
   title: string;
   description: string | null;
   /** Identificador legible y unico. */

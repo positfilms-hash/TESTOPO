@@ -6,18 +6,21 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Opposition, User } from '@backend';
+import type { Opposition, User, Workspace } from '@backend';
 import { createAppStore, type AppStore } from './appStore.js';
 
 interface StoreContextValue {
   store: AppStore;
   version: number;
   refresh: () => void;
-  // Sesion del MVP (sin tokens): usuario autenticado y oposicion activa.
+  // Sesion del MVP (sin tokens): usuario, workspace y oposicion activos.
   currentUser: User | null;
+  currentWorkspace: Workspace | null;
   currentOpposition: Opposition | null;
   login: (user: User) => void;
   logout: () => void;
+  selectWorkspace: (workspace: Workspace) => void;
+  clearWorkspace: () => void;
   selectOpposition: (opposition: Opposition) => void;
   clearOpposition: () => void;
 }
@@ -31,6 +34,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
   const [version, setVersion] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(
+    null,
+  );
   const [currentOpposition, setCurrentOpposition] =
     useState<Opposition | null>(null);
 
@@ -38,6 +44,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const login = useCallback((user: User) => setCurrentUser(user), []);
   const logout = useCallback(() => {
     setCurrentUser(null);
+    setCurrentWorkspace(null);
+    setCurrentOpposition(null);
+  }, []);
+  const selectWorkspace = useCallback((workspace: Workspace) => {
+    setCurrentWorkspace(workspace);
+    setCurrentOpposition(null);
+  }, []);
+  const clearWorkspace = useCallback(() => {
+    setCurrentWorkspace(null);
     setCurrentOpposition(null);
   }, []);
   const selectOpposition = useCallback(
@@ -53,9 +68,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         version,
         refresh,
         currentUser,
+        currentWorkspace,
         currentOpposition,
         login,
         logout,
+        selectWorkspace,
+        clearWorkspace,
         selectOpposition,
         clearOpposition,
       }}
