@@ -9,6 +9,7 @@ import { QuestionGenerationService } from '../src/service/questionGenerationServ
 import { QuestionGenerationError } from '../src/generation/questionGenerationError.js';
 import { QuestionGenerationErrorCode } from '../src/generation/generationErrors.js';
 import type { GenerateQuestionsRequest } from '../src/generation/generationTypes.js';
+import { TEST_OPPOSITION_ID } from './helpers.js';
 
 function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
@@ -30,6 +31,7 @@ function makeSetup() {
 
 function materialWithText(materials: MaterialService) {
   return materials.createMaterial({
+    opposition_id: TEST_OPPOSITION_ID,
     title: 'Tema 1 - Documento ficticio',
     type: 'syllabus',
     content_text: 'Texto ficticio del tema 1 sobre procedimiento administrativo.',
@@ -54,7 +56,7 @@ describe('QuestionGenerationService - generacion correcta', () => {
   it('genera borradores en pending_review cuando hay tema', () => {
     const { materials, topics, questions, generation } = makeSetup();
     const material = materialWithText(materials);
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
     const { run, questions: created } = generation.generateFromMaterial({
       material_id: material.id,
@@ -114,6 +116,7 @@ describe('QuestionGenerationService - generacion correcta', () => {
 
     const { questions: created } = generation.generateFromManualText({
       manual_text: 'Apunte ficticio pegado a mano sobre recursos.',
+      opposition_id: TEST_OPPOSITION_ID,
       difficulty: 'easy',
       question_count: 1,
     });
@@ -126,7 +129,7 @@ describe('QuestionGenerationService - generacion correcta', () => {
   it('no duplica enunciados exactos entre generaciones', () => {
     const { materials, topics, generation } = makeSetup();
     const material = materialWithText(materials);
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
     generation.generateFromMaterial({
       material_id: material.id,
@@ -208,6 +211,7 @@ describe('QuestionGenerationService - validaciones', () => {
   it('no genera desde material sin texto ni fragmento', () => {
     const { materials, generation } = makeSetup();
     const material = materials.createMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Sin texto',
       type: 'notes',
     });
@@ -284,7 +288,7 @@ describe('QuestionGenerationService - validaciones', () => {
   it('no genera desde tema obsolete', () => {
     const { materials, topics, generation } = makeSetup();
     const material = materialWithText(materials);
-    const topic = topics.createTopic({ title: 'Tema viejo' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
     topics.markObsolete(topic.id);
 
     expectGenError(

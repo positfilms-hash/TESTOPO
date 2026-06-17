@@ -7,7 +7,7 @@ import { TopicValidationError } from '../src/service/topicValidationError.js';
 import { TopicValidationErrorCode } from '../src/validation/topicErrors.js';
 import { QuestionValidationError } from '../src/service/questionValidationError.js';
 import { ValidationErrorCode } from '../src/validation/errors.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 // Conecta el banco de preguntas (SPEC 001) con el mapa del temario (SPEC 003):
 // QuestionService resuelve el estado del tema a traves de TopicService, y
@@ -28,7 +28,7 @@ function makeWiredServices(): {
 describe('Topic <-> Question', () => {
   it('vincula una pregunta a un tema existente', () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
     const question = questions.createQuestion(validInput());
 
     topics.assignTopicToQuestion(question.id, topic.id);
@@ -56,7 +56,7 @@ describe('Topic <-> Question', () => {
 
   it('no permite vincular un tema a una pregunta inexistente', () => {
     const { topics } = makeWiredServices();
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
     try {
       topics.assignTopicToQuestion('no-existe', topic.id);
@@ -72,7 +72,7 @@ describe('Topic <-> Question', () => {
 
   it('una pregunta validada mantiene su tema asociado', () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ title: 'Tema 1' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
     const question = questions.createQuestion(validInput());
     topics.assignTopicToQuestion(question.id, topic.id);
 
@@ -84,7 +84,7 @@ describe('Topic <-> Question', () => {
 
   it('no valida una pregunta vinculada a un tema obsolete', () => {
     const { topics, questions } = makeWiredServices();
-    const topic = topics.createTopic({ title: 'Tema antiguo' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema antiguo' });
     const question = questions.createQuestion(validInput());
     topics.assignTopicToQuestion(question.id, topic.id);
 

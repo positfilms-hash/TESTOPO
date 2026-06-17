@@ -22,8 +22,11 @@ import {
   type FileValidationOptions,
 } from '../validation/validateMaterial.js';
 import { MaterialValidationError } from './materialValidationError.js';
+import { requireOpposition } from '../access/oppositionGuards.js';
 
 export interface CreateMaterialInput {
+  /** Oposicion a la que pertenece el material (SPEC 010). Obligatorio. */
+  opposition_id?: string;
   title?: string;
   description?: string | null;
   type?: MaterialType;
@@ -73,6 +76,7 @@ export class MaterialService {
 
   // 9.1 Crear material manual. `status` por defecto es `active`.
   createMaterial(input: CreateMaterialInput): Material {
+    const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({
       title: input.title,
@@ -83,6 +87,7 @@ export class MaterialService {
     const timestamp = this.now();
     const material: Material = {
       id: this.generateId(),
+      opposition_id: oppositionId,
       title: input.title as string,
       description: input.description ?? null,
       type: input.type as MaterialType,
@@ -103,6 +108,7 @@ export class MaterialService {
   // sus metadatos y la ruta de almacenamiento (que debe estar fuera del repo).
   // Para .txt/.md puede guardarse el texto; .pdf/.docx quedan sin extraer.
   registerFileMaterial(input: RegisterFileInput): Material {
+    const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({
       title: input.title,
@@ -128,6 +134,7 @@ export class MaterialService {
     const timestamp = this.now();
     const material: Material = {
       id: this.generateId(),
+      opposition_id: oppositionId,
       title: input.title as string,
       description: input.description ?? null,
       type: input.type as MaterialType,

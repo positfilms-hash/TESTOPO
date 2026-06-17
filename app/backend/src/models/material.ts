@@ -13,6 +13,8 @@ import type { MaterialStatus, MaterialType } from './enums.js';
 
 export interface Material {
   id: string;
+  /** Oposicion a la que pertenece el material (SPEC 010). Obligatorio. */
+  opposition_id: string;
   title: string;
   description: string | null;
   type: MaterialType;

@@ -6,7 +6,7 @@ import { MaterialService } from '../src/service/materialService.js';
 import { QuestionValidationError } from '../src/service/questionValidationError.js';
 import { ValidationErrorCode } from '../src/validation/errors.js';
 import type { Source } from '../src/models/source.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 // Conecta el banco de preguntas con el registro de material (SPEC 002): el
 // estado del material se resuelve a traves del MaterialService.
@@ -38,6 +38,7 @@ describe('Question source vinculada a material', () => {
   it('valida una pregunta cuya fuente apunta a material activo', () => {
     const { questions, materials } = makeWiredServices();
     const material = materials.createMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Tema 1 - Documento ficticio',
       type: 'syllabus',
     });
@@ -53,6 +54,7 @@ describe('Question source vinculada a material', () => {
   it('no valida una pregunta cuya fuente apunta a material obsolete', () => {
     const { questions, materials } = makeWiredServices();
     const material = materials.createMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Norma ficticia derogada',
       type: 'law',
     });

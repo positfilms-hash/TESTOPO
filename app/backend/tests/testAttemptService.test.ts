@@ -12,7 +12,7 @@ import { TestAttemptService } from '../src/service/testAttemptService.js';
 import { TestAttemptError } from '../src/attempt/testAttemptError.js';
 import { TestAttemptErrorCode } from '../src/attempt/attemptErrors.js';
 import type { PracticeTestQuestion } from '../src/models/practiceTestQuestion.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 let seq = 0;
 
@@ -88,7 +88,7 @@ describe('TestAttemptService - inicio', () => {
   it('inicia un intento en progreso', () => {
     const { questions, generator, attempts } = makeSetup();
     seedValidated(questions, 3);
-    const { test } = generator.createRandomTest({ question_count: 3 });
+    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 3 });
 
     const attempt = attempts.startAttempt(test.id);
 
@@ -108,7 +108,7 @@ describe('TestAttemptService - inicio', () => {
   it('no inicia sobre test cancelado', () => {
     const { questions, generator, attempts } = makeSetup();
     seedValidated(questions, 2);
-    const { test } = generator.createRandomTest({ question_count: 2 });
+    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 2 });
     generator.cancelTest(test.id);
     expectAttemptError(
       () => attempts.startAttempt(test.id),
@@ -119,7 +119,7 @@ describe('TestAttemptService - inicio', () => {
   it('la vista para responder no expone respuesta correcta ni explicacion', () => {
     const { questions, generator, attempts } = makeSetup();
     seedValidated(questions, 1);
-    const { test } = generator.createRandomTest({ question_count: 1 });
+    const { test } = generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID, question_count: 1 });
     const attempt = attempts.startAttempt(test.id);
 
     const view = attempts.getTestForTaking(attempt.id);
@@ -141,7 +141,7 @@ describe('TestAttemptService - respuestas', () => {
   function setupWithAttempt(count = 3) {
     const ctx = makeSetup();
     seedValidated(ctx.questions, count);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({
+    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: count,
     });
     const attempt = ctx.attempts.startAttempt(test.id);
@@ -231,7 +231,7 @@ describe('TestAttemptService - envio y correccion', () => {
   function setupAnswered() {
     const ctx = makeSetup();
     seedValidated(ctx.questions, 3);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({
+    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 3,
     });
     const attempt = ctx.attempts.startAttempt(test.id);
@@ -285,7 +285,7 @@ describe('TestAttemptService - resultado, revision y cancelacion', () => {
   function setupSubmitted() {
     const ctx = makeSetup();
     seedValidated(ctx.questions, 2);
-    const { test, questions: testQuestions } = ctx.generator.createRandomTest({
+    const { test, questions: testQuestions } = ctx.generator.createRandomTest({ opposition_id: TEST_OPPOSITION_ID,
       question_count: 2,
     });
     const attempt = ctx.attempts.startAttempt(test.id);

@@ -32,9 +32,15 @@ import {
   TestGenerationErrorCode,
 } from '../test/testErrors.js';
 import { TestGenerationError } from '../test/testGenerationError.js';
+import {
+  assertSameOpposition,
+  requireOpposition,
+} from '../access/oppositionGuards.js';
 
 export interface GenerateTestRequest {
   mode: TestMode;
+  /** Oposicion del test (SPEC 010). Obligatorio. */
+  opposition_id?: string;
   title?: string;
   question_count?: number;
   topic_id?: string | null;
@@ -103,11 +109,16 @@ export class TestGeneratorService {
     this.random = options.random ?? Math.random;
   }
 
-  createRandomTest(input: { question_count?: number; title?: string }): GeneratedTest {
+  createRandomTest(input: {
+    opposition_id?: string;
+    question_count?: number;
+    title?: string;
+  }): GeneratedTest {
     return this.generate({ ...input, mode: 'random' });
   }
 
   createTestByTopic(input: {
+    opposition_id?: string;
     topic_id: string;
     question_count?: number;
     title?: string;
@@ -116,6 +127,7 @@ export class TestGeneratorService {
   }
 
   createTestByDifficulty(input: {
+    opposition_id?: string;
     difficulty: TestDifficulty;
     question_count?: number;
     title?: string;
@@ -124,6 +136,7 @@ export class TestGeneratorService {
   }
 
   createMixedTest(input: {
+    opposition_id?: string;
     topic_id?: string | null;
     difficulty?: TestDifficulty | null;
     question_count?: number;
@@ -133,13 +146,21 @@ export class TestGeneratorService {
   }
 
   generate(request: GenerateTestRequest): GeneratedTest {
+    const oppositionId = requireOpposition(request.opposition_id);
     const count = request.question_count ?? DEFAULT_TEST_QUESTION_COUNT;
     this.validateRequest(request, count);
 
     const topic = this.resolveTopicFilter(request.topic_id ?? null);
+    if (topic) {
+      // El tema debe pertenecer a la oposicion del test (SPEC 010, 17.1).
+      assertSameOpposition(topic.opposition_id, oppositionId);
+    }
     const difficulty = request.difficulty ?? null;
 
-    let pool = this.eligibleQuestions();
+    // Solo preguntas de esta oposicion (pool por oposicion, SPEC 010, 17.3).
+    let pool = this.eligibleQuestions().filter(
+      (q) => q.opposition_id === oppositionId,
+    );
     if (request.topic_id) {
       pool = pool.filter((q) => q.topic_id === request.topic_id);
     }
@@ -173,6 +194,7 @@ export class TestGeneratorService {
     const timestamp = this.now();
     const test = this.tests.create({
       id: this.generateId(),
+      opposition_id: oppositionId,
       title: request.title?.trim() || defaultTitle(request.mode),
       mode: request.mode,
       status: 'created',
@@ -186,7 +208,6 @@ export class TestGeneratorService {
       created_at: timestamp,
       updated_at: timestamp,
     });
-    void topic; // el tema ya fue validado; no se necesita mas aqui.
 
     const questions = selected.map((question, index) =>
       this.testQuestions.create({

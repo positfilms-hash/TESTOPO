@@ -8,6 +8,9 @@ import {
 } from '../src/service/questionService.js';
 import type { Source } from '../src/models/source.js';
 
+// Oposicion ficticia compartida por los tests (SPEC 010).
+export const TEST_OPPOSITION_ID = 'opp-test';
+
 export const activeSource: Source = {
   id: 'src-1',
   title: 'Temario ficticio - Tema 1',
@@ -20,6 +23,7 @@ export function validInput(
   overrides: Partial<CreateQuestionInput> = {},
 ): CreateQuestionInput {
   return {
+    opposition_id: TEST_OPPOSITION_ID,
     statement: '¿Cual es la capital ficticia de Ejemploland?',
     options: [
       { text: 'Ciudad A', is_correct: true, order: 0 },

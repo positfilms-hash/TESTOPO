@@ -25,6 +25,17 @@ npm run build      # build de produccion (Vite)
 
 URL local de revision: **http://localhost:5173**
 
+## Acceso (SPEC 010)
+
+La app pide login. Hay dos usuarios sembrados para la demo (ficticios):
+
+- **Admin:** `admin@testopo.dev` / `admin1234` (o boton "Entrar como Admin").
+- **Estudiante:** `alumno@testopo.dev` / `alumno1234` (o boton "Entrar como Estudiante").
+
+Tras entrar se elige una oposicion ("Oposicion MVP" ya sembrada). El admin
+gestiona material/temario/preguntas/tests de esa oposicion; el estudiante solo
+ve material activo, crea y realiza tests, y consulta resultados.
+
 ## Notas
 
 - La logica vive en `app/backend`; el frontend la consume via una capa de

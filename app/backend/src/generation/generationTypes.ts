@@ -9,6 +9,8 @@ import type {
 // Solicitud generica de generacion. Los wrappers del servicio rellenan `mode`.
 export interface GenerateQuestionsRequest {
   mode: GenerationMode;
+  /** Oposicion (SPEC 010). Para modos con material se infiere del material. */
+  opposition_id?: string | null;
   material_id?: string | null;
   topic_id?: string | null;
   difficulty: RequestedDifficulty;

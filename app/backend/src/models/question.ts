@@ -12,6 +12,8 @@ import type { GenerationMetadata } from './generationMetadata.js';
 
 export interface Question {
   id: string;
+  /** Oposicion a la que pertenece la pregunta (SPEC 010). Obligatorio. */
+  opposition_id: string;
   statement: string;
   options: Option[];
   /**

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
+import { useStore } from '../store/StoreContext.js';
 
 export type Section = 'inicio' | 'material' | 'temario' | 'preguntas' | 'tests';
 
-const NAV: { id: Section; label: string }[] = [
+const ADMIN_NAV: { id: Section; label: string }[] = [
   { id: 'inicio', label: 'Inicio' },
   { id: 'material', label: 'Material' },
   { id: 'temario', label: 'Temario' },
@@ -10,20 +11,32 @@ const NAV: { id: Section; label: string }[] = [
   { id: 'tests', label: 'Tests' },
 ];
 
+const STUDENT_NAV: { id: Section; label: string }[] = [
+  { id: 'inicio', label: 'Inicio' },
+  { id: 'material', label: 'Material' },
+  { id: 'tests', label: 'Tests' },
+];
+
 export function AppLayout({
   active,
   onNavigate,
+  isAdmin,
   children,
 }: {
   active: Section;
   onNavigate: (section: Section) => void;
+  isAdmin: boolean;
   children: ReactNode;
 }) {
+  const { currentUser, currentOpposition, logout, clearOpposition } =
+    useStore();
+  const nav = isAdmin ? ADMIN_NAV : STUDENT_NAV;
+
   return (
     <div className="app-shell">
       <nav className="sidebar" aria-label="Navegacion principal">
         <div className="brand">TESTOPO</div>
-        {NAV.map((item) => (
+        {nav.map((item) => (
           <button
             key={item.id}
             className={`nav-item ${active === item.id ? 'active' : ''}`}
@@ -33,6 +46,18 @@ export function AppLayout({
             {item.label}
           </button>
         ))}
+        <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div className="small muted">{currentUser?.name}</div>
+          <div className="small" style={{ marginBottom: 4 }}>
+            {currentOpposition?.title}
+          </div>
+          <button className="nav-item small" onClick={clearOpposition}>
+            Cambiar oposicion
+          </button>
+          <button className="nav-item small" onClick={logout}>
+            Salir
+          </button>
+        </div>
       </nav>
       <main className="main">{children}</main>
     </div>

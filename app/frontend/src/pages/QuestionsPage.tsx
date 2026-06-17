@@ -39,10 +39,12 @@ function QuestionsList({
   onReview: (id: string) => void;
   onGenerate: () => void;
 }) {
-  const { store } = useStore();
+  const { store, currentOpposition } = useStore();
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
 
-  const all = store.questions.listQuestions();
+  const all = store.questions
+    .listQuestions()
+    .filter((q) => q.opposition_id === currentOpposition?.id);
   const questions = tab === 'pending' ? all.filter((q) => PENDING.includes(q.status)) : all;
 
   return (
@@ -271,9 +273,13 @@ function EditForm({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 function GenerateForm({ onBack }: { onBack: () => void }) {
-  const { store, refresh } = useStore();
-  const materials = store.materials.listMaterials().filter((m) => m.status !== 'obsolete');
-  const topics = store.topics.listTopics().filter((t) => t.status !== 'obsolete');
+  const { store, refresh, currentOpposition } = useStore();
+  const materials = store.materials
+    .listMaterials()
+    .filter((m) => m.opposition_id === currentOpposition?.id && m.status !== 'obsolete');
+  const topics = store.topics
+    .listTopics()
+    .filter((t) => t.opposition_id === currentOpposition?.id && t.status !== 'obsolete');
   const [materialId, setMaterialId] = useState(materials[0]?.id ?? '');
   const [topicId, setTopicId] = useState('');
   const [difficulty, setDifficulty] = useState<RequestedDifficulty>('mixed');

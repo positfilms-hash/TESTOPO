@@ -6,14 +6,20 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { Opposition, User } from '@backend';
 import { createAppStore, type AppStore } from './appStore.js';
 
 interface StoreContextValue {
   store: AppStore;
-  // `version` cambia tras cada mutacion para forzar el re-render (los servicios
-  // son sincronos y en memoria, asi que no hace falta estado asincrono).
   version: number;
   refresh: () => void;
+  // Sesion del MVP (sin tokens): usuario autenticado y oposicion activa.
+  currentUser: User | null;
+  currentOpposition: Opposition | null;
+  login: (user: User) => void;
+  logout: () => void;
+  selectOpposition: (opposition: Opposition) => void;
+  clearOpposition: () => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -24,10 +30,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     storeRef.current = createAppStore(true);
   }
   const [version, setVersion] = useState(0);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentOpposition, setCurrentOpposition] =
+    useState<Opposition | null>(null);
+
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const login = useCallback((user: User) => setCurrentUser(user), []);
+  const logout = useCallback(() => {
+    setCurrentUser(null);
+    setCurrentOpposition(null);
+  }, []);
+  const selectOpposition = useCallback(
+    (opposition: Opposition) => setCurrentOpposition(opposition),
+    [],
+  );
+  const clearOpposition = useCallback(() => setCurrentOpposition(null), []);
 
   return (
-    <StoreContext.Provider value={{ store: storeRef.current, version, refresh }}>
+    <StoreContext.Provider
+      value={{
+        store: storeRef.current,
+        version,
+        refresh,
+        currentUser,
+        currentOpposition,
+        login,
+        logout,
+        selectOpposition,
+        clearOpposition,
+      }}
+    >
       {children}
     </StoreContext.Provider>
   );

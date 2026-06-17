@@ -15,7 +15,7 @@ import { QuestionReviewErrorCode } from '../src/review/reviewErrors.js';
 import { QuestionValidationCode } from '../src/quality/qualityCodes.js';
 import type { Difficulty, QuestionStatus } from '../src/models/enums.js';
 import type { Source } from '../src/models/source.js';
-import { validInput } from './helpers.js';
+import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 
 function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
@@ -203,6 +203,7 @@ describe('QuestionReviewService - aprobacion', () => {
   it('no aprueba con material obsoleto', () => {
     const { materials, questions, review } = makeSetup();
     const material = materials.createMaterial({
+      opposition_id: TEST_OPPOSITION_ID,
       title: 'Material ficticio',
       type: 'syllabus',
       content_text: 'texto',
@@ -226,7 +227,7 @@ describe('QuestionReviewService - aprobacion', () => {
 
   it('no aprueba con tema obsoleto', () => {
     const { topics, questions, review } = makeSetup();
-    const topic = topics.createTopic({ title: 'Tema viejo' });
+    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
     topics.markObsolete(topic.id);
     const q = makeQuestion(questions, 'pending_review', {
       topic_id: topic.id,
