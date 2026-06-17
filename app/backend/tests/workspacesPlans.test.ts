@@ -21,7 +21,7 @@ function makeSetup() {
   const oppositions = new OppositionService(
     new InMemoryOppositionRepository(),
     new InMemoryOppositionAccessRepository(),
-    { workspaceMemberRepository: memberRepo },
+    memberRepo,
   );
   const admin = users.createUser({
     email: 'admin@test.com',
@@ -201,7 +201,7 @@ describe('SPEC 011 - oposiciones dentro de workspace', () => {
           title: 'X',
           slug: 'x',
         }),
-      AccessErrorCode.ADMIN_ACCESS_REQUIRED,
+      AccessErrorCode.WORKSPACE_ACCESS_DENIED,
     );
   });
 

@@ -97,7 +97,7 @@ function QuestionsList({
 }
 
 function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
-  const { store, version, refresh } = useStore();
+  const { store, version, refresh, currentUser } = useStore();
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
 
@@ -116,8 +116,9 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
   const hasErrors = report.errors.length > 0;
 
   const approve = () => {
+    if (!currentUser) return;
     try {
-      store.review.approve(id, { reviewer_name: 'admin' });
+      store.platform.approve(currentUser, id, { reviewer_name: currentUser.name });
       refresh();
       setNotice({ type: 'success', text: 'Pregunta aprobada y validada.' });
     } catch (error) {
@@ -207,7 +208,9 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
           variant="secondary"
           onClick={() =>
             act(
-              () => store.review.markNeedsFix(id, { notes: 'Revisar' }),
+              () =>
+                currentUser &&
+                store.platform.markNeedsFix(currentUser, id, { notes: 'Revisar' }),
               null,
               'Marcada como "necesita correccion".',
             )
@@ -219,8 +222,12 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
           variant="danger"
           onClick={() =>
             act(
-              () => store.review.reject(id, { notes: 'Rechazada en revision' }),
-              'Rechazar esta pregunta?',
+              () =>
+                currentUser &&
+                store.platform.reject(currentUser, id, {
+                  notes: 'Rechazada en revision',
+                }),
+              '¿Rechazar esta pregunta?',
               'Pregunta rechazada.',
             )
           }
@@ -240,14 +247,19 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
 }
 
 function EditForm({ id, onDone }: { id: string; onDone: () => void }) {
-  const { store } = useStore();
+  const { store, currentUser } = useStore();
   const question = store.questions.getQuestion(id)!;
   const [statement, setStatement] = useState(question.statement);
   const [explanation, setExplanation] = useState(question.explanation ?? '');
   const [difficulty, setDifficulty] = useState<Difficulty>(question.difficulty ?? 'medium');
 
   const save = () => {
-    store.review.editFromReview(id, { statement, explanation, difficulty });
+    if (!currentUser) return;
+    store.platform.editFromReview(currentUser, id, {
+      statement,
+      explanation,
+      difficulty,
+    });
     onDone();
   };
 
@@ -273,7 +285,7 @@ function EditForm({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 function GenerateForm({ onBack }: { onBack: () => void }) {
-  const { store, refresh, currentOpposition } = useStore();
+  const { store, refresh, currentUser, currentOpposition } = useStore();
   const materials = store.materials
     .listMaterials()
     .filter((m) => m.opposition_id === currentOpposition?.id && m.status !== 'obsolete');
@@ -289,6 +301,7 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
 
   const generate = () => {
     setNotice(null);
+    if (!currentUser) return;
     try {
       const base = {
         material_id: materialId,
@@ -297,8 +310,8 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
         question_count: count,
       };
       const result = fragment.trim()
-        ? store.generation.generateFromExcerpt({ ...base, excerpt: fragment.trim() })
-        : store.generation.generateFromMaterial(base);
+        ? store.platform.generateFromExcerpt(currentUser, { ...base, excerpt: fragment.trim() })
+        : store.platform.generateFromMaterial(currentUser, base);
       refresh();
       setNotice({
         type: 'success',

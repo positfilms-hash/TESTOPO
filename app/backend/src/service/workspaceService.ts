@@ -165,6 +165,13 @@ export class WorkspaceService {
     return this.members.findByWorkspace(workspaceId);
   }
 
+  // Rol activo del usuario en el workspace (o null). Util para que la UI decida
+  // capacidades por rol de workspace, no por `User.role` global.
+  getMemberRole(userId: string, workspaceId: string): WorkspaceRole | null {
+    const member = this.members.find(workspaceId, userId);
+    return member && member.status === 'active' ? member.role : null;
+  }
+
   private create(
     owner: User | null | undefined,
     input: {
