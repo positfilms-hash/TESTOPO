@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Material, TopicTreeNode } from '@backend';
+import { useEffect, useState } from 'react';
+import type { Material, Topic, TopicTreeNode } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import {
   Badge,
@@ -19,24 +19,37 @@ export function TopicPage() {
   const [parentId, setParentId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  void version;
+  const [tree, setTree] = useState<TopicTreeNode[]>([]);
+  const [allTopics, setAllTopics] = useState<Topic[]>([]);
 
   const oppositionId = currentOpposition?.id;
-  const tree = store.topics
-    .getTopicTree()
-    .filter((node) => node.opposition_id === oppositionId);
-  const allTopics = store.topics
-    .listTopics()
-    .filter((t) => t.opposition_id === oppositionId);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const t = (await store.topics.getTopicTree()).filter(
+        (node) => node.opposition_id === oppositionId,
+      );
+      const a = (await store.topics.listTopics()).filter(
+        (x) => x.opposition_id === oppositionId,
+      );
+      if (!cancelled) {
+        setTree(t);
+        setAllTopics(a);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, oppositionId, version]);
   const selected = selectedId
     ? allTopics.find((t) => t.id === selectedId) ?? null
     : null;
 
-  const addTopic = () => {
+  const addTopic = async () => {
     setError(null);
     if (!currentUser) return;
     try {
-      store.platform.createTopic(currentUser, {
+      await store.platform.createTopic(currentUser, {
         opposition_id: oppositionId,
         title,
         parent_id: parentId || null,
@@ -50,19 +63,19 @@ export function TopicPage() {
     }
   };
 
-  const editTopic = (id: string, current: string) => {
+  const editTopic = async (id: string, current: string) => {
     if (!currentUser) return;
     const next = window.prompt('Nuevo titulo del tema', current);
     if (next && next.trim()) {
-      store.platform.editTopic(currentUser, id, { title: next.trim() });
+      await store.platform.editTopic(currentUser, id, { title: next.trim() });
       refresh();
     }
   };
 
-  const markObsolete = (id: string) => {
+  const markObsolete = async (id: string) => {
     if (!currentUser) return;
     if (!window.confirm('¿Marcar este tema como obsoleto?')) return;
-    store.platform.markTopicObsolete(currentUser, id);
+    await store.platform.markTopicObsolete(currentUser, id);
     refresh();
   };
 
@@ -197,12 +210,23 @@ function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: str
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
-  void version;
+  const [materials, setMaterials] = useState<Material[]>([]);
 
-  const materials: Material[] = store.topicMaterialLinks
-    .findAll({ topic_id: topicId })
-    .map((link) => store.materials.getMaterial(link.material_id))
-    .filter((m): m is Material => Boolean(m));
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const links = await store.topicMaterialLinks.findAll({ topic_id: topicId });
+      const list: Material[] = [];
+      for (const link of links) {
+        const m = await store.materials.getMaterial(link.material_id);
+        if (m) list.push(m);
+      }
+      if (!cancelled) setMaterials(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, topicId, version]);
 
   const uploadFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0 || !currentUser) return;
@@ -217,7 +241,7 @@ function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: str
           bytes: new Uint8Array(await f.arrayBuffer()),
         })),
       );
-      const { batch } = store.platform.importFilesToTopic(currentUser, {
+      const { batch } = await store.platform.importFilesToTopic(currentUser, {
         opposition_id: currentOpposition?.id,
         topic_id: topicId,
         files,
@@ -238,7 +262,7 @@ function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: str
     setSummary(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const { batch } = store.platform.importZip(currentUser, {
+      const { batch } = await store.platform.importZip(currentUser, {
         opposition_id: currentOpposition?.id,
         parent_topic_id: topicId,
         zip: { original_filename: file.name, bytes },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext.js';
 import { Button, PageHeader } from '../components/ui.js';
 import { isSupabaseConfigured } from '../auth/supabaseClient.js';
@@ -17,27 +17,44 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [ownership, setOwnership] = useState<WorkspaceOwnership[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!currentUser) {
+        if (!cancelled) setOwnership([]);
+        return;
+      }
+      const workspaces = await store.workspaces.listForUser(currentUser);
+      const result: WorkspaceOwnership[] = [];
+      for (const ws of workspaces) {
+        let owners: string[] = [];
+        let admins: string[] = [];
+        try {
+          const members = await store.workspaces.listMembers(currentUser, ws.id);
+          owners = members
+            .filter((m) => m.role === 'owner' && m.status === 'active')
+            .map((m) => m.user_id);
+          admins = members
+            .filter((m) => m.role === 'admin' && m.status === 'active')
+            .map((m) => m.user_id);
+        } catch {
+          // Sin permiso para listar miembros: no es un workspace que gestione.
+        }
+        result.push({ id: ws.id, type: ws.type, ownerIds: owners, adminIds: admins });
+      }
+      if (!cancelled) setOwnership(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser]);
+
   if (!currentUser) {
     return null;
   }
 
-  // Propiedad de workspaces del usuario (para la regla de borrado).
-  const ownership: WorkspaceOwnership[] = store.workspaces
-    .listForUser(currentUser)
-    .map((ws) => {
-      let owners: string[] = [];
-      let admins: string[] = [];
-      try {
-        const members = store.workspaces.listMembers(currentUser, ws.id);
-        owners = members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => m.user_id);
-        admins = members.filter((m) => m.role === 'admin' && m.status === 'active').map((m) => m.user_id);
-      } catch {
-        // Sin permiso para listar miembros: no es un workspace que el usuario gestione.
-      }
-      return { id: ws.id, type: ws.type, ownerIds: owners, adminIds: admins };
-    });
-  const blocking = findBlockingWorkspaces(currentUser.id, ownership);
-  const isBlocked = blocking.length > 0;
+  const isBlocked = findBlockingWorkspaces(currentUser.id, ownership).length > 0;
 
   const deleteAccount = async () => {
     setError(null);

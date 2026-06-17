@@ -60,12 +60,15 @@ export class OppositionService {
 
   // Crear oposicion: la crea quien puede gestionar el workspace (owner/admin del
   // workspace), no un admin global. El creador queda como `owner` de la oposicion.
-  createOpposition(actor: User, input: CreateOppositionInput): Opposition {
+  async createOpposition(
+    actor: User,
+    input: CreateOppositionInput,
+  ): Promise<Opposition> {
     requireUser(actor);
     if (!isNonEmptyString(input.workspace_id)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_WORKSPACE_REQUIRED]);
     }
-    requireManageWorkspace(this.members, actor, input.workspace_id);
+    await requireManageWorkspace(this.members, actor, input.workspace_id);
     if (!isNonEmptyString(input.title)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_TITLE_REQUIRED]);
     }
@@ -76,12 +79,12 @@ export class OppositionService {
     if (!isOppositionStatus(status)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_INVALID_STATUS]);
     }
-    if (this.oppositions.findBySlug(input.slug)) {
+    if (await this.oppositions.findBySlug(input.slug)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_SLUG_ALREADY_EXISTS]);
     }
 
     const timestamp = this.now();
-    const opposition = this.oppositions.create({
+    const opposition = await this.oppositions.create({
       id: this.generateId(),
       workspace_id: input.workspace_id,
       title: input.title,
@@ -92,52 +95,70 @@ export class OppositionService {
       created_at: timestamp,
       updated_at: timestamp,
     });
-    this.upsertAccess(opposition.id, actor.id, 'owner', actor.id);
+    await this.upsertAccess(opposition.id, actor.id, 'owner', actor.id);
     return opposition;
   }
 
   // Oposiciones visibles: el usuario debe ser miembro activo del workspace de la
   // oposicion y, o bien gestionarlo (ve todas), o tener acceso a la oposicion.
-  listForUser(user: User): Opposition[] {
+  async listForUser(user: User): Promise<Opposition[]> {
     requireUser(user);
-    return this.oppositions.findAll().filter((opp) => {
-      if (!isActiveWorkspaceMember(this.members, user.id, opp.workspace_id)) {
-        return false;
+    const all = await this.oppositions.findAll();
+    const result: Opposition[] = [];
+    for (const opp of all) {
+      if (
+        !(await isActiveWorkspaceMember(this.members, user.id, opp.workspace_id))
+      ) {
+        continue;
       }
-      return (
-        canManageWorkspace(this.members, user, opp.workspace_id) ||
-        hasActiveAccess(this.access, user.id, opp.id)
-      );
-    });
+      if (
+        (await canManageWorkspace(this.members, user, opp.workspace_id)) ||
+        (await hasActiveAccess(this.access, user.id, opp.id))
+      ) {
+        result.push(opp);
+      }
+    }
+    return result;
   }
 
   // ¿El usuario tiene acceso de ESTUDIO (matricula activa) a alguna oposicion
   // del workspace? (SPEC 014: decide la zona estudiante y el selector de modo).
   // Es independiente de gestionar el workspace: un gestor puede ademas estudiar.
-  hasStudyAccess(user: User, workspaceId: string): boolean {
+  async hasStudyAccess(user: User, workspaceId: string): Promise<boolean> {
     requireUser(user);
-    return this.oppositions
-      .findAll()
-      .some(
-        (opp) =>
-          opp.workspace_id === workspaceId &&
-          this.isActiveStudent(user.id, opp.id),
-      );
+    const all = await this.oppositions.findAll();
+    for (const opp of all) {
+      if (
+        opp.workspace_id === workspaceId &&
+        (await this.isActiveStudent(user.id, opp.id))
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Oposiciones en las que el usuario estudia (matricula de estudiante activa),
   // sin contar las que solo puede gestionar como owner (SPEC 014: la creacion
   // de una oposicion matricula al creador como `owner`, eso NO es estudiar).
-  listStudyOppositions(user: User): Opposition[] {
+  async listStudyOppositions(user: User): Promise<Opposition[]> {
     requireUser(user);
-    return this.oppositions
-      .findAll()
-      .filter((opp) => this.isActiveStudent(user.id, opp.id));
+    const all = await this.oppositions.findAll();
+    const result: Opposition[] = [];
+    for (const opp of all) {
+      if (await this.isActiveStudent(user.id, opp.id)) {
+        result.push(opp);
+      }
+    }
+    return result;
   }
 
   // Matricula de ESTUDIANTE activa (excluye owner/manager).
-  private isActiveStudent(userId: string, oppositionId: string): boolean {
-    const access = this.access.find(userId, oppositionId);
+  private async isActiveStudent(
+    userId: string,
+    oppositionId: string,
+  ): Promise<boolean> {
+    const access = await this.access.find(userId, oppositionId);
     return (
       access !== null &&
       access.status === 'active' &&
@@ -147,15 +168,15 @@ export class OppositionService {
 
   // Ver oposicion: miembro del workspace + (gestor del workspace o acceso a la
   // oposicion).
-  getOpposition(user: User, oppositionId: string): Opposition {
-    const opposition = this.oppositions.findById(oppositionId);
+  async getOpposition(user: User, oppositionId: string): Promise<Opposition> {
+    const opposition = await this.oppositions.findById(oppositionId);
     if (!opposition) {
       throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
     }
-    requireWorkspaceMember(this.members, user, opposition.workspace_id);
+    await requireWorkspaceMember(this.members, user, opposition.workspace_id);
     if (
-      !canManageWorkspace(this.members, user, opposition.workspace_id) &&
-      !hasActiveAccess(this.access, user.id, oppositionId)
+      !(await canManageWorkspace(this.members, user, opposition.workspace_id)) &&
+      !(await hasActiveAccess(this.access, user.id, oppositionId))
     ) {
       throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
     }
@@ -163,12 +184,12 @@ export class OppositionService {
   }
 
   // Editar oposicion: gestor del workspace de esa oposicion.
-  editOpposition(
+  async editOpposition(
     actor: User,
     oppositionId: string,
     changes: CreateOppositionInput,
-  ): Opposition {
-    const existing = this.requireManagedOpposition(actor, oppositionId);
+  ): Promise<Opposition> {
+    const existing = await this.requireManagedOpposition(actor, oppositionId);
     const status = changes.status ?? existing.status;
     if (!isOppositionStatus(status)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_INVALID_STATUS]);
@@ -186,12 +207,12 @@ export class OppositionService {
   }
 
   // Dar acceso a un usuario a una oposicion (gestor del workspace).
-  grantAccess(
+  async grantAccess(
     actor: User,
     input: { user_id: string; opposition_id: string; role?: OppositionRole },
-  ): OppositionAccess {
-    this.requireManagedOpposition(actor, input.opposition_id);
-    const existing = this.access.find(input.user_id, input.opposition_id);
+  ): Promise<OppositionAccess> {
+    await this.requireManagedOpposition(actor, input.opposition_id);
+    const existing = await this.access.find(input.user_id, input.opposition_id);
     if (existing && existing.status === 'active') {
       throw new AccessError([
         AccessErrorCode.OPPOSITION_ACCESS_ALREADY_EXISTS,
@@ -205,12 +226,12 @@ export class OppositionService {
     );
   }
 
-  revokeAccess(
+  async revokeAccess(
     actor: User,
     input: { user_id: string; opposition_id: string },
-  ): OppositionAccess {
-    this.requireManagedOpposition(actor, input.opposition_id);
-    const existing = this.access.find(input.user_id, input.opposition_id);
+  ): Promise<OppositionAccess> {
+    await this.requireManagedOpposition(actor, input.opposition_id);
+    const existing = await this.access.find(input.user_id, input.opposition_id);
     if (!existing) {
       throw new AccessError([AccessErrorCode.OPPOSITION_ACCESS_NOT_FOUND]);
     }
@@ -221,34 +242,36 @@ export class OppositionService {
     });
   }
 
-  listStudents(actor: User, oppositionId: string): OppositionAccess[] {
-    this.requireManagedOpposition(actor, oppositionId);
-    return this.access
-      .findByOpposition(oppositionId)
-      .filter((a) => a.role_in_opposition === 'student');
+  async listStudents(
+    actor: User,
+    oppositionId: string,
+  ): Promise<OppositionAccess[]> {
+    await this.requireManagedOpposition(actor, oppositionId);
+    const access = await this.access.findByOpposition(oppositionId);
+    return access.filter((a) => a.role_in_opposition === 'student');
   }
 
   // Resuelve la oposicion y exige que el actor gestione su workspace.
-  private requireManagedOpposition(
+  private async requireManagedOpposition(
     actor: User,
     oppositionId: string,
-  ): Opposition {
-    const opposition = this.oppositions.findById(oppositionId);
+  ): Promise<Opposition> {
+    const opposition = await this.oppositions.findById(oppositionId);
     if (!opposition) {
       throw new AccessError([AccessErrorCode.OPPOSITION_NOT_FOUND]);
     }
-    requireManageWorkspace(this.members, actor, opposition.workspace_id);
+    await requireManageWorkspace(this.members, actor, opposition.workspace_id);
     return opposition;
   }
 
-  private upsertAccess(
+  private async upsertAccess(
     oppositionId: string,
     userId: string,
     role: OppositionRole,
     grantedBy: string,
-  ): OppositionAccess {
+  ): Promise<OppositionAccess> {
     const timestamp = this.now();
-    const existing = this.access.find(userId, oppositionId);
+    const existing = await this.access.find(userId, oppositionId);
     if (existing) {
       return this.access.save({
         ...existing,

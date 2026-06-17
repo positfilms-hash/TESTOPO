@@ -5,12 +5,12 @@ import type { Difficulty } from '../src/models/enums.js';
 import { makeService, validInput } from './helpers.js';
 
 // Comprueba que `fn` lanza QuestionValidationError incluyendo el codigo dado.
-function expectValidationError(
+async function expectValidationError(
   fn: () => unknown,
   code: ValidationErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(QuestionValidationError);
     expect((error as QuestionValidationError).errors).toContain(code);
@@ -20,9 +20,9 @@ function expectValidationError(
 }
 
 describe('QuestionService - operaciones', () => {
-  it('crea una pregunta en estado draft', () => {
+  it('crea una pregunta en estado draft', async () => {
     const service = makeService();
-    const question = service.createQuestion(validInput());
+    const question = await service.createQuestion(validInput());
 
     expect(question.status).toBe('draft');
     expect(question.id).toBeTruthy();
@@ -33,26 +33,26 @@ describe('QuestionService - operaciones', () => {
     expect(question.correct_answer).toBe(correctOption?.id);
   });
 
-  it('lista, consulta y filtra preguntas', () => {
+  it('lista, consulta y filtra preguntas', async () => {
     const service = makeService();
-    const easy = service.createQuestion(validInput({ topic: 'Tema 1' }));
-    service.createQuestion(
+    const easy = await service.createQuestion(validInput({ topic: 'Tema 1' }));
+    await service.createQuestion(
       validInput({ topic: 'Tema 2', difficulty: 'hard' }),
     );
 
-    expect(service.listQuestions()).toHaveLength(2);
-    expect(service.getQuestion(easy.id)?.id).toBe(easy.id);
-    expect(service.getQuestion('no-existe')).toBeNull();
-    expect(service.listQuestions({ topic: 'Tema 2' })).toHaveLength(1);
-    expect(service.listQuestions({ difficulty: 'hard' })).toHaveLength(1);
-    expect(service.listQuestions({ status: 'validated' })).toHaveLength(0);
+    expect(await service.listQuestions()).toHaveLength(2);
+    expect((await service.getQuestion(easy.id))?.id).toBe(easy.id);
+    expect(await service.getQuestion('no-existe')).toBeNull();
+    expect(await service.listQuestions({ topic: 'Tema 2' })).toHaveLength(1);
+    expect(await service.listQuestions({ difficulty: 'hard' })).toHaveLength(1);
+    expect(await service.listQuestions({ status: 'validated' })).toHaveLength(0);
   });
 
-  it('al editar una pregunta actualiza updated_at', () => {
+  it('al editar una pregunta actualiza updated_at', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
+    const created = await service.createQuestion(validInput());
 
-    const edited = service.editQuestion(created.id, { topic: 'Tema 9' });
+    const edited = await service.editQuestion(created.id, { topic: 'Tema 9' });
 
     expect(edited.topic).toBe('Tema 9');
     expect(edited.updated_at.getTime()).toBeGreaterThan(
@@ -63,87 +63,87 @@ describe('QuestionService - operaciones', () => {
 });
 
 describe('QuestionService - transicion a validated', () => {
-  it('una pregunta valida puede pasar a validated', () => {
+  it('una pregunta valida puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
+    const created = await service.createQuestion(validInput());
 
-    const validated = service.changeStatus(created.id, 'validated');
+    const validated = await service.changeStatus(created.id, 'validated');
 
     expect(validated.status).toBe('validated');
   });
 
-  it('una pregunta sin enunciado no puede pasar a validated', () => {
+  it('una pregunta sin enunciado no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.editQuestion(created.id, { statement: '   ' });
+    const created = await service.createQuestion(validInput());
+    await service.editQuestion(created.id, { statement: '   ' });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.STATEMENT_REQUIRED,
     );
   });
 
-  it('una pregunta sin explicacion no puede pasar a validated', () => {
+  it('una pregunta sin explicacion no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.editQuestion(created.id, { explanation: null });
+    const created = await service.createQuestion(validInput());
+    await service.editQuestion(created.id, { explanation: null });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.EXPLANATION_REQUIRED,
     );
   });
 
-  it('una pregunta sin fuente no puede pasar a validated', () => {
+  it('una pregunta sin fuente no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.editQuestion(created.id, { source: null });
+    const created = await service.createQuestion(validInput());
+    await service.editQuestion(created.id, { source: null });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.SOURCE_REQUIRED,
     );
   });
 
-  it('una pregunta sin tema no puede pasar a validated', () => {
+  it('una pregunta sin tema no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.editQuestion(created.id, { topic: null });
+    const created = await service.createQuestion(validInput());
+    await service.editQuestion(created.id, { topic: null });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.TOPIC_REQUIRED,
     );
   });
 
-  it('una pregunta sin dificultad no puede pasar a validated', () => {
+  it('una pregunta sin dificultad no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.editQuestion(created.id, { difficulty: null });
+    const created = await service.createQuestion(validInput());
+    await service.editQuestion(created.id, { difficulty: null });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.DIFFICULTY_REQUIRED,
     );
   });
 
-  it('una pregunta con dificultad invalida no puede pasar a validated', () => {
+  it('una pregunta con dificultad invalida no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
+    const created = await service.createQuestion(validInput());
     // Forzamos un valor invalido saltando el tipo (entrada externa no fiable).
-    service.editQuestion(created.id, {
+    await service.editQuestion(created.id, {
       difficulty: 'impossible' as Difficulty,
     });
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.INVALID_DIFFICULTY,
     );
   });
 
-  it('una pregunta con cero respuestas correctas no puede pasar a validated', () => {
+  it('una pregunta con cero respuestas correctas no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(
+    const created = await service.createQuestion(
       validInput({
         options: [
           { text: 'Ciudad A', is_correct: false },
@@ -152,15 +152,15 @@ describe('QuestionService - transicion a validated', () => {
       }),
     );
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.SINGLE_CORRECT_OPTION_REQUIRED,
     );
   });
 
-  it('una pregunta con mas de una respuesta correcta no puede pasar a validated', () => {
+  it('una pregunta con mas de una respuesta correcta no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(
+    const created = await service.createQuestion(
       validInput({
         options: [
           { text: 'Ciudad A', is_correct: true },
@@ -169,27 +169,27 @@ describe('QuestionService - transicion a validated', () => {
       }),
     );
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.SINGLE_CORRECT_OPTION_REQUIRED,
     );
   });
 
-  it('una pregunta con menos de 2 opciones no puede pasar a validated', () => {
+  it('una pregunta con menos de 2 opciones no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(
+    const created = await service.createQuestion(
       validInput({ options: [{ text: 'Unica', is_correct: true }] }),
     );
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.MIN_OPTIONS_NOT_MET,
     );
   });
 
-  it('una pregunta con opciones duplicadas no puede pasar a validated', () => {
+  it('una pregunta con opciones duplicadas no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(
+    const created = await service.createQuestion(
       validInput({
         options: [
           { text: 'Madrid', is_correct: true },
@@ -199,15 +199,15 @@ describe('QuestionService - transicion a validated', () => {
       }),
     );
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.DUPLICATE_OPTIONS,
     );
   });
 
-  it('una pregunta con fuente obsolete no puede pasar a validated', () => {
+  it('una pregunta con fuente obsolete no puede pasar a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(
+    const created = await service.createQuestion(
       validInput({
         source: {
           id: 'src-old',
@@ -219,18 +219,18 @@ describe('QuestionService - transicion a validated', () => {
       }),
     );
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.SOURCE_OBSOLETE,
     );
   });
 
-  it('una pregunta en estado obsolete no puede pasar directamente a validated', () => {
+  it('una pregunta en estado obsolete no puede pasar directamente a validated', async () => {
     const service = makeService();
-    const created = service.createQuestion(validInput());
-    service.changeStatus(created.id, 'obsolete');
+    const created = await service.createQuestion(validInput());
+    await service.changeStatus(created.id, 'obsolete');
 
-    expectValidationError(
+    await expectValidationError(
       () => service.changeStatus(created.id, 'validated'),
       ValidationErrorCode.OBSOLETE_CANNOT_BE_VALIDATED,
     );

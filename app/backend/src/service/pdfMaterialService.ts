@@ -61,14 +61,14 @@ export class PdfMaterialService {
     this.now = deps.now ?? (() => new Date());
   }
 
-  uploadPdf(input: UploadPdfInput): Material {
+  async uploadPdf(input: UploadPdfInput): Promise<Material> {
     const codes: PdfErrorCode[] = [];
 
     // --- Oposicion (obligatoria, debe existir) ---
     const oppositionId = input.opposition_id;
     if (!isNonEmptyString(oppositionId)) {
       codes.push(PdfErrorCode.OPPOSITION_REQUIRED);
-    } else if (!this.deps.oppositions.findById(oppositionId)) {
+    } else if (!(await this.deps.oppositions.findById(oppositionId))) {
       codes.push(PdfErrorCode.OPPOSITION_NOT_FOUND);
     }
 
@@ -107,7 +107,7 @@ export class PdfMaterialService {
     const topicIds = dedupe(input.topic_ids ?? []);
     if (isNonEmptyString(oppositionId)) {
       for (const topicId of topicIds) {
-        const topic = this.deps.topics.findById(topicId);
+        const topic = await this.deps.topics.findById(topicId);
         if (!topic) {
           codes.push(PdfErrorCode.TOPIC_NOT_FOUND);
         } else if (topic.opposition_id !== oppositionId) {
@@ -163,11 +163,11 @@ export class PdfMaterialService {
       created_at: timestamp,
       updated_at: timestamp,
     };
-    const created = this.deps.materials.create(material);
+    const created = await this.deps.materials.create(material);
 
     // --- Vinculacion con temas ---
     for (const topicId of topicIds) {
-      this.deps.topicMaterialLinks.create({
+      await this.deps.topicMaterialLinks.create({
         id: this.generateId(),
         material_id: created.id,
         topic_id: topicId,

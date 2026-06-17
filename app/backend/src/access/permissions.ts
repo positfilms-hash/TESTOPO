@@ -1,5 +1,9 @@
 // Guardas de permisos reutilizables (SPEC 010, 13 y 20). Centralizan las
 // comprobaciones de rol y de acceso a oposicion para no repetirlas.
+//
+// SPEC 018.3: la capa de repositorios es asincrona, asi que las guardas que
+// consultan repositorios devuelven `Promise`. Las puramente sincronas
+// (requireUser/requireAdmin) se mantienen sincronas.
 
 import type { User } from '../models/user.js';
 import type { OppositionAccessRepository } from '../repository/oppositionAccessRepository.js';
@@ -22,24 +26,24 @@ export function requireAdmin(user: User | null | undefined): User {
   return current;
 }
 
-export function hasActiveAccess(
+export async function hasActiveAccess(
   accessRepo: OppositionAccessRepository,
   userId: string,
   oppositionId: string,
-): boolean {
-  const access = accessRepo.find(userId, oppositionId);
+): Promise<boolean> {
+  const access = await accessRepo.find(userId, oppositionId);
   return access !== null && access.status === 'active';
 }
 
-export function canManageOpposition(
+export async function canManageOpposition(
   accessRepo: OppositionAccessRepository,
   user: User,
   oppositionId: string,
-): boolean {
+): Promise<boolean> {
   if (user.role !== 'admin') {
     return false;
   }
-  const access = accessRepo.find(user.id, oppositionId);
+  const access = await accessRepo.find(user.id, oppositionId);
   return (
     access !== null &&
     access.status === 'active' &&
@@ -49,44 +53,44 @@ export function canManageOpposition(
 }
 
 // Acceso de lectura/uso (admin gestor o estudiante con acceso activo).
-export function requireOppositionAccess(
+export async function requireOppositionAccess(
   accessRepo: OppositionAccessRepository,
   user: User | null | undefined,
   oppositionId: string,
-): User {
+): Promise<User> {
   const current = requireUser(user);
-  if (canManageOpposition(accessRepo, current, oppositionId)) {
+  if (await canManageOpposition(accessRepo, current, oppositionId)) {
     return current;
   }
-  if (hasActiveAccess(accessRepo, current.id, oppositionId)) {
+  if (await hasActiveAccess(accessRepo, current.id, oppositionId)) {
     return current;
   }
   throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
 }
 
 // Acceso de gestion (admin con rol owner/manager en la oposicion).
-export function requireManageOpposition(
+export async function requireManageOpposition(
   accessRepo: OppositionAccessRepository,
   user: User | null | undefined,
   oppositionId: string,
-): User {
+): Promise<User> {
   const current = requireAdmin(user);
-  if (!canManageOpposition(accessRepo, current, oppositionId)) {
+  if (!(await canManageOpposition(accessRepo, current, oppositionId))) {
     throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
   }
   return current;
 }
 
 // Acceso de estudiante con matricula activa en la oposicion.
-export function requireStudentAccess(
+export async function requireStudentAccess(
   accessRepo: OppositionAccessRepository,
   user: User | null | undefined,
   oppositionId: string,
-): User {
+): Promise<User> {
   const current = requireUser(user);
   if (
-    canManageOpposition(accessRepo, current, oppositionId) ||
-    hasActiveAccess(accessRepo, current.id, oppositionId)
+    (await canManageOpposition(accessRepo, current, oppositionId)) ||
+    (await hasActiveAccess(accessRepo, current.id, oppositionId))
   ) {
     return current;
   }
@@ -95,22 +99,22 @@ export function requireStudentAccess(
 
 // --- Workspaces (SPEC 011) -------------------------------------------------
 
-export function isActiveWorkspaceMember(
+export async function isActiveWorkspaceMember(
   memberRepo: WorkspaceMemberRepository,
   userId: string,
   workspaceId: string,
-): boolean {
-  const member = memberRepo.find(workspaceId, userId);
+): Promise<boolean> {
+  const member = await memberRepo.find(workspaceId, userId);
   return member !== null && member.status === 'active';
 }
 
 // owner/admin activos pueden gestionar el workspace y crear oposiciones.
-export function canManageWorkspace(
+export async function canManageWorkspace(
   memberRepo: WorkspaceMemberRepository,
   user: User,
   workspaceId: string,
-): boolean {
-  const member = memberRepo.find(workspaceId, user.id);
+): Promise<boolean> {
+  const member = await memberRepo.find(workspaceId, user.id);
   return (
     member !== null &&
     member.status === 'active' &&
@@ -118,25 +122,25 @@ export function canManageWorkspace(
   );
 }
 
-export function requireWorkspaceMember(
+export async function requireWorkspaceMember(
   memberRepo: WorkspaceMemberRepository,
   user: User | null | undefined,
   workspaceId: string,
-): User {
+): Promise<User> {
   const current = requireUser(user);
-  if (!isActiveWorkspaceMember(memberRepo, current.id, workspaceId)) {
+  if (!(await isActiveWorkspaceMember(memberRepo, current.id, workspaceId))) {
     throw new AccessError([AccessErrorCode.WORKSPACE_ACCESS_DENIED]);
   }
   return current;
 }
 
-export function requireManageWorkspace(
+export async function requireManageWorkspace(
   memberRepo: WorkspaceMemberRepository,
   user: User | null | undefined,
   workspaceId: string,
-): User {
+): Promise<User> {
   const current = requireUser(user);
-  if (!canManageWorkspace(memberRepo, current, workspaceId)) {
+  if (!(await canManageWorkspace(memberRepo, current, workspaceId))) {
     throw new AccessError([AccessErrorCode.WORKSPACE_ACCESS_DENIED]);
   }
   return current;

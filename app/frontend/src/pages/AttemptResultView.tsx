@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { AttemptResult, AttemptReview } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Button, PageHeader, difficultyLabel } from '../components/ui.js';
 
@@ -17,12 +18,49 @@ export function AttemptResultView({
   reviewOpen?: boolean;
 }) {
   const { store, currentUser } = useStore();
-  const result = store.platform.getResult(currentUser!, attemptId);
+  const [result, setResult] = useState<AttemptResult | null>(null);
   const [showReview, setShowReview] = useState(reviewOpen);
-  const review = useMemo(
-    () => (showReview ? store.platform.getReview(currentUser!, attemptId) : null),
-    [showReview, store, currentUser, attemptId],
-  );
+  const [review, setReview] = useState<AttemptReview | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser) {
+      void store.platform.getResult(currentUser, attemptId).then((r) => {
+        if (!cancelled) setResult(r);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, attemptId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (showReview && currentUser) {
+      void store.platform.getReview(currentUser, attemptId).then((r) => {
+        if (!cancelled) setReview(r);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [showReview, store, currentUser, attemptId]);
+
+  if (!result) {
+    return (
+      <div>
+        <PageHeader
+          title="Resultado"
+          action={
+            <Button variant="secondary" onClick={onBack}>
+              {backLabel}
+            </Button>
+          }
+        />
+        <div className="loading-state">Cargando…</div>
+      </div>
+    );
+  }
 
   return (
     <div>

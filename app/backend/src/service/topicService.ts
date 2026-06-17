@@ -74,14 +74,14 @@ export class TopicService {
   }
 
   // 11.1 Crear tema (raiz o subtema). Estado por defecto `active`.
-  createTopic(input: CreateTopicInput): Topic {
+  async createTopic(input: CreateTopicInput): Promise<Topic> {
     const oppositionId = requireOpposition(input.opposition_id);
     const status = input.status ?? 'active';
     this.assertValidMetadata({ title: input.title, status });
 
     const parentId = input.parent_id ?? null;
     if (parentId !== null) {
-      const parent = this.topics.findById(parentId);
+      const parent = await this.topics.findById(parentId);
       if (!parent) {
         throw new TopicValidationError([
           TopicValidationErrorCode.PARENT_NOT_FOUND,
@@ -108,13 +108,13 @@ export class TopicService {
   }
 
   // 11.2 Listar temas con filtros opcionales.
-  listTopics(filter: TopicFilter = {}): Topic[] {
+  async listTopics(filter: TopicFilter = {}): Promise<Topic[]> {
     return this.topics.findAll(filter);
   }
 
   // 11.3 Obtener los temas en estructura de arbol, ordenados por `order`.
-  getTopicTree(): TopicTreeNode[] {
-    const all = this.topics.findAll();
+  async getTopicTree(): Promise<TopicTreeNode[]> {
+    const all = await this.topics.findAll();
     const ids = new Set(all.map((topic) => topic.id));
     const byParent = new Map<string | null, Topic[]>();
     for (const topic of all) {
@@ -142,13 +142,13 @@ export class TopicService {
   }
 
   // 11.4 Consultar tema por id.
-  getTopic(id: string): Topic | null {
+  async getTopic(id: string): Promise<Topic | null> {
     return this.topics.findById(id);
   }
 
   // 11.5 Editar tema. Valida metadatos y jerarquia. Actualiza `updated_at`.
-  editTopic(id: string, changes: EditTopicInput): Topic {
-    const existing = this.requireTopic(id);
+  async editTopic(id: string, changes: EditTopicInput): Promise<Topic> {
+    const existing = await this.requireTopic(id);
 
     const nextTitle = changes.title ?? existing.title;
     const nextStatus = changes.status ?? existing.status;
@@ -157,7 +157,7 @@ export class TopicService {
     const nextParentId =
       changes.parent_id !== undefined ? changes.parent_id : existing.parent_id;
     if (nextParentId !== existing.parent_id) {
-      this.assertValidParent(id, nextParentId);
+      await this.assertValidParent(id, nextParentId);
     }
 
     const updated: Topic = {
@@ -177,8 +177,8 @@ export class TopicService {
   }
 
   // 11.6 Cambiar estado del tema.
-  changeStatus(id: string, status: TopicStatus): Topic {
-    const existing = this.requireTopic(id);
+  async changeStatus(id: string, status: TopicStatus): Promise<Topic> {
+    const existing = await this.requireTopic(id);
     this.assertValidMetadata({ title: existing.title, status });
 
     const updated: Topic = {
@@ -190,23 +190,23 @@ export class TopicService {
   }
 
   // 11.7 atajo: marcar como obsoleto (no se borra fisicamente).
-  markObsolete(id: string): Topic {
+  async markObsolete(id: string): Promise<Topic> {
     return this.changeStatus(id, 'obsolete');
   }
 
   // 11.7 Vincular un material existente a un tema existente.
-  linkMaterial(
+  async linkMaterial(
     materialId: string,
     topicId: string,
     reference: string | null = null,
-  ): TopicMaterialLink {
-    const topic = this.requireTopic(topicId);
+  ): Promise<TopicMaterialLink> {
+    const topic = await this.requireTopic(topicId);
     if (!this.materials) {
       throw new Error(
         'linkMaterial requires a materialRepository in TopicService options',
       );
     }
-    const material = this.materials.findById(materialId);
+    const material = await this.materials.findById(materialId);
     if (!material) {
       throw new TopicValidationError([
         TopicValidationErrorCode.MATERIAL_NOT_FOUND,
@@ -214,7 +214,7 @@ export class TopicService {
     }
     // No se puede vincular material de otra oposicion (SPEC 010, 17.1).
     assertSameOpposition(material.opposition_id, topic.opposition_id);
-    if (this.links.find(materialId, topicId)) {
+    if (await this.links.find(materialId, topicId)) {
       throw new TopicValidationError([
         TopicValidationErrorCode.MATERIAL_LINK_ALREADY_EXISTS,
       ]);
@@ -231,24 +231,24 @@ export class TopicService {
   }
 
   // 11.8 Desvincular material de tema. No borra ni material ni tema.
-  unlinkMaterial(materialId: string, topicId: string): boolean {
+  async unlinkMaterial(materialId: string, topicId: string): Promise<boolean> {
     return this.links.delete(materialId, topicId);
   }
 
-  listMaterialsForTopic(topicId: string): TopicMaterialLink[] {
+  async listMaterialsForTopic(topicId: string): Promise<TopicMaterialLink[]> {
     return this.links.findAll({ topic_id: topicId });
   }
 
   // 11.9 Vincular una pregunta existente a un tema existente. Requiere haber
   // inyectado un questionRepository. Actualiza `topic_id` y el texto `topic`.
-  assignTopicToQuestion(questionId: string, topicId: string): void {
+  async assignTopicToQuestion(questionId: string, topicId: string): Promise<void> {
     if (!this.questions) {
       throw new Error(
         'assignTopicToQuestion requires a questionRepository in TopicService options',
       );
     }
-    const topic = this.requireTopic(topicId);
-    const question = this.questions.findById(questionId);
+    const topic = await this.requireTopic(topicId);
+    const question = await this.questions.findById(questionId);
     if (!question) {
       throw new TopicValidationError([
         TopicValidationErrorCode.QUESTION_NOT_FOUND,
@@ -257,7 +257,7 @@ export class TopicService {
     // No se puede vincular una pregunta a un tema de otra oposicion (17.1).
     assertSameOpposition(topic.opposition_id, question.opposition_id);
 
-    this.questions.save({
+    await this.questions.save({
       ...question,
       topic_id: topic.id,
       topic: topic.title,
@@ -265,8 +265,8 @@ export class TopicService {
     });
   }
 
-  private requireTopic(id: string): Topic {
-    const topic = this.topics.findById(id);
+  private async requireTopic(id: string): Promise<Topic> {
+    const topic = await this.topics.findById(id);
     if (!topic) {
       throw new TopicValidationError([
         TopicValidationErrorCode.TOPIC_NOT_FOUND,
@@ -287,7 +287,10 @@ export class TopicService {
 
   // Valida el padre propuesto para un tema: no puede ser el mismo tema, debe
   // existir y no puede generar un ciclo en la jerarquia (SPEC 003, 10.3).
-  private assertValidParent(topicId: string, parentId: string | null): void {
+  private async assertValidParent(
+    topicId: string,
+    parentId: string | null,
+  ): Promise<void> {
     if (parentId === null) {
       return;
     }
@@ -296,12 +299,12 @@ export class TopicService {
         TopicValidationErrorCode.CANNOT_BE_OWN_PARENT,
       ]);
     }
-    if (!this.topics.findById(parentId)) {
+    if (!(await this.topics.findById(parentId))) {
       throw new TopicValidationError([
         TopicValidationErrorCode.PARENT_NOT_FOUND,
       ]);
     }
-    if (this.wouldCreateCycle(topicId, parentId)) {
+    if (await this.wouldCreateCycle(topicId, parentId)) {
       throw new TopicValidationError([
         TopicValidationErrorCode.HIERARCHY_CYCLE_DETECTED,
       ]);
@@ -310,7 +313,10 @@ export class TopicService {
 
   // Recorre la cadena de ancestros del nuevo padre: si aparece el propio tema,
   // el cambio crearia un ciclo.
-  private wouldCreateCycle(topicId: string, newParentId: string): boolean {
+  private async wouldCreateCycle(
+    topicId: string,
+    newParentId: string,
+  ): Promise<boolean> {
     const visited = new Set<string>();
     let current: string | null = newParentId;
     while (current !== null) {
@@ -321,7 +327,7 @@ export class TopicService {
         break;
       }
       visited.add(current);
-      current = this.topics.findById(current)?.parent_id ?? null;
+      current = (await this.topics.findById(current))?.parent_id ?? null;
     }
     return false;
   }

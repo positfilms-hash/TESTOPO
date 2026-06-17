@@ -35,7 +35,6 @@ import {
   WorkspaceService,
   PlatformService,
   type PracticeTest,
-  type Opposition,
 } from '@backend';
 
 // Credenciales sembradas para entrar rapido en la demo (ficticias).
@@ -116,11 +115,13 @@ export function createAppStore(seed = true): AppStore {
     items: new InMemoryMaterialImportItemRepository(),
   });
   const questions = new QuestionService(questionRepo, {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
-    resolveMaterialOpposition: (id) =>
-      materials.getMaterial(id)?.opposition_id ?? null,
-    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
+    resolveMaterialStatus: async (id) =>
+      (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
+    resolveMaterialOpposition: async (id) =>
+      (await materials.getMaterial(id))?.opposition_id ?? null,
+    resolveTopicOpposition: async (id) =>
+      (await topics.getTopic(id))?.opposition_id ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -185,22 +186,21 @@ export function createAppStore(seed = true): AppStore {
     createdTests: [],
   };
 
-  if (seed) {
-    seedFixtures(store);
-  }
+  void seed;
   return store;
 }
 
 // Datos ficticios para probar el flujo completo desde el primer momento.
-// Nada de esto es material real (la constitucion lo prohibe).
-function seedFixtures(store: AppStore): Opposition {
-  const admin = store.users.createUser({
+// Nada de esto es material real (la constitucion lo prohibe). Async (SPEC 018.3):
+// lo ejecuta el StoreProvider al arrancar antes de mostrar la app.
+export async function seedDemoData(store: AppStore): Promise<void> {
+  const admin = await store.users.createUser({
     name: 'Administrador',
     email: SEED_ADMIN.email,
     password: SEED_ADMIN.password,
     role: 'admin',
   });
-  const student = store.users.createUser({
+  const student = await store.users.createUser({
     name: 'Estudiante',
     email: SEED_STUDENT.email,
     password: SEED_STUDENT.password,
@@ -208,29 +208,29 @@ function seedFixtures(store: AppStore): Opposition {
   });
 
   // Workspace por defecto (SPEC 011): el admin es owner; el estudiante, miembro.
-  const workspace = store.workspaces.createOrganizationWorkspace(admin, {
+  const workspace = await store.workspaces.createOrganizationWorkspace(admin, {
     name: 'Workspace MVP',
     slug: 'workspace-mvp',
   });
-  store.workspaces.addMember(admin, {
+  await store.workspaces.addMember(admin, {
     workspace_id: workspace.id,
     user_id: student.id,
     role: 'student',
   });
 
-  const opposition = store.oppositions.createOpposition(admin, {
+  const opposition = await store.oppositions.createOpposition(admin, {
     workspace_id: workspace.id,
     title: 'Oposicion MVP',
     slug: 'oposicion-mvp',
     description: 'Oposicion de ejemplo para la demo.',
   });
-  store.oppositions.grantAccess(admin, {
+  await store.oppositions.grantAccess(admin, {
     user_id: student.id,
     opposition_id: opposition.id,
   });
 
   const oppositionId = opposition.id;
-  const material = store.materials.createMaterial({
+  const material = await store.materials.createMaterial({
     opposition_id: oppositionId,
     title: 'Tema 1 - Constitucion (ficticio)',
     type: 'syllabus',
@@ -241,20 +241,20 @@ function seedFixtures(store: AppStore): Opposition {
     description: 'Material de ejemplo para la demo.',
   });
 
-  const block = store.topics.createTopic({
+  const block = await store.topics.createTopic({
     opposition_id: oppositionId,
     title: 'Tema 1 - Constitucion',
     code: 'T1',
     order: 0,
   });
-  store.topics.createTopic({
+  await store.topics.createTopic({
     opposition_id: oppositionId,
     title: 'Derechos fundamentales',
     code: 'T1.1',
     parent_id: block.id,
     order: 0,
   });
-  const topic2 = store.topics.createTopic({
+  const topic2 = await store.topics.createTopic({
     opposition_id: oppositionId,
     title: 'Tema 2 - Procedimiento administrativo',
     code: 'T2',
@@ -291,17 +291,15 @@ function seedFixtures(store: AppStore): Opposition {
 
   for (let n = 1; n <= 8; n++) {
     const useTopic2 = n > 5;
-    const q = makeQuestion(
+    const q = await makeQuestion(
       n,
       useTopic2 ? topic2.id : block.id,
       useTopic2 ? 'el procedimiento administrativo' : 'los derechos fundamentales',
     );
-    store.questions.changeStatus(q.id, 'validated');
+    await store.questions.changeStatus(q.id, 'validated');
   }
   for (let n = 9; n <= 10; n++) {
-    const q = makeQuestion(n, block.id, 'los derechos fundamentales');
-    store.questions.changeStatus(q.id, 'pending_review');
+    const q = await makeQuestion(n, block.id, 'los derechos fundamentales');
+    await store.questions.changeStatus(q.id, 'pending_review');
   }
-
-  return opposition;
 }

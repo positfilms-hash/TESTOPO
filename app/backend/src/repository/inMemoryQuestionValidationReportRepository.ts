@@ -9,12 +9,12 @@ export class InMemoryQuestionValidationReportRepository
 {
   private readonly reports: QuestionValidationResult[] = [];
 
-  save(result: QuestionValidationResult): QuestionValidationResult {
+  async save(result: QuestionValidationResult): Promise<QuestionValidationResult> {
     this.reports.push(clone(result));
     return clone(result);
   }
 
-  findLastByQuestion(questionId: string): QuestionValidationResult | null {
+  async findLastByQuestion(questionId: string): Promise<QuestionValidationResult | null> {
     for (let i = this.reports.length - 1; i >= 0; i--) {
       const report = this.reports[i];
       if (report.question_id === questionId) {
@@ -30,3 +30,4 @@ function clone(
 ): QuestionValidationResult {
   return structuredClone(result);
 }
+

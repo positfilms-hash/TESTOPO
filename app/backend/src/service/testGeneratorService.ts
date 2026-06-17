@@ -113,7 +113,7 @@ export class TestGeneratorService {
     opposition_id?: string;
     question_count?: number;
     title?: string;
-  }): GeneratedTest {
+  }): Promise<GeneratedTest> {
     return this.generate({ ...input, mode: 'random' });
   }
 
@@ -122,7 +122,7 @@ export class TestGeneratorService {
     topic_id: string;
     question_count?: number;
     title?: string;
-  }): GeneratedTest {
+  }): Promise<GeneratedTest> {
     return this.generate({ ...input, mode: 'by_topic' });
   }
 
@@ -131,7 +131,7 @@ export class TestGeneratorService {
     difficulty: TestDifficulty;
     question_count?: number;
     title?: string;
-  }): GeneratedTest {
+  }): Promise<GeneratedTest> {
     return this.generate({ ...input, mode: 'by_difficulty' });
   }
 
@@ -141,16 +141,16 @@ export class TestGeneratorService {
     difficulty?: TestDifficulty | null;
     question_count?: number;
     title?: string;
-  }): GeneratedTest {
+  }): Promise<GeneratedTest> {
     return this.generate({ ...input, mode: 'mixed' });
   }
 
-  generate(request: GenerateTestRequest): GeneratedTest {
+  async generate(request: GenerateTestRequest): Promise<GeneratedTest> {
     const oppositionId = requireOpposition(request.opposition_id);
     const count = request.question_count ?? DEFAULT_TEST_QUESTION_COUNT;
     this.validateRequest(request, count);
 
-    const topic = this.resolveTopicFilter(request.topic_id ?? null);
+    const topic = await this.resolveTopicFilter(request.topic_id ?? null);
     if (topic) {
       // El tema debe pertenecer a la oposicion del test (SPEC 010, 17.1).
       assertSameOpposition(topic.opposition_id, oppositionId);
@@ -158,7 +158,7 @@ export class TestGeneratorService {
     const difficulty = request.difficulty ?? null;
 
     // Solo preguntas de esta oposicion (pool por oposicion, SPEC 010, 17.3).
-    let pool = this.eligibleQuestions().filter(
+    let pool = (await this.eligibleQuestions()).filter(
       (q) => q.opposition_id === oppositionId,
     );
     if (request.topic_id) {
@@ -192,7 +192,7 @@ export class TestGeneratorService {
     }
 
     const timestamp = this.now();
-    const test = this.tests.create({
+    const test = await this.tests.create({
       id: this.generateId(),
       opposition_id: oppositionId,
       title: request.title?.trim() || defaultTitle(request.mode),
@@ -209,39 +209,46 @@ export class TestGeneratorService {
       updated_at: timestamp,
     });
 
-    const questions = selected.map((question, index) =>
-      this.testQuestions.create({
-        id: this.generateId(),
-        test_id: test.id,
-        question_id: question.id,
-        order: index,
-        options_order: shuffle(
-          question.options.map((option) => option.id),
-          rng,
-        ),
-        created_at: timestamp,
-      }),
-    );
+    const questions: PracticeTestQuestion[] = [];
+    for (const [index, question] of selected.entries()) {
+      questions.push(
+        await this.testQuestions.create({
+          id: this.generateId(),
+          test_id: test.id,
+          question_id: question.id,
+          order: index,
+          options_order: shuffle(
+            question.options.map((option) => option.id),
+            rng,
+          ),
+          created_at: timestamp,
+        }),
+      );
+    }
 
     return { test, questions };
   }
 
   // 11.5 Consultar test (vista de alumno, sin respuestas correctas).
-  getTest(testId: string): TestView {
-    const test = this.tests.findById(testId);
+  async getTest(testId: string): Promise<TestView> {
+    const test = await this.tests.findById(testId);
     if (!test) {
       throw new Error(`Test not found: ${testId}`);
     }
-    const questions = this.testQuestions
-      .findByTest(testId)
-      .map((item) => this.toStudentView(item))
-      .filter((view): view is StudentQuestionView => view !== null);
+    const items = await this.testQuestions.findByTest(testId);
+    const questions: StudentQuestionView[] = [];
+    for (const item of items) {
+      const view = await this.toStudentView(item);
+      if (view !== null) {
+        questions.push(view);
+      }
+    }
     return { test, questions };
   }
 
   // 11.6 Cancelar test. No borra preguntas ni banco.
-  cancelTest(testId: string): PracticeTest {
-    const test = this.tests.findById(testId);
+  async cancelTest(testId: string): Promise<PracticeTest> {
+    const test = await this.tests.findById(testId);
     if (!test) {
       throw new Error(`Test not found: ${testId}`);
     }
@@ -274,11 +281,11 @@ export class TestGeneratorService {
     }
   }
 
-  private resolveTopicFilter(topicId: string | null) {
+  private async resolveTopicFilter(topicId: string | null) {
     if (!topicId) {
       return null;
     }
-    const topic = this.topics.findById(topicId);
+    const topic = await this.topics.findById(topicId);
     if (!topic) {
       throw new TestGenerationError([TestGenerationErrorCode.TOPIC_NOT_FOUND]);
     }
@@ -290,13 +297,18 @@ export class TestGeneratorService {
 
   // Preguntas elegibles: validadas y no vinculadas a fuente/material/tema
   // obsoleto (ni a material/tema inexistente, por trazabilidad).
-  private eligibleQuestions(): Question[] {
-    return this.questions
-      .listQuestions()
-      .filter((question) => this.isEligible(question));
+  private async eligibleQuestions(): Promise<Question[]> {
+    const all = await this.questions.listQuestions();
+    const result: Question[] = [];
+    for (const question of all) {
+      if (await this.isEligible(question)) {
+        result.push(question);
+      }
+    }
+    return result;
   }
 
-  private isEligible(question: Question): boolean {
+  private async isEligible(question: Question): Promise<boolean> {
     if (question.status !== 'validated') {
       return false;
     }
@@ -306,14 +318,14 @@ export class TestGeneratorService {
         return false;
       }
       if (source.material_id) {
-        const material = this.materials.findById(source.material_id);
+        const material = await this.materials.findById(source.material_id);
         if (!material || material.status === 'obsolete') {
           return false;
         }
       }
     }
     if (question.topic_id) {
-      const topic = this.topics.findById(question.topic_id);
+      const topic = await this.topics.findById(question.topic_id);
       if (!topic || topic.status === 'obsolete') {
         return false;
       }
@@ -346,10 +358,10 @@ export class TestGeneratorService {
     return picked;
   }
 
-  private toStudentView(
+  private async toStudentView(
     item: PracticeTestQuestion,
-  ): StudentQuestionView | null {
-    const question = this.questions.getQuestion(item.question_id);
+  ): Promise<StudentQuestionView | null> {
+    const question = await this.questions.getQuestion(item.question_id);
     if (!question) {
       return null;
     }

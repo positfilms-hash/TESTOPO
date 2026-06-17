@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Workspace } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
@@ -11,17 +12,29 @@ export function WorkspacesGate() {
   const [type, setType] = useState<'personal' | 'organization'>('personal');
   const [error, setError] = useState<string | null>(null);
 
-  void version;
-  const workspaces = currentUser ? store.workspaces.listForUser(currentUser) : [];
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser) {
+      void store.workspaces.listForUser(currentUser).then((ws) => {
+        if (!cancelled) setWorkspaces(ws);
+      });
+    } else {
+      setWorkspaces([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, version]);
 
-  const create = () => {
+  const create = async () => {
     if (!currentUser) return;
     setError(null);
     try {
       const ws =
         type === 'organization'
-          ? store.workspaces.createOrganizationWorkspace(currentUser, { name, slug })
-          : store.workspaces.createPersonalWorkspace(currentUser, {
+          ? await store.workspaces.createOrganizationWorkspace(currentUser, { name, slug })
+          : await store.workspaces.createPersonalWorkspace(currentUser, {
               name,
               slug,
               plan: 'premium',

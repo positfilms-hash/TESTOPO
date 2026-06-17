@@ -78,7 +78,7 @@ export class QuestionGenerationService {
     difficulty: GenerateQuestionsRequest['difficulty'];
     question_count: number;
     reference?: string | null;
-  }): GenerationResult {
+  }): Promise<GenerationResult> {
     return this.generate({ ...input, mode: 'from_material_text' });
   }
 
@@ -90,7 +90,7 @@ export class QuestionGenerationService {
     difficulty: GenerateQuestionsRequest['difficulty'];
     question_count: number;
     reference?: string | null;
-  }): GenerationResult {
+  }): Promise<GenerationResult> {
     return this.generate({ ...input, mode: 'from_material_excerpt' });
   }
 
@@ -103,22 +103,22 @@ export class QuestionGenerationService {
     question_count: number;
     reference?: string | null;
     material_id?: string | null;
-  }): GenerationResult {
+  }): Promise<GenerationResult> {
     return this.generate({ ...input, mode: 'manual_seed' });
   }
 
-  listRuns(): QuestionGenerationRun[] {
+  async listRuns(): Promise<QuestionGenerationRun[]> {
     return this.runs.findAll();
   }
 
-  generate(request: GenerateQuestionsRequest): GenerationResult {
+  async generate(request: GenerateQuestionsRequest): Promise<GenerationResult> {
     const paramErrors = validateGenerationRequest(request);
     if (paramErrors.length > 0) {
       throw new QuestionGenerationError(paramErrors);
     }
 
-    const material = this.resolveMaterial(request);
-    const topic = this.resolveTopic(request);
+    const material = await this.resolveMaterial(request);
+    const topic = await this.resolveTopic(request);
 
     const text = this.resolveBaseText(request, material);
     if (!isNonEmptyString(text)) {
@@ -151,9 +151,9 @@ export class QuestionGenerationService {
     const targetStatus: QuestionStatus = topic ? 'pending_review' : 'draft';
 
     const existingStatements = new Set(
-      this.questionService
-        .listQuestions()
-        .map((question) => normalizeOptionText(question.statement)),
+      (await this.questionService.listQuestions()).map((question) =>
+        normalizeOptionText(question.statement),
+      ),
     );
 
     const created: Question[] = [];
@@ -185,7 +185,7 @@ export class QuestionGenerationService {
         created_at: this.now(),
       };
 
-      const draft = this.questionService.createQuestion({
+      const draft = await this.questionService.createQuestion({
         opposition_id: oppositionId,
         statement: candidate.statement,
         options: candidate.options.map((option, index) => ({
@@ -203,12 +203,12 @@ export class QuestionGenerationService {
 
       const question =
         targetStatus === 'pending_review'
-          ? this.questionService.changeStatus(draft.id, 'pending_review')
+          ? await this.questionService.changeStatus(draft.id, 'pending_review')
           : draft;
       created.push(question);
     }
 
-    const run = this.runs.create({
+    const run = await this.runs.create({
       id: this.generateId(),
       material_id: material?.id ?? null,
       topic_id: topic?.id ?? null,
@@ -225,7 +225,9 @@ export class QuestionGenerationService {
 
   // El material es obligatorio salvo en `manual_seed`. Si se proporciona (en
   // cualquier modo) debe existir y no estar `obsolete`.
-  private resolveMaterial(request: GenerateQuestionsRequest): Material | null {
+  private async resolveMaterial(
+    request: GenerateQuestionsRequest,
+  ): Promise<Material | null> {
     const needsMaterial = request.mode !== 'manual_seed';
     if (!needsMaterial && !request.material_id) {
       return null;
@@ -235,7 +237,7 @@ export class QuestionGenerationService {
         QuestionGenerationErrorCode.MATERIAL_REQUIRED,
       ]);
     }
-    const material = this.materials.findById(request.material_id);
+    const material = await this.materials.findById(request.material_id);
     if (!material) {
       throw new QuestionGenerationError([
         QuestionGenerationErrorCode.MATERIAL_NOT_FOUND,
@@ -249,7 +251,9 @@ export class QuestionGenerationService {
     return material;
   }
 
-  private resolveTopic(request: GenerateQuestionsRequest): Topic | null {
+  private async resolveTopic(
+    request: GenerateQuestionsRequest,
+  ): Promise<Topic | null> {
     if (!request.topic_id) {
       return null;
     }
@@ -258,7 +262,7 @@ export class QuestionGenerationService {
         'topic_id provided but no topicRepository configured in QuestionGenerationService',
       );
     }
-    const topic = this.topics.findById(request.topic_id);
+    const topic = await this.topics.findById(request.topic_id);
     if (!topic) {
       throw new QuestionGenerationError([
         QuestionGenerationErrorCode.TOPIC_NOT_FOUND,

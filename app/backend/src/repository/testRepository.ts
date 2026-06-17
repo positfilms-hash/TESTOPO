@@ -3,7 +3,8 @@
 import type { PracticeTest } from '../models/practiceTest.js';
 
 export interface TestRepository {
-  create(test: PracticeTest): PracticeTest;
-  findById(id: string): PracticeTest | null;
-  save(test: PracticeTest): PracticeTest;
+  create(test: PracticeTest): Promise<PracticeTest>;
+  findById(id: string): Promise<PracticeTest | null>;
+  save(test: PracticeTest): Promise<PracticeTest>;
 }
+

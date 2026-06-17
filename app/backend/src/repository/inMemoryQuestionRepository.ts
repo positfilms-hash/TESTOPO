@@ -11,12 +11,12 @@ import type {
 export class InMemoryQuestionRepository implements QuestionRepository {
   private readonly questions = new Map<string, Question>();
 
-  create(question: Question): Question {
+  async create(question: Question): Promise<Question> {
     this.questions.set(question.id, clone(question));
     return clone(question);
   }
 
-  findAll(filter: QuestionFilter = {}): Question[] {
+  async findAll(filter: QuestionFilter = {}): Promise<Question[]> {
     let result = [...this.questions.values()];
     if (filter.status !== undefined) {
       result = result.filter((question) => question.status === filter.status);
@@ -32,12 +32,12 @@ export class InMemoryQuestionRepository implements QuestionRepository {
     return result.map(clone);
   }
 
-  findById(id: string): Question | null {
+  async findById(id: string): Promise<Question | null> {
     const question = this.questions.get(id);
     return question ? clone(question) : null;
   }
 
-  save(question: Question): Question {
+  async save(question: Question): Promise<Question> {
     if (!this.questions.has(question.id)) {
       throw new Error(`Cannot save unknown question: ${question.id}`);
     }
@@ -49,3 +49,4 @@ export class InMemoryQuestionRepository implements QuestionRepository {
 function clone(question: Question): Question {
   return structuredClone(question);
 }
+

@@ -35,12 +35,12 @@ function validInput(
   };
 }
 
-function expectMaterialError(
+async function expectMaterialError(
   fn: () => unknown,
   code: MaterialValidationErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(MaterialValidationError);
     expect((error as MaterialValidationError).errors).toContain(code);
@@ -50,9 +50,9 @@ function expectMaterialError(
 }
 
 describe('MaterialService - creacion', () => {
-  it('crea material manual en estado active por defecto', () => {
+  it('crea material manual en estado active por defecto', async () => {
     const service = makeService();
-    const material = service.createMaterial(validInput());
+    const material = await service.createMaterial(validInput());
 
     expect(material.status).toBe('active');
     expect(material.type).toBe('syllabus');
@@ -62,17 +62,17 @@ describe('MaterialService - creacion', () => {
     expect(material.created_at).toEqual(material.updated_at);
   });
 
-  it('no permite crear material sin titulo', () => {
+  it('no permite crear material sin titulo', async () => {
     const service = makeService();
-    expectMaterialError(
+    await expectMaterialError(
       () => service.createMaterial(validInput({ title: '   ' })),
       MaterialValidationErrorCode.TITLE_REQUIRED,
     );
   });
 
-  it('no permite crear material con tipo invalido', () => {
+  it('no permite crear material con tipo invalido', async () => {
     const service = makeService();
-    expectMaterialError(
+    await expectMaterialError(
       () =>
         service.createMaterial(
           validInput({ type: 'invalido' as MaterialType }),
@@ -81,9 +81,9 @@ describe('MaterialService - creacion', () => {
     );
   });
 
-  it('no permite crear material con estado invalido', () => {
+  it('no permite crear material con estado invalido', async () => {
     const service = makeService();
-    expectMaterialError(
+    await expectMaterialError(
       () =>
         service.createMaterial(
           validInput({ status: 'archived' as MaterialStatus }),
@@ -94,31 +94,31 @@ describe('MaterialService - creacion', () => {
 });
 
 describe('MaterialService - lectura y edicion', () => {
-  it('lista y filtra materiales', () => {
+  it('lista y filtra materiales', async () => {
     const service = makeService();
-    service.createMaterial(validInput({ type: 'syllabus' }));
-    service.createMaterial(
+    await service.createMaterial(validInput({ type: 'syllabus' }));
+    await service.createMaterial(
       validInput({ title: 'Ley ficticia', type: 'law' }),
     );
 
-    expect(service.listMaterials()).toHaveLength(2);
-    expect(service.listMaterials({ type: 'law' })).toHaveLength(1);
-    expect(service.listMaterials({ status: 'obsolete' })).toHaveLength(0);
+    expect(await service.listMaterials()).toHaveLength(2);
+    expect(await service.listMaterials({ type: 'law' })).toHaveLength(1);
+    expect(await service.listMaterials({ status: 'obsolete' })).toHaveLength(0);
   });
 
-  it('consulta un material por id', () => {
+  it('consulta un material por id', async () => {
     const service = makeService();
-    const created = service.createMaterial(validInput());
+    const created = await service.createMaterial(validInput());
 
-    expect(service.getMaterial(created.id)?.id).toBe(created.id);
-    expect(service.getMaterial('no-existe')).toBeNull();
+    expect((await service.getMaterial(created.id))?.id).toBe(created.id);
+    expect(await service.getMaterial('no-existe')).toBeNull();
   });
 
-  it('edita un material y actualiza updated_at', () => {
+  it('edita un material y actualiza updated_at', async () => {
     const service = makeService();
-    const created = service.createMaterial(validInput());
+    const created = await service.createMaterial(validInput());
 
-    const edited = service.editMaterial(created.id, {
+    const edited = await service.editMaterial(created.id, {
       title: 'Tema 1 - Revisado',
       reference: 'Tema 1, apartado 3',
     });
@@ -131,20 +131,20 @@ describe('MaterialService - lectura y edicion', () => {
     expect(edited.created_at).toEqual(created.created_at);
   });
 
-  it('marca un material como obsolete', () => {
+  it('marca un material como obsolete', async () => {
     const service = makeService();
-    const created = service.createMaterial(validInput());
+    const created = await service.createMaterial(validInput());
 
-    const obsolete = service.markObsolete(created.id);
+    const obsolete = await service.markObsolete(created.id);
 
     expect(obsolete.status).toBe('obsolete');
   });
 });
 
 describe('MaterialService - registro de archivo', () => {
-  it('registra un .txt y guarda content_text', () => {
+  it('registra un .txt y guarda content_text', async () => {
     const service = makeService();
-    const material = service.registerFileMaterial({
+    const material = await service.registerFileMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Apuntes ficticios',
       type: 'notes',
@@ -161,9 +161,9 @@ describe('MaterialService - registro de archivo', () => {
     expect(material.content_text).toBe('Contenido ficticio.');
   });
 
-  it('registra un .pdf sin extraer texto (content_text null)', () => {
+  it('registra un .pdf sin extraer texto (content_text null)', async () => {
     const service = makeService();
-    const material = service.registerFileMaterial({
+    const material = await service.registerFileMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Examen ficticio',
       type: 'official_exam',
@@ -180,9 +180,9 @@ describe('MaterialService - registro de archivo', () => {
     expect(material.content_text).toBeNull();
   });
 
-  it('rechaza un archivo con extension no permitida', () => {
+  it('rechaza un archivo con extension no permitida', async () => {
     const service = makeService();
-    expectMaterialError(
+    await expectMaterialError(
       () =>
         service.registerFileMaterial({
       opposition_id: TEST_OPPOSITION_ID,
@@ -194,9 +194,9 @@ describe('MaterialService - registro de archivo', () => {
     );
   });
 
-  it('rechaza un archivo que supera el limite de tamano', () => {
+  it('rechaza un archivo que supera el limite de tamano', async () => {
     const service = makeService(100);
-    expectMaterialError(
+    await expectMaterialError(
       () =>
         service.registerFileMaterial({
       opposition_id: TEST_OPPOSITION_ID,

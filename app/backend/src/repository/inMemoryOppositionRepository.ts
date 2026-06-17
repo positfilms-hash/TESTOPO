@@ -4,17 +4,17 @@ import type { OppositionRepository } from './oppositionRepository.js';
 export class InMemoryOppositionRepository implements OppositionRepository {
   private readonly oppositions = new Map<string, Opposition>();
 
-  create(opposition: Opposition): Opposition {
+  async create(opposition: Opposition): Promise<Opposition> {
     this.oppositions.set(opposition.id, clone(opposition));
     return clone(opposition);
   }
 
-  findById(id: string): Opposition | null {
+  async findById(id: string): Promise<Opposition | null> {
     const opposition = this.oppositions.get(id);
     return opposition ? clone(opposition) : null;
   }
 
-  findBySlug(slug: string): Opposition | null {
+  async findBySlug(slug: string): Promise<Opposition | null> {
     for (const opposition of this.oppositions.values()) {
       if (opposition.slug === slug) {
         return clone(opposition);
@@ -23,11 +23,11 @@ export class InMemoryOppositionRepository implements OppositionRepository {
     return null;
   }
 
-  findAll(): Opposition[] {
+  async findAll(): Promise<Opposition[]> {
     return [...this.oppositions.values()].map(clone);
   }
 
-  save(opposition: Opposition): Opposition {
+  async save(opposition: Opposition): Promise<Opposition> {
     this.oppositions.set(opposition.id, clone(opposition));
     return clone(opposition);
   }
@@ -36,3 +36,4 @@ export class InMemoryOppositionRepository implements OppositionRepository {
 function clone(opposition: Opposition): Opposition {
   return structuredClone(opposition);
 }
+

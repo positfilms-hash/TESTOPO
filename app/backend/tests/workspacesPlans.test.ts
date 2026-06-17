@@ -11,7 +11,7 @@ import { AccessError } from '../src/access/accessError.js';
 import { AccessErrorCode } from '../src/access/accessErrors.js';
 import type { WorkspaceRole } from '../src/models/workspaceMember.js';
 
-function makeSetup() {
+async function makeSetup() {
   const users = new UserService(new InMemoryUserRepository());
   const memberRepo = new InMemoryWorkspaceMemberRepository();
   const workspaces = new WorkspaceService(
@@ -23,12 +23,12 @@ function makeSetup() {
     new InMemoryOppositionAccessRepository(),
     memberRepo,
   );
-  const admin = users.createUser({
+  const admin = await users.createUser({
     email: 'admin@test.com',
     password: 'x',
     role: 'admin',
   });
-  const student = users.createUser({
+  const student = await users.createUser({
     email: 'student@test.com',
     password: 'y',
     role: 'student',
@@ -36,9 +36,9 @@ function makeSetup() {
   return { users, workspaces, oppositions, memberRepo, admin, student };
 }
 
-function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
+async function expectAccessError(fn: () => unknown, code: AccessErrorCode): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(AccessError);
     expect((error as AccessError).codes).toContain(code);
@@ -48,14 +48,14 @@ function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
 }
 
 describe('SPEC 011 - creacion de workspaces', () => {
-  it('crea workspace personal y de organizacion', () => {
-    const { workspaces, admin } = makeSetup();
-    const personal = workspaces.createPersonalWorkspace(admin, {
+  it('crea workspace personal y de organizacion', async () => {
+    const { workspaces, admin } = await makeSetup();
+    const personal = await workspaces.createPersonalWorkspace(admin, {
       name: 'Mi preparacion',
       slug: 'mi-preparacion',
       plan: 'premium',
     });
-    const org = workspaces.createOrganizationWorkspace(admin, {
+    const org = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Academia OpoNorte',
       slug: 'academia-oponorte',
     });
@@ -65,37 +65,37 @@ describe('SPEC 011 - creacion de workspaces', () => {
     expect(org.plan).toBe('organization');
   });
 
-  it('el owner queda como miembro activo', () => {
-    const { workspaces, memberRepo, admin } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('el owner queda como miembro activo', async () => {
+    const { workspaces, memberRepo, admin } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    const member = memberRepo.find(ws.id, admin.id);
+    const member = await memberRepo.find(ws.id, admin.id);
     expect(member?.role).toBe('owner');
     expect(member?.status).toBe('active');
   });
 
-  it('no permite workspace sin nombre', () => {
-    const { workspaces, admin } = makeSetup();
-    expectAccessError(
+  it('no permite workspace sin nombre', async () => {
+    const { workspaces, admin } = await makeSetup();
+    await expectAccessError(
       () => workspaces.createOrganizationWorkspace(admin, { slug: 'x' }),
       AccessErrorCode.WORKSPACE_NAME_REQUIRED,
     );
   });
 
-  it('no permite slug duplicado', () => {
-    const { workspaces, admin } = makeSetup();
-    workspaces.createOrganizationWorkspace(admin, { name: 'A', slug: 'dup' });
-    expectAccessError(
+  it('no permite slug duplicado', async () => {
+    const { workspaces, admin } = await makeSetup();
+    await workspaces.createOrganizationWorkspace(admin, { name: 'A', slug: 'dup' });
+    await expectAccessError(
       () => workspaces.createOrganizationWorkspace(admin, { name: 'B', slug: 'dup' }),
       AccessErrorCode.WORKSPACE_SLUG_ALREADY_EXISTS,
     );
   });
 
-  it('no permite plan invalido en workspace personal', () => {
-    const { workspaces, admin } = makeSetup();
-    expectAccessError(
+  it('no permite plan invalido en workspace personal', async () => {
+    const { workspaces, admin } = await makeSetup();
+    await expectAccessError(
       () =>
         workspaces.createPersonalWorkspace(admin, {
           name: 'X',
@@ -108,33 +108,33 @@ describe('SPEC 011 - creacion de workspaces', () => {
 });
 
 describe('SPEC 011 - membresia y visibilidad', () => {
-  it('lista solo los workspaces donde el usuario es miembro activo', () => {
-    const { workspaces, admin, student } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('lista solo los workspaces donde el usuario es miembro activo', async () => {
+    const { workspaces, admin, student } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    expect(workspaces.listForUser(admin).map((w) => w.id)).toContain(ws.id);
-    expect(workspaces.listForUser(student)).toHaveLength(0);
-    expectAccessError(
+    expect((await workspaces.listForUser(admin)).map((w) => w.id)).toContain(ws.id);
+    expect(await workspaces.listForUser(student)).toHaveLength(0);
+    await expectAccessError(
       () => workspaces.getWorkspace(student, ws.id),
       AccessErrorCode.WORKSPACE_ACCESS_DENIED,
     );
   });
 
-  it('anade student y admin; rechaza rol invalido', () => {
-    const { workspaces, admin, student } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('anade student y admin; rechaza rol invalido', async () => {
+    const { workspaces, admin, student } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    workspaces.addMember(admin, {
+    await workspaces.addMember(admin, {
       workspace_id: ws.id,
       user_id: student.id,
       role: 'student',
     });
-    expect(workspaces.listForUser(student).map((w) => w.id)).toContain(ws.id);
-    expectAccessError(
+    expect((await workspaces.listForUser(student)).map((w) => w.id)).toContain(ws.id);
+    await expectAccessError(
       () =>
         workspaces.addMember(admin, {
           workspace_id: ws.id,
@@ -145,20 +145,20 @@ describe('SPEC 011 - membresia y visibilidad', () => {
     );
   });
 
-  it('revoca un miembro y deja de tener acceso', () => {
-    const { workspaces, admin, student } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('revoca un miembro y deja de tener acceso', async () => {
+    const { workspaces, admin, student } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    workspaces.addMember(admin, {
+    await workspaces.addMember(admin, {
       workspace_id: ws.id,
       user_id: student.id,
       role: 'student',
     });
-    workspaces.revokeMember(admin, { workspace_id: ws.id, user_id: student.id });
-    expect(workspaces.listForUser(student)).toHaveLength(0);
-    expectAccessError(
+    await workspaces.revokeMember(admin, { workspace_id: ws.id, user_id: student.id });
+    expect(await workspaces.listForUser(student)).toHaveLength(0);
+    await expectAccessError(
       () => workspaces.getWorkspace(student, ws.id),
       AccessErrorCode.WORKSPACE_ACCESS_DENIED,
     );
@@ -166,13 +166,13 @@ describe('SPEC 011 - membresia y visibilidad', () => {
 });
 
 describe('SPEC 011 - oposiciones dentro de workspace', () => {
-  it('un owner/admin crea oposicion dentro de su workspace', () => {
-    const { workspaces, oppositions, admin } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('un owner/admin crea oposicion dentro de su workspace', async () => {
+    const { workspaces, oppositions, admin } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    const opp = oppositions.createOpposition(admin, {
+    const opp = await oppositions.createOpposition(admin, {
       workspace_id: ws.id,
       title: 'Auxiliar',
       slug: 'auxiliar',
@@ -180,21 +180,21 @@ describe('SPEC 011 - oposiciones dentro de workspace', () => {
     expect(opp.workspace_id).toBe(ws.id);
   });
 
-  it('no se puede crear oposicion sin workspace', () => {
-    const { oppositions, admin } = makeSetup();
-    expectAccessError(
+  it('no se puede crear oposicion sin workspace', async () => {
+    const { oppositions, admin } = await makeSetup();
+    await expectAccessError(
       () => oppositions.createOpposition(admin, { title: 'X', slug: 'x' }),
       AccessErrorCode.OPPOSITION_WORKSPACE_REQUIRED,
     );
   });
 
-  it('un student no puede crear oposicion', () => {
-    const { workspaces, oppositions, admin, student } = makeSetup();
-    const ws = workspaces.createOrganizationWorkspace(admin, {
+  it('un student no puede crear oposicion', async () => {
+    const { workspaces, oppositions, admin, student } = await makeSetup();
+    const ws = await workspaces.createOrganizationWorkspace(admin, {
       name: 'Org',
       slug: 'org',
     });
-    expectAccessError(
+    await expectAccessError(
       () =>
         oppositions.createOpposition(student, {
           workspace_id: ws.id,
@@ -205,18 +205,18 @@ describe('SPEC 011 - oposiciones dentro de workspace', () => {
     );
   });
 
-  it('no se puede crear oposicion en un workspace que no gestionas', () => {
-    const { users, workspaces, oppositions, admin } = makeSetup();
-    const otroAdmin = users.createUser({
+  it('no se puede crear oposicion en un workspace que no gestionas', async () => {
+    const { users, workspaces, oppositions, admin } = await makeSetup();
+    const otroAdmin = await users.createUser({
       email: 'admin2@test.com',
       password: 'z',
       role: 'admin',
     });
-    const wsAjeno = workspaces.createOrganizationWorkspace(otroAdmin, {
+    const wsAjeno = await workspaces.createOrganizationWorkspace(otroAdmin, {
       name: 'Ajeno',
       slug: 'ajeno',
     });
-    expectAccessError(
+    await expectAccessError(
       () =>
         oppositions.createOpposition(admin, {
           workspace_id: wsAjeno.id,

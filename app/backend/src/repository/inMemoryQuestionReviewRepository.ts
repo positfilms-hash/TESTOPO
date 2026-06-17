@@ -8,18 +8,18 @@ export class InMemoryQuestionReviewRepository
 {
   private readonly reviews: QuestionReview[] = [];
 
-  create(review: QuestionReview): QuestionReview {
+  async create(review: QuestionReview): Promise<QuestionReview> {
     this.reviews.push(clone(review));
     return clone(review);
   }
 
-  findByQuestion(questionId: string): QuestionReview[] {
+  async findByQuestion(questionId: string): Promise<QuestionReview[]> {
     return this.reviews
       .filter((review) => review.question_id === questionId)
       .map(clone);
   }
 
-  findAll(): QuestionReview[] {
+  async findAll(): Promise<QuestionReview[]> {
     return this.reviews.map(clone);
   }
 }
@@ -27,3 +27,4 @@ export class InMemoryQuestionReviewRepository
 function clone(review: QuestionReview): QuestionReview {
   return structuredClone(review);
 }
+

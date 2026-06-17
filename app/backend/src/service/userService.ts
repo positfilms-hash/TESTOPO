@@ -38,7 +38,7 @@ export class UserService {
     this.now = options.now ?? (() => new Date());
   }
 
-  createUser(input: CreateUserInput): User {
+  async createUser(input: CreateUserInput): Promise<User> {
     if (!isNonEmptyString(input.email)) {
       throw new AccessError([AccessErrorCode.USER_EMAIL_REQUIRED]);
     }
@@ -52,7 +52,7 @@ export class UserService {
     if (!isUserStatus(status)) {
       throw new AccessError([AccessErrorCode.USER_INVALID_STATUS]);
     }
-    if (this.repository.findByEmail(input.email)) {
+    if (await this.repository.findByEmail(input.email)) {
       throw new AccessError([AccessErrorCode.USER_EMAIL_ALREADY_EXISTS]);
     }
 
@@ -70,8 +70,8 @@ export class UserService {
   }
 
   // 14.2 Login. Devuelve el usuario si las credenciales son validas.
-  authenticate(email: string, password: string): User {
-    const user = this.repository.findByEmail(email ?? '');
+  async authenticate(email: string, password: string): Promise<User> {
+    const user = await this.repository.findByEmail(email ?? '');
     if (
       !user ||
       user.status !== 'active' ||
@@ -83,7 +83,7 @@ export class UserService {
   }
 
   // 14.3 Usuario actual.
-  getUser(id: string): User | null {
+  async getUser(id: string): Promise<User | null> {
     return this.repository.findById(id);
   }
 }

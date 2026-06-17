@@ -38,7 +38,7 @@ import {
   AccessErrorCode,
 } from '../src/index.js';
 
-function makeSetup() {
+async function makeSetup() {
   const users = new UserService(new InMemoryUserRepository());
   const memberRepo = new InMemoryWorkspaceMemberRepository();
   const workspaces = new WorkspaceService(
@@ -75,11 +75,10 @@ function makeSetup() {
     items: new InMemoryMaterialImportItemRepository(),
   });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
-    resolveMaterialOpposition: (id) =>
-      materials.getMaterial(id)?.opposition_id ?? null,
-    resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
+    resolveMaterialOpposition: async (id) => (await materials.getMaterial(id))?.opposition_id ?? null,
+    resolveTopicOpposition: async (id) => (await topics.getTopic(id))?.opposition_id ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -129,9 +128,9 @@ function makeSetup() {
   return { users, workspaces, oppositions, questions, platform };
 }
 
-function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
+async function expectAccessError(fn: () => unknown, code: AccessErrorCode): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(AccessError);
     expect((error as AccessError).codes).toContain(code);
@@ -141,31 +140,31 @@ function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
 }
 
 describe('PlatformService - Premium personal', () => {
-  it('el owner de un workspace personal gestiona su contenido aunque su rol global sea student', () => {
-    const { users, workspaces, oppositions, platform } = makeSetup();
-    const premium = users.createUser({
+  it('el owner de un workspace personal gestiona su contenido aunque su rol global sea student', async () => {
+    const { users, workspaces, oppositions, platform } = await makeSetup();
+    const premium = await users.createUser({
       email: 'premium@test.com',
       password: 'x',
       role: 'student', // rol GLOBAL student; aun asi es owner de su workspace
     });
-    const ws = workspaces.createPersonalWorkspace(premium, {
+    const ws = await workspaces.createPersonalWorkspace(premium, {
       name: 'Mi preparacion',
       slug: 'mi-preparacion',
       plan: 'premium',
     });
-    const opp = oppositions.createOpposition(premium, {
+    const opp = await oppositions.createOpposition(premium, {
       workspace_id: ws.id,
       title: 'Mi oposicion',
       slug: 'mi-oposicion',
     });
 
-    const material = platform.createMaterial(premium, {
+    const material = await platform.createMaterial(premium, {
       opposition_id: opp.id,
       title: 'Apuntes',
       type: 'notes',
       content_text: 'Texto ficticio de apuntes propios.',
     });
-    const result = platform.generateFromMaterial(premium, {
+    const result = await platform.generateFromMaterial(premium, {
       material_id: material.id,
       difficulty: 'easy',
       question_count: 2,
@@ -175,44 +174,44 @@ describe('PlatformService - Premium personal', () => {
 });
 
 describe('PlatformService - estudiante', () => {
-  function orgSetup() {
-    const ctx = makeSetup();
-    const admin = ctx.users.createUser({
+  async function orgSetup() {
+    const ctx = await makeSetup();
+    const admin = await ctx.users.createUser({
       email: 'admin@test.com',
       password: 'x',
       role: 'admin',
     });
-    const student = ctx.users.createUser({
+    const student = await ctx.users.createUser({
       email: 'student@test.com',
       password: 'y',
       role: 'student',
     });
-    const other = ctx.users.createUser({
+    const other = await ctx.users.createUser({
       email: 'other@test.com',
       password: 'z',
       role: 'student',
     });
-    const ws = ctx.workspaces.createOrganizationWorkspace(admin, {
+    const ws = await ctx.workspaces.createOrganizationWorkspace(admin, {
       name: 'Academia',
       slug: 'academia',
     });
-    ctx.workspaces.addMember(admin, {
+    await ctx.workspaces.addMember(admin, {
       workspace_id: ws.id,
       user_id: student.id,
       role: 'student',
     });
-    const opp = ctx.oppositions.createOpposition(admin, {
+    const opp = await ctx.oppositions.createOpposition(admin, {
       workspace_id: ws.id,
       title: 'Auxiliar',
       slug: 'auxiliar',
     });
-    ctx.oppositions.grantAccess(admin, {
+    await ctx.oppositions.grantAccess(admin, {
       user_id: student.id,
       opposition_id: opp.id,
     });
     // Pool validado en la oposicion.
     for (let i = 0; i < 3; i++) {
-      const q = ctx.questions.createQuestion({
+      const q = await ctx.questions.createQuestion({
         opposition_id: opp.id,
         statement: `Pregunta ${i} ficticia sobre el tema`,
         options: [
@@ -232,14 +231,14 @@ describe('PlatformService - estudiante', () => {
         topic: 'Tema 1',
         difficulty: 'easy',
       });
-      ctx.questions.changeStatus(q.id, 'validated');
+      await ctx.questions.changeStatus(q.id, 'validated');
     }
     return { ...ctx, admin, student, other, ws, opp };
   }
 
-  it('un estudiante no puede gestionar material', () => {
-    const { platform, student, opp } = orgSetup();
-    expectAccessError(
+  it('un estudiante no puede gestionar material', async () => {
+    const { platform, student, opp } = await orgSetup();
+    await expectAccessError(
       () =>
         platform.createMaterial(student, {
           opposition_id: opp.id,
@@ -250,28 +249,28 @@ describe('PlatformService - estudiante', () => {
     );
   });
 
-  it('un estudiante crea test, lo realiza y ve solo sus propios resultados', () => {
-    const { platform, student, other, opp } = orgSetup();
-    const { test } = platform.createTest(student, {
+  it('un estudiante crea test, lo realiza y ve solo sus propios resultados', async () => {
+    const { platform, student, other, opp } = await orgSetup();
+    const { test } = await platform.createTest(student, {
       mode: 'random',
       opposition_id: opp.id,
       question_count: 2,
     });
-    const attempt = platform.startAttempt(student, test.id);
-    const result = platform.submitAttempt(student, attempt.id);
+    const attempt = await platform.startAttempt(student, test.id);
+    const result = await platform.submitAttempt(student, attempt.id);
     expect(result.status).toBe('submitted');
-    expect(platform.getResult(student, attempt.id).attempt_id).toBe(attempt.id);
+    expect((await platform.getResult(student, attempt.id)).attempt_id).toBe(attempt.id);
 
     // Otro usuario no puede ver el resultado ajeno.
-    expectAccessError(
+    await expectAccessError(
       () => platform.getResult(other, attempt.id),
       AccessErrorCode.ACCESS_DENIED,
     );
   });
 
-  it('un estudiante sin acceso a la oposicion no puede crear test', () => {
-    const { platform, other, opp } = orgSetup();
-    expectAccessError(
+  it('un estudiante sin acceso a la oposicion no puede crear test', async () => {
+    const { platform, other, opp } = await orgSetup();
+    await expectAccessError(
       () =>
         platform.createTest(other, {
           mode: 'random',

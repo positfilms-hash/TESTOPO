@@ -12,8 +12,9 @@ export interface QuestionFilter {
 }
 
 export interface QuestionRepository {
-  create(question: Question): Question;
-  findAll(filter?: QuestionFilter): Question[];
-  findById(id: string): Question | null;
-  save(question: Question): Question;
+  create(question: Question): Promise<Question>;
+  findAll(filter?: QuestionFilter): Promise<Question[]>;
+  findById(id: string): Promise<Question | null>;
+  save(question: Question): Promise<Question>;
 }
+

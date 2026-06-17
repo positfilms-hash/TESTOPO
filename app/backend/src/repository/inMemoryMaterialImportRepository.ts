@@ -12,17 +12,17 @@ export class InMemoryMaterialImportBatchRepository
 {
   private readonly batches = new Map<string, MaterialImportBatch>();
 
-  create(batch: MaterialImportBatch): MaterialImportBatch {
+  async create(batch: MaterialImportBatch): Promise<MaterialImportBatch> {
     this.batches.set(batch.id, structuredClone(batch));
     return structuredClone(batch);
   }
 
-  findById(id: string): MaterialImportBatch | null {
+  async findById(id: string): Promise<MaterialImportBatch | null> {
     const batch = this.batches.get(id);
     return batch ? structuredClone(batch) : null;
   }
 
-  save(batch: MaterialImportBatch): MaterialImportBatch {
+  async save(batch: MaterialImportBatch): Promise<MaterialImportBatch> {
     if (!this.batches.has(batch.id)) {
       throw new Error(`Cannot save unknown import batch: ${batch.id}`);
     }
@@ -36,14 +36,15 @@ export class InMemoryMaterialImportItemRepository
 {
   private readonly items = new Map<string, MaterialImportItem>();
 
-  create(item: MaterialImportItem): MaterialImportItem {
+  async create(item: MaterialImportItem): Promise<MaterialImportItem> {
     this.items.set(item.id, structuredClone(item));
     return structuredClone(item);
   }
 
-  findByBatch(batchId: string): MaterialImportItem[] {
+  async findByBatch(batchId: string): Promise<MaterialImportItem[]> {
     return [...this.items.values()]
       .filter((item) => item.batch_id === batchId)
       .map((item) => structuredClone(item));
   }
 }
+

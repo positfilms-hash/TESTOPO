@@ -3,7 +3,8 @@
 import type { QuestionGenerationRun } from '../models/questionGenerationRun.js';
 
 export interface GenerationRunRepository {
-  create(run: QuestionGenerationRun): QuestionGenerationRun;
-  findAll(): QuestionGenerationRun[];
-  findById(id: string): QuestionGenerationRun | null;
+  create(run: QuestionGenerationRun): Promise<QuestionGenerationRun>;
+  findAll(): Promise<QuestionGenerationRun[]>;
+  findById(id: string): Promise<QuestionGenerationRun | null>;
 }
+

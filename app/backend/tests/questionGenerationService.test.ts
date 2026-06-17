@@ -11,15 +11,15 @@ import { QuestionGenerationErrorCode } from '../src/generation/generationErrors.
 import type { GenerateQuestionsRequest } from '../src/generation/generationTypes.js';
 import { TEST_OPPOSITION_ID } from './helpers.js';
 
-function makeSetup() {
+async function makeSetup() {
   const materialRepository = new InMemoryMaterialRepository();
   const topicRepository = new InMemoryTopicRepository();
   const questionRepository = new InMemoryQuestionRepository();
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
   const questions = new QuestionService(questionRepository, {
-    resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
-    resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
+    resolveMaterialStatus: async (id) => (await materials.getMaterial(id))?.status ?? null,
+    resolveTopicStatus: async (id) => (await topics.getTopic(id))?.status ?? null,
   });
   const generation = new QuestionGenerationService({
     questionService: questions,
@@ -29,8 +29,8 @@ function makeSetup() {
   return { materials, topics, questions, generation };
 }
 
-function materialWithText(materials: MaterialService) {
-  return materials.createMaterial({
+async function materialWithText(materials: MaterialService) {
+  return await materials.createMaterial({
     opposition_id: TEST_OPPOSITION_ID,
     title: 'Tema 1 - Documento ficticio',
     type: 'syllabus',
@@ -38,12 +38,12 @@ function materialWithText(materials: MaterialService) {
   });
 }
 
-function expectGenError(
+async function expectGenError(
   fn: () => unknown,
   code: QuestionGenerationErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(QuestionGenerationError);
     expect((error as QuestionGenerationError).errors).toContain(code);
@@ -53,12 +53,12 @@ function expectGenError(
 }
 
 describe('QuestionGenerationService - generacion correcta', () => {
-  it('genera borradores en pending_review cuando hay tema', () => {
-    const { materials, topics, questions, generation } = makeSetup();
-    const material = materialWithText(materials);
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+  it('genera borradores en pending_review cuando hay tema', async () => {
+    const { materials, topics, questions, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    const { run, questions: created } = generation.generateFromMaterial({
+    const { run, questions: created } = await generation.generateFromMaterial({
       material_id: material.id,
       topic_id: topic.id,
       difficulty: 'easy',
@@ -81,14 +81,14 @@ describe('QuestionGenerationService - generacion correcta', () => {
       expect(q.generation_metadata?.created_from_material_id).toBe(material.id);
     }
     // Se guardan en el banco de preguntas existente.
-    expect(questions.listQuestions()).toHaveLength(3);
+    expect(await questions.listQuestions()).toHaveLength(3);
   });
 
-  it('genera en draft cuando no hay tema', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
+  it('genera en draft cuando no hay tema', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
 
-    const { questions: created } = generation.generateFromMaterial({
+    const { questions: created } = await generation.generateFromMaterial({
       material_id: material.id,
       difficulty: 'medium',
       question_count: 2,
@@ -97,11 +97,11 @@ describe('QuestionGenerationService - generacion correcta', () => {
     expect(created.every((q) => q.status === 'draft')).toBe(true);
   });
 
-  it('guarda el fragmento en source.excerpt en modo excerpt', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
+  it('guarda el fragmento en source.excerpt en modo excerpt', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
 
-    const { questions: created } = generation.generateFromExcerpt({
+    const { questions: created } = await generation.generateFromExcerpt({
       material_id: material.id,
       excerpt: 'Articulo 14 - igualdad ante la ley (ficticio).',
       difficulty: 'hard',
@@ -111,10 +111,10 @@ describe('QuestionGenerationService - generacion correcta', () => {
     expect(created[0].source?.excerpt).toContain('Articulo 14');
   });
 
-  it('genera desde texto manual sin material, con fuente temporal', () => {
-    const { generation } = makeSetup();
+  it('genera desde texto manual sin material, con fuente temporal', async () => {
+    const { generation } = await makeSetup();
 
-    const { questions: created } = generation.generateFromManualText({
+    const { questions: created } = await generation.generateFromManualText({
       manual_text: 'Apunte ficticio pegado a mano sobre recursos.',
       opposition_id: TEST_OPPOSITION_ID,
       difficulty: 'easy',
@@ -126,18 +126,18 @@ describe('QuestionGenerationService - generacion correcta', () => {
     expect(created[0].source?.title).toContain('manual');
   });
 
-  it('no duplica enunciados exactos entre generaciones', () => {
-    const { materials, topics, generation } = makeSetup();
-    const material = materialWithText(materials);
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+  it('no duplica enunciados exactos entre generaciones', async () => {
+    const { materials, topics, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    generation.generateFromMaterial({
+    await generation.generateFromMaterial({
       material_id: material.id,
       topic_id: topic.id,
       difficulty: 'easy',
       question_count: 1,
     });
-    const second = generation.generateFromMaterial({
+    const second = await generation.generateFromMaterial({
       material_id: material.id,
       topic_id: topic.id,
       difficulty: 'easy',
@@ -151,37 +151,37 @@ describe('QuestionGenerationService - generacion correcta', () => {
     );
   });
 
-  it('registra el historial de generacion', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
+  it('registra el historial de generacion', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
 
-    generation.generateFromMaterial({
+    await generation.generateFromMaterial({
       material_id: material.id,
       difficulty: 'easy',
       question_count: 2,
     });
 
-    expect(generation.listRuns()).toHaveLength(1);
+    expect(await generation.listRuns()).toHaveLength(1);
   });
 });
 
 describe('QuestionGenerationService - validaciones', () => {
-  it('no genera sin material_id salvo manual_seed', () => {
-    const { generation } = makeSetup();
+  it('no genera sin material_id salvo manual_seed', async () => {
+    const { generation } = await makeSetup();
     const request: GenerateQuestionsRequest = {
       mode: 'from_material_text',
       difficulty: 'easy',
       question_count: 2,
     };
-    expectGenError(
+    await expectGenError(
       () => generation.generate(request),
       QuestionGenerationErrorCode.MATERIAL_REQUIRED,
     );
   });
 
-  it('no genera desde material inexistente', () => {
-    const { generation } = makeSetup();
-    expectGenError(
+  it('no genera desde material inexistente', async () => {
+    const { generation } = await makeSetup();
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: 'no-existe',
@@ -192,12 +192,12 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera desde material obsolete', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
-    materials.markObsolete(material.id);
+  it('no genera desde material obsolete', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    await materials.markObsolete(material.id);
 
-    expectGenError(
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,
@@ -208,15 +208,15 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera desde material sin texto ni fragmento', () => {
-    const { materials, generation } = makeSetup();
-    const material = materials.createMaterial({
+  it('no genera desde material sin texto ni fragmento', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materials.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Sin texto',
       type: 'notes',
     });
 
-    expectGenError(
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,
@@ -227,10 +227,10 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera con dificultad invalida', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
-    expectGenError(
+  it('no genera con dificultad invalida', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    await expectGenError(
       () =>
         generation.generate({
           mode: 'from_material_text',
@@ -242,10 +242,10 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera con question_count menor que 1', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
-    expectGenError(
+  it('no genera con question_count menor que 1', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,
@@ -256,10 +256,10 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera con question_count mayor que 20', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
-    expectGenError(
+  it('no genera con question_count mayor que 20', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,
@@ -270,10 +270,10 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera desde tema inexistente', () => {
-    const { materials, generation } = makeSetup();
-    const material = materialWithText(materials);
-    expectGenError(
+  it('no genera desde tema inexistente', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,
@@ -285,13 +285,13 @@ describe('QuestionGenerationService - validaciones', () => {
     );
   });
 
-  it('no genera desde tema obsolete', () => {
-    const { materials, topics, generation } = makeSetup();
-    const material = materialWithText(materials);
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
-    topics.markObsolete(topic.id);
+  it('no genera desde tema obsolete', async () => {
+    const { materials, topics, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema viejo' });
+    await topics.markObsolete(topic.id);
 
-    expectGenError(
+    await expectGenError(
       () =>
         generation.generateFromMaterial({
           material_id: material.id,

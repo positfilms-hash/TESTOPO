@@ -27,14 +27,14 @@ function validQuestion(): Question {
 }
 
 describe('validateQuestion', () => {
-  it('una pregunta completa es valida', () => {
+  it('una pregunta completa es valida', async () => {
     expect(validateQuestion(validQuestion())).toEqual({
       valid: true,
       errors: [],
     });
   });
 
-  it('una pregunta vacia acumula todos los errores aplicables', () => {
+  it('una pregunta vacia acumula todos los errores aplicables', async () => {
     const empty: Question = {
       id: 'q-empty',
       opposition_id: TEST_OPPOSITION_ID,

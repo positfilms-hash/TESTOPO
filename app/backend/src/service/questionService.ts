@@ -66,21 +66,23 @@ export interface QuestionServiceOptions {
    * material no existe. Se inyecta como funcion para no acoplar el banco de
    * preguntas al repositorio de material.
    */
-  resolveMaterialStatus?: (materialId: string) => MaterialStatus | null;
+  resolveMaterialStatus?: (
+    materialId: string,
+  ) => Promise<MaterialStatus | null>;
   /**
    * Resolutor opcional del estado de un tema registrado (SPEC 003). Si se
    * proporciona, una pregunta vinculada (`topic_id`) a un tema `obsolete` no
    * podra pasar a `validated`. Devuelve `null` si el tema no existe.
    */
-  resolveTopicStatus?: (topicId: string) => TopicStatus | null;
+  resolveTopicStatus?: (topicId: string) => Promise<TopicStatus | null>;
   /**
    * Resolutor opcional de la oposicion de un material (SPEC 010). Si se
    * proporciona, no se puede crear una pregunta cuya fuente apunte a material
    * de otra oposicion. Devuelve `null` si el material no existe.
    */
-  resolveMaterialOpposition?: (materialId: string) => string | null;
+  resolveMaterialOpposition?: (materialId: string) => Promise<string | null>;
   /** Resolutor opcional de la oposicion de un tema (SPEC 010). */
-  resolveTopicOpposition?: (topicId: string) => string | null;
+  resolveTopicOpposition?: (topicId: string) => Promise<string | null>;
 }
 
 export class QuestionService {
@@ -88,14 +90,16 @@ export class QuestionService {
   private readonly now: () => Date;
   private readonly resolveMaterialStatus?: (
     materialId: string,
-  ) => MaterialStatus | null;
+  ) => Promise<MaterialStatus | null>;
   private readonly resolveTopicStatus?: (
     topicId: string,
-  ) => TopicStatus | null;
+  ) => Promise<TopicStatus | null>;
   private readonly resolveMaterialOpposition?: (
     materialId: string,
-  ) => string | null;
-  private readonly resolveTopicOpposition?: (topicId: string) => string | null;
+  ) => Promise<string | null>;
+  private readonly resolveTopicOpposition?: (
+    topicId: string,
+  ) => Promise<string | null>;
 
   constructor(
     private readonly repository: QuestionRepository,
@@ -111,18 +115,18 @@ export class QuestionService {
 
   // 9.1 Crear pregunta. Siempre nace en `draft` y no exige cumplir todas las
   // reglas de validacion todavia.
-  createQuestion(input: CreateQuestionInput): Question {
+  async createQuestion(input: CreateQuestionInput): Promise<Question> {
     const oppositionId = requireOpposition(input.opposition_id);
     // Integridad: la fuente/material y el tema deben ser de la misma oposicion.
     const materialId = input.source?.material_id;
     if (materialId && this.resolveMaterialOpposition) {
-      const materialOpposition = this.resolveMaterialOpposition(materialId);
+      const materialOpposition = await this.resolveMaterialOpposition(materialId);
       if (materialOpposition) {
         assertSameOpposition(materialOpposition, oppositionId);
       }
     }
     if (input.topic_id && this.resolveTopicOpposition) {
-      const topicOpposition = this.resolveTopicOpposition(input.topic_id);
+      const topicOpposition = await this.resolveTopicOpposition(input.topic_id);
       if (topicOpposition) {
         assertSameOpposition(topicOpposition, oppositionId);
       }
@@ -150,19 +154,19 @@ export class QuestionService {
   }
 
   // 9.2 Listar preguntas, con filtros opcionales sencillos.
-  listQuestions(filter: QuestionFilter = {}): Question[] {
+  async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     return this.repository.findAll(filter);
   }
 
   // 9.3 Ver una pregunta por id.
-  getQuestion(id: string): Question | null {
+  async getQuestion(id: string): Promise<Question | null> {
     return this.repository.findById(id);
   }
 
   // 9.4 Editar pregunta. Actualiza siempre `updated_at`. Pasar `null` en un
   // campo opcional lo limpia; omitirlo lo deja intacto.
-  editQuestion(id: string, changes: EditQuestionInput): Question {
-    const existing = this.requireQuestion(id);
+  async editQuestion(id: string, changes: EditQuestionInput): Promise<Question> {
+    const existing = await this.requireQuestion(id);
     const options = changes.options
       ? this.buildOptions(changes.options)
       : existing.options;
@@ -190,19 +194,19 @@ export class QuestionService {
 
   // 9.5 Cambiar estado. Si el destino es `validated`, se ejecuta la validacion
   // completa y, si falla, se rechaza el cambio con errores claros.
-  changeStatus(id: string, newStatus: QuestionStatus): Question {
+  async changeStatus(id: string, newStatus: QuestionStatus): Promise<Question> {
     if (!QUESTION_STATUSES.includes(newStatus)) {
       throw new Error(`Unknown question status: ${newStatus}`);
     }
-    const existing = this.requireQuestion(id);
+    const existing = await this.requireQuestion(id);
 
     if (newStatus === 'validated') {
       const result = validateQuestion(existing);
       if (!result.valid) {
         throw new QuestionValidationError(result.errors);
       }
-      this.assertSourceMaterialUsable(existing);
-      this.assertTopicUsable(existing);
+      await this.assertSourceMaterialUsable(existing);
+      await this.assertTopicUsable(existing);
     }
 
     const updated: Question = {
@@ -217,13 +221,13 @@ export class QuestionService {
   // registrado (`source.material_id`), la pregunta no puede validarse si el
   // material no se puede resolver o esta `obsolete`. La trazabilidad fuerte
   // exige poder confirmar que el material sigue vigente.
-  private assertSourceMaterialUsable(question: Question): void {
+  private async assertSourceMaterialUsable(question: Question): Promise<void> {
     const materialId = question.source?.material_id;
     if (!materialId) {
       return;
     }
     const status = this.resolveMaterialStatus
-      ? this.resolveMaterialStatus(materialId)
+      ? await this.resolveMaterialStatus(materialId)
       : null;
     if (status === null || status === 'obsolete') {
       throw new QuestionValidationError([
@@ -235,21 +239,21 @@ export class QuestionService {
   // SPEC 003 (reforzado en SPEC 004): si la pregunta esta vinculada (`topic_id`)
   // a un tema registrado, no puede validarse si el tema no se puede resolver o
   // esta `obsolete`.
-  private assertTopicUsable(question: Question): void {
+  private async assertTopicUsable(question: Question): Promise<void> {
     const topicId = question.topic_id;
     if (!topicId) {
       return;
     }
     const status = this.resolveTopicStatus
-      ? this.resolveTopicStatus(topicId)
+      ? await this.resolveTopicStatus(topicId)
       : null;
     if (status === null || status === 'obsolete') {
       throw new QuestionValidationError([ValidationErrorCode.TOPIC_OBSOLETE]);
     }
   }
 
-  private requireQuestion(id: string): Question {
-    const question = this.repository.findById(id);
+  private async requireQuestion(id: string): Promise<Question> {
+    const question = await this.repository.findById(id);
     if (!question) {
       throw new Error(`Question not found: ${id}`);
     }

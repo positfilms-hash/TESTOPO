@@ -64,7 +64,7 @@ export function LoginPage() {
         await bridgeSupabaseSession();
       } else {
         // Modo demo (sin Supabase): autenticacion en memoria.
-        login(store.users.authenticate(email, password));
+        login(await store.users.authenticate(email, password));
       }
     } catch (err) {
       setError(
@@ -122,10 +122,10 @@ export function LoginPage() {
     }
   };
 
-  const demoLogin = (mail: string, pass: string) => {
+  const demoLogin = async (mail: string, pass: string) => {
     reset();
     try {
-      login(store.users.authenticate(mail, pass));
+      login(await store.users.authenticate(mail, pass));
     } catch {
       setError('No se pudo entrar en la demo.');
     }

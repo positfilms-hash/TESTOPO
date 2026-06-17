@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MATERIAL_TYPES, type MaterialType } from '@backend';
+import { useEffect, useState } from 'react';
+import { MATERIAL_TYPES, type Material, type MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
 
@@ -27,8 +27,24 @@ const TYPE_LABELS: Record<MaterialType, string> = {
 };
 
 export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
-  const { store, refresh, currentUser, currentOpposition } = useStore();
+  const { store, refresh, currentUser, currentOpposition, version } = useStore();
   const [view, setView] = useState<View>({ kind: 'list' });
+  const [materials, setMaterials] = useState<Material[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser && currentOpposition) {
+      void store.platform
+        .listMaterials(currentUser, currentOpposition.id)
+        .then((list) => {
+          if (!cancelled) setMaterials(list);
+        });
+    } else {
+      setMaterials([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentOpposition, version, view]);
 
   if (view.kind === 'new') {
     return (
@@ -65,11 +81,7 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   // El facade aplica el acceso: el estudiante solo ve material activo de
-  // oposiciones autorizadas (SPEC 012/013); el gestor ve todo.
-  const materials =
-    currentUser && currentOpposition
-      ? store.platform.listMaterials(currentUser, currentOpposition.id)
-      : [];
+  // oposiciones autorizadas (SPEC 012/013); el gestor ve todo. Carga async.
   return (
     <div>
       <PageHeader
@@ -133,11 +145,11 @@ function MaterialForm({
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const submit = () => {
+  const submit = async () => {
     setError(null);
     if (!currentUser) return;
     try {
-      store.platform.createMaterial(currentUser, {
+      await store.platform.createMaterial(currentUser, {
         opposition_id: currentOpposition?.id,
         title,
         type,
@@ -210,9 +222,18 @@ function PdfUploadForm({
   const [busy, setBusy] = useState(false);
 
   // Temas de la oposicion actual para vincular opcionalmente.
-  const topics = store.topics
-    .listTopics()
-    .filter((t) => t.opposition_id === currentOpposition?.id);
+  const [topics, setTopics] = useState<{ id: string; code: string | null; title: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void store.topics.listTopics().then((all) => {
+      if (!cancelled) {
+        setTopics(all.filter((t) => t.opposition_id === currentOpposition?.id));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition]);
 
   const submit = async () => {
     setError(null);
@@ -224,7 +245,7 @@ function PdfUploadForm({
     setBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const material = store.platform.uploadPdf(currentUser, {
+      const material = await store.platform.uploadPdf(currentUser, {
         opposition_id: currentOpposition?.id,
         title,
         type,
@@ -330,16 +351,71 @@ function MaterialDetail({
   isAdmin: boolean;
   onBack: () => void;
 }) {
-  const { store, refresh, currentUser } = useStore();
-  // El facade verifica acceso (oposicion autorizada + material activo para el
-  // estudiante). Si no procede, no se expone el material (SPEC 013, 20.4).
-  const material = currentUser
-    ? safeGetMaterial(() => store.platform.getMaterial(currentUser, id))
-    : null;
-  const [title, setTitle] = useState(material?.title ?? '');
-  const [reference, setReference] = useState(material?.reference ?? '');
+  const { store, refresh, currentUser, version } = useStore();
+  const [material, setMaterial] = useState<Material | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  const [reference, setReference] = useState('');
+  const [topicTitles, setTopicTitles] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // El facade verifica acceso (oposicion autorizada + material activo para el
+  // estudiante). Si no procede, no se expone el material (SPEC 013, 20.4).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!currentUser) {
+        if (!cancelled) { setMaterial(null); setLoading(false); }
+        return;
+      }
+      let m: Material | null = null;
+      try {
+        m = await store.platform.getMaterial(currentUser, id);
+      } catch {
+        m = null;
+      }
+      const titles: string[] = [];
+      if (m) {
+        const links = await store.topicMaterialLinks.findAll({ material_id: m.id });
+        for (const link of links) {
+          const t = await store.topics.getTopic(link.topic_id);
+          if (t?.title) titles.push(t.title);
+        }
+      }
+      if (!cancelled) {
+        setMaterial(m);
+        setTitle(m?.title ?? '');
+        setReference(m?.reference ?? '');
+        setTopicTitles(titles);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, id, version]);
+
+  const save = async () => {
+    if (!currentUser) return;
+    await store.platform.editMaterial(currentUser, id, {
+      title,
+      reference: reference || null,
+    });
+    setNotice('Cambios guardados.');
+    refresh();
+  };
+
+  const markObsolete = async () => {
+    if (!currentUser) return;
+    if (!window.confirm('¿Marcar este material como obsoleto?')) return;
+    await store.platform.markMaterialObsolete(currentUser, id);
+    refresh();
+    onBack();
+  };
+
+  if (loading) {
+    return <div className="loading-state">Cargando…</div>;
+  }
   if (!material) {
     return (
       <div>
@@ -355,30 +431,6 @@ function MaterialDetail({
       </div>
     );
   }
-
-  // Temas asociados (SPEC 003/012/013): resueltos via los vinculos guardados.
-  const topicTitles = store.topicMaterialLinks
-    .findAll({ material_id: material.id })
-    .map((link) => store.topics.getTopic(link.topic_id)?.title)
-    .filter((t): t is string => Boolean(t));
-
-  const save = () => {
-    if (!currentUser) return;
-    store.platform.editMaterial(currentUser, id, {
-      title,
-      reference: reference || null,
-    });
-    setNotice('Cambios guardados.');
-    refresh();
-  };
-
-  const markObsolete = () => {
-    if (!currentUser) return;
-    if (!window.confirm('¿Marcar este material como obsoleto?')) return;
-    store.platform.markMaterialObsolete(currentUser, id);
-    refresh();
-    onBack();
-  };
 
   return (
     <div>
@@ -479,12 +531,3 @@ function MaterialDetail({
   );
 }
 
-// getMaterial lanza AccessError si el usuario no puede ver el material; aqui
-// lo convertimos en "no disponible" para la UI.
-function safeGetMaterial<T>(fn: () => T): T | null {
-  try {
-    return fn();
-  } catch {
-    return null;
-  }
-}

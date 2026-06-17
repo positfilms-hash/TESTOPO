@@ -75,42 +75,42 @@ export class QuestionValidationService {
   }
 
   // 10.1 Validar una pregunta y guardar el informe.
-  validateQuestion(questionId: string): QuestionValidationResult {
-    const question = this.questions.getQuestion(questionId);
+  async validateQuestion(questionId: string): Promise<QuestionValidationResult> {
+    const question = await this.questions.getQuestion(questionId);
     if (!question) {
       throw new Error(`Question not found: ${questionId}`);
     }
-    const findings = this.collectFindings(question);
+    const findings = await this.collectFindings(question);
     const result = this.buildResult(question.id, findings);
     return this.reports.save(result);
   }
 
   // 10.2 Validar un lote sin detener el proceso por un fallo. Las preguntas
   // inexistentes se omiten.
-  validateMany(questionIds: string[]): QuestionValidationResult[] {
+  async validateMany(
+    questionIds: string[],
+  ): Promise<QuestionValidationResult[]> {
     const results: QuestionValidationResult[] = [];
     for (const id of questionIds) {
-      if (this.questions.getQuestion(id)) {
-        results.push(this.validateQuestion(id));
+      if (await this.questions.getQuestion(id)) {
+        results.push(await this.validateQuestion(id));
       }
     }
     return results;
   }
 
   // 10.3 Validar todas las preguntas pendientes (no toca `validated`).
-  validatePending(): QuestionValidationResult[] {
-    const pending = this.questions
-      .listQuestions()
-      .filter((question) =>
-        (PENDING_STATUSES as readonly string[]).includes(question.status),
-      );
+  async validatePending(): Promise<QuestionValidationResult[]> {
+    const pending = (await this.questions.listQuestions()).filter((question) =>
+      (PENDING_STATUSES as readonly string[]).includes(question.status),
+    );
     return this.validateMany(pending.map((question) => question.id));
   }
 
   // 10.4 Aplicar el resultado: errores -> needs_fix; sin errores -> pending_review.
-  applyValidation(questionId: string): ApplyValidationResult {
-    const result = this.validateQuestion(questionId);
-    const question = this.questions.changeStatus(
+  async applyValidation(questionId: string): Promise<ApplyValidationResult> {
+    const result = await this.validateQuestion(questionId);
+    const question = await this.questions.changeStatus(
       questionId,
       result.recommended_status,
     );
@@ -118,16 +118,18 @@ export class QuestionValidationService {
   }
 
   // 10.5 Ultimo informe guardado para una pregunta.
-  getLastReport(questionId: string): QuestionValidationResult | null {
+  async getLastReport(
+    questionId: string,
+  ): Promise<QuestionValidationResult | null> {
     return this.reports.findLastByQuestion(questionId);
   }
 
-  private collectFindings(question: Question): Finding[] {
+  private async collectFindings(question: Question): Promise<Finding[]> {
     return [
       ...formalFindings(question),
-      ...this.sourceFindings(question),
-      ...this.topicFindings(question),
-      ...this.duplicateFindings(question),
+      ...(await this.sourceFindings(question)),
+      ...(await this.topicFindings(question)),
+      ...(await this.duplicateFindings(question)),
       ...ambiguityFindings(question),
       ...infoFindings(question),
       ...(this.provider ? this.provider.review(question) : []),
@@ -136,7 +138,7 @@ export class QuestionValidationService {
 
   // Capa de fuente (SPEC 005, 7.2). La presencia de fuente la cubre la capa
   // formal; aqui se resuelve el material y la obsolescencia.
-  private sourceFindings(question: Question): Finding[] {
+  private async sourceFindings(question: Question): Promise<Finding[]> {
     const findings: Finding[] = [];
     const source = question.source;
     if (!source) {
@@ -148,7 +150,7 @@ export class QuestionValidationService {
     }
 
     if (source.material_id) {
-      const material = this.materials.findById(source.material_id);
+      const material = await this.materials.findById(source.material_id);
       if (!material) {
         findings.push(
           makeFinding(QuestionValidationCode.SOURCE_MATERIAL_NOT_FOUND),
@@ -176,12 +178,12 @@ export class QuestionValidationService {
 
   // Capa de tema (SPEC 005, 7.3). La presencia de tema la cubre la capa formal;
   // aqui se resuelve el `topic_id` y su obsolescencia.
-  private topicFindings(question: Question): Finding[] {
+  private async topicFindings(question: Question): Promise<Finding[]> {
     const findings: Finding[] = [];
     if (!question.topic_id) {
       return findings;
     }
-    const topic = this.topics.findById(question.topic_id);
+    const topic = await this.topics.findById(question.topic_id);
     if (!topic) {
       findings.push(makeFinding(QuestionValidationCode.TOPIC_NOT_FOUND));
     } else if (topic.status === 'obsolete') {
@@ -191,19 +193,17 @@ export class QuestionValidationService {
   }
 
   // Capa de duplicados (SPEC 005, 7.5): enunciado normalizado igual a otra.
-  private duplicateFindings(question: Question): Finding[] {
+  private async duplicateFindings(question: Question): Promise<Finding[]> {
     if (!isNonEmptyString(question.statement)) {
       return [];
     }
     const normalized = normalizeOptionText(question.statement);
-    const duplicate = this.questions
-      .listQuestions()
-      .some(
-        (other) =>
-          other.id !== question.id &&
-          isNonEmptyString(other.statement) &&
-          normalizeOptionText(other.statement) === normalized,
-      );
+    const duplicate = (await this.questions.listQuestions()).some(
+      (other) =>
+        other.id !== question.id &&
+        isNonEmptyString(other.statement) &&
+        normalizeOptionText(other.statement) === normalized,
+    );
     return duplicate
       ? [makeFinding(QuestionValidationCode.DUPLICATE_STATEMENT)]
       : [];

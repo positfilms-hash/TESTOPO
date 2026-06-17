@@ -5,12 +5,13 @@ import type { MaterialImportBatch } from '../models/materialImportBatch.js';
 import type { MaterialImportItem } from '../models/materialImportItem.js';
 
 export interface MaterialImportBatchRepository {
-  create(batch: MaterialImportBatch): MaterialImportBatch;
-  findById(id: string): MaterialImportBatch | null;
-  save(batch: MaterialImportBatch): MaterialImportBatch;
+  create(batch: MaterialImportBatch): Promise<MaterialImportBatch>;
+  findById(id: string): Promise<MaterialImportBatch | null>;
+  save(batch: MaterialImportBatch): Promise<MaterialImportBatch>;
 }
 
 export interface MaterialImportItemRepository {
-  create(item: MaterialImportItem): MaterialImportItem;
-  findByBatch(batchId: string): MaterialImportItem[];
+  create(item: MaterialImportItem): Promise<MaterialImportItem>;
+  findByBatch(batchId: string): Promise<MaterialImportItem[]>;
 }
+

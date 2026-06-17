@@ -16,7 +16,7 @@ import { validInput, TEST_OPPOSITION_ID } from './helpers.js';
 const now = new Date(Date.UTC(2026, 0, 1));
 
 describe('Fix: validateQuestion comprueba correct_answer', () => {
-  it('falla si correct_answer no apunta a la unica opcion correcta', () => {
+  it('falla si correct_answer no apunta a la unica opcion correcta', async () => {
     const question: Question = {
       id: 'q1',
       opposition_id: TEST_OPPOSITION_ID,
@@ -54,16 +54,16 @@ function sourceWithMaterial(materialId: string): Source {
 }
 
 describe('Fix: no validar si material/tema no se puede resolver', () => {
-  it('bloquea validar cuando el material no se resuelve (resolver -> null)', () => {
+  it('bloquea validar cuando el material no se resuelve (resolver -> null)', async () => {
     const service = new QuestionService(new InMemoryQuestionRepository(), {
-      resolveMaterialStatus: () => null, // material borrado / irresoluble
+      resolveMaterialStatus: async () => null, // material borrado / irresoluble
     });
-    const q = service.createQuestion(
+    const q = await service.createQuestion(
       validInput({ source: sourceWithMaterial('ghost') }),
     );
 
     try {
-      service.changeStatus(q.id, 'validated');
+      await service.changeStatus(q.id, 'validated');
     } catch (error) {
       expect((error as QuestionValidationError).errors).toContain(
         ValidationErrorCode.SOURCE_MATERIAL_OBSOLETE,
@@ -73,14 +73,14 @@ describe('Fix: no validar si material/tema no se puede resolver', () => {
     throw new Error('Expected QuestionValidationError');
   });
 
-  it('bloquea validar cuando el tema no se resuelve (resolver -> null)', () => {
+  it('bloquea validar cuando el tema no se resuelve (resolver -> null)', async () => {
     const service = new QuestionService(new InMemoryQuestionRepository(), {
-      resolveTopicStatus: () => null,
+      resolveTopicStatus: async () => null,
     });
-    const q = service.createQuestion(validInput({ topic_id: 'ghost' }));
+    const q = await service.createQuestion(validInput({ topic_id: 'ghost' }));
 
     try {
-      service.changeStatus(q.id, 'validated');
+      await service.changeStatus(q.id, 'validated');
     } catch (error) {
       expect((error as QuestionValidationError).errors).toContain(
         ValidationErrorCode.TOPIC_OBSOLETE,
@@ -92,10 +92,10 @@ describe('Fix: no validar si material/tema no se puede resolver', () => {
 });
 
 describe('Fix: TopicService.linkMaterial exige repositorio de material', () => {
-  it('lanza si no hay materialRepository configurado', () => {
+  it('lanza si no hay materialRepository configurado', async () => {
     const topics = new TopicService(new InMemoryTopicRepository());
-    const topic = topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const topic = await topics.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    expect(() => topics.linkMaterial('cualquier', topic.id)).toThrow();
+    await expect(topics.linkMaterial('cualquier', topic.id)).rejects.toThrow();
   });
 });

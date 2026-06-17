@@ -6,29 +6,29 @@ export class InMemoryWorkspaceMemberRepository
 {
   private readonly members = new Map<string, WorkspaceMember>();
 
-  create(member: WorkspaceMember): WorkspaceMember {
+  async create(member: WorkspaceMember): Promise<WorkspaceMember> {
     this.members.set(key(member.workspace_id, member.user_id), clone(member));
     return clone(member);
   }
 
-  find(workspaceId: string, userId: string): WorkspaceMember | null {
+  async find(workspaceId: string, userId: string): Promise<WorkspaceMember | null> {
     const member = this.members.get(key(workspaceId, userId));
     return member ? clone(member) : null;
   }
 
-  findByUser(userId: string): WorkspaceMember[] {
+  async findByUser(userId: string): Promise<WorkspaceMember[]> {
     return [...this.members.values()]
       .filter((m) => m.user_id === userId)
       .map(clone);
   }
 
-  findByWorkspace(workspaceId: string): WorkspaceMember[] {
+  async findByWorkspace(workspaceId: string): Promise<WorkspaceMember[]> {
     return [...this.members.values()]
       .filter((m) => m.workspace_id === workspaceId)
       .map(clone);
   }
 
-  save(member: WorkspaceMember): WorkspaceMember {
+  async save(member: WorkspaceMember): Promise<WorkspaceMember> {
     this.members.set(key(member.workspace_id, member.user_id), clone(member));
     return clone(member);
   }
@@ -41,3 +41,4 @@ function key(workspaceId: string, userId: string): string {
 function clone(member: WorkspaceMember): WorkspaceMember {
   return structuredClone(member);
 }
+

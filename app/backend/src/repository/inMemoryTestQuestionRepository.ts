@@ -8,12 +8,12 @@ export class InMemoryTestQuestionRepository
 {
   private readonly testQuestions: PracticeTestQuestion[] = [];
 
-  create(testQuestion: PracticeTestQuestion): PracticeTestQuestion {
+  async create(testQuestion: PracticeTestQuestion): Promise<PracticeTestQuestion> {
     this.testQuestions.push(clone(testQuestion));
     return clone(testQuestion);
   }
 
-  findByTest(testId: string): PracticeTestQuestion[] {
+  async findByTest(testId: string): Promise<PracticeTestQuestion[]> {
     return this.testQuestions
       .filter((item) => item.test_id === testId)
       .sort((a, b) => a.order - b.order)
@@ -24,3 +24,4 @@ export class InMemoryTestQuestionRepository
 function clone(item: PracticeTestQuestion): PracticeTestQuestion {
   return structuredClone(item);
 }
+

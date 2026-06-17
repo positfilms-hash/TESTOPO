@@ -3,7 +3,8 @@
 import type { QuestionValidationResult } from '../models/questionValidationResult.js';
 
 export interface QuestionValidationReportRepository {
-  save(result: QuestionValidationResult): QuestionValidationResult;
+  save(result: QuestionValidationResult): Promise<QuestionValidationResult>;
   // Ultimo informe guardado para una pregunta, o null si no hay ninguno.
-  findLastByQuestion(questionId: string): QuestionValidationResult | null;
+  findLastByQuestion(questionId: string): Promise<QuestionValidationResult | null>;
 }
+

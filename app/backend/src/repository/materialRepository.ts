@@ -13,8 +13,9 @@ export interface MaterialFilter {
 }
 
 export interface MaterialRepository {
-  create(material: Material): Material;
-  findAll(filter?: MaterialFilter): Material[];
-  findById(id: string): Material | null;
-  save(material: Material): Material;
+  create(material: Material): Promise<Material>;
+  findAll(filter?: MaterialFilter): Promise<Material[]>;
+  findById(id: string): Promise<Material | null>;
+  save(material: Material): Promise<Material>;
 }
+

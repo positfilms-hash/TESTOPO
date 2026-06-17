@@ -23,12 +23,12 @@ function makeTopicService(options: TopicServiceOptions = {}): TopicService {
   });
 }
 
-function expectTopicError(
+async function expectTopicError(
   fn: () => unknown,
   code: TopicValidationErrorCode,
-): void {
+): Promise<void> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     expect(error).toBeInstanceOf(TopicValidationError);
     expect((error as TopicValidationError).errors).toContain(code);
@@ -38,19 +38,19 @@ function expectTopicError(
 }
 
 describe('TopicService - creacion y jerarquia', () => {
-  it('crea un tema raiz en estado active por defecto', () => {
+  it('crea un tema raiz en estado active por defecto', async () => {
     const service = makeTopicService();
-    const topic = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1', code: 'B1' });
+    const topic = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1', code: 'B1' });
 
     expect(topic.status).toBe('active');
     expect(topic.parent_id).toBeNull();
     expect(topic.id).toBeTruthy();
   });
 
-  it('crea un subtema con padre existente', () => {
+  it('crea un subtema con padre existente', async () => {
     const service = makeTopicService();
-    const root = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1' });
-    const child = service.createTopic({
+    const root = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1' });
+    const child = await service.createTopic({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Tema 1',
       parent_id: root.id,
@@ -59,17 +59,17 @@ describe('TopicService - creacion y jerarquia', () => {
     expect(child.parent_id).toBe(root.id);
   });
 
-  it('no permite crear un tema sin titulo', () => {
+  it('no permite crear un tema sin titulo', async () => {
     const service = makeTopicService();
-    expectTopicError(
+    await expectTopicError(
       () => service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: '   ' }),
       TopicValidationErrorCode.TITLE_REQUIRED,
     );
   });
 
-  it('no permite crear un tema con estado invalido', () => {
+  it('no permite crear un tema con estado invalido', async () => {
     const service = makeTopicService();
-    expectTopicError(
+    await expectTopicError(
       () =>
         service.createTopic({
           opposition_id: TEST_OPPOSITION_ID,
@@ -80,31 +80,31 @@ describe('TopicService - creacion y jerarquia', () => {
     );
   });
 
-  it('no permite crear un subtema con padre inexistente', () => {
+  it('no permite crear un subtema con padre inexistente', async () => {
     const service = makeTopicService();
-    expectTopicError(
+    await expectTopicError(
       () => service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1', parent_id: 'no-existe' }),
       TopicValidationErrorCode.PARENT_NOT_FOUND,
     );
   });
 
-  it('no permite que un tema sea padre de si mismo', () => {
+  it('no permite que un tema sea padre de si mismo', async () => {
     const service = makeTopicService();
-    const topic = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
-    expectTopicError(
+    const topic = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    await expectTopicError(
       () => service.editTopic(topic.id, { parent_id: topic.id }),
       TopicValidationErrorCode.CANNOT_BE_OWN_PARENT,
     );
   });
 
-  it('no permite crear ciclos en la jerarquia', () => {
+  it('no permite crear ciclos en la jerarquia', async () => {
     const service = makeTopicService();
-    const a = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'A' });
-    const b = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'B', parent_id: a.id });
-    const c = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'C', parent_id: b.id });
+    const a = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'A' });
+    const b = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'B', parent_id: a.id });
+    const c = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'C', parent_id: b.id });
 
     // A pasaria a depender de C, que desciende de A -> ciclo.
-    expectTopicError(
+    await expectTopicError(
       () => service.editTopic(a.id, { parent_id: c.id }),
       TopicValidationErrorCode.HIERARCHY_CYCLE_DETECTED,
     );
@@ -112,42 +112,42 @@ describe('TopicService - creacion y jerarquia', () => {
 });
 
 describe('TopicService - lectura, edicion y arbol', () => {
-  it('lista temas y filtra por padre', () => {
+  it('lista temas y filtra por padre', async () => {
     const service = makeTopicService();
-    const root = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1' });
-    service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1', parent_id: root.id });
+    const root = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1' });
+    await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1', parent_id: root.id });
 
-    expect(service.listTopics()).toHaveLength(2);
-    expect(service.listTopics({ parent_id: null })).toHaveLength(1);
-    expect(service.listTopics({ parent_id: root.id })).toHaveLength(1);
+    expect(await service.listTopics()).toHaveLength(2);
+    expect(await service.listTopics({ parent_id: null })).toHaveLength(1);
+    expect(await service.listTopics({ parent_id: root.id })).toHaveLength(1);
   });
 
-  it('consulta un tema por id', () => {
+  it('consulta un tema por id', async () => {
     const service = makeTopicService();
-    const topic = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const topic = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    expect(service.getTopic(topic.id)?.id).toBe(topic.id);
-    expect(service.getTopic('no-existe')).toBeNull();
+    expect((await service.getTopic(topic.id))?.id).toBe(topic.id);
+    expect(await service.getTopic('no-existe')).toBeNull();
   });
 
-  it('obtiene el arbol de temas ordenado y anidado', () => {
+  it('obtiene el arbol de temas ordenado y anidado', async () => {
     const service = makeTopicService();
-    const root = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1', order: 0 });
-    service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 2', parent_id: root.id, order: 1 });
-    service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1', parent_id: root.id, order: 0 });
+    const root = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Bloque 1', order: 0 });
+    await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 2', parent_id: root.id, order: 1 });
+    await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1', parent_id: root.id, order: 0 });
 
-    const tree = service.getTopicTree();
+    const tree = await service.getTopicTree();
 
     expect(tree).toHaveLength(1);
     expect(tree[0].title).toBe('Bloque 1');
     expect(tree[0].children.map((c) => c.title)).toEqual(['Tema 1', 'Tema 2']);
   });
 
-  it('edita un tema y actualiza updated_at', () => {
+  it('edita un tema y actualiza updated_at', async () => {
     const service = makeTopicService();
-    const created = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const created = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    const edited = service.editTopic(created.id, {
+    const edited = await service.editTopic(created.id, {
       title: 'Tema 1 - Revisado',
       code: 'T1',
     });
@@ -159,58 +159,58 @@ describe('TopicService - lectura, edicion y arbol', () => {
     );
   });
 
-  it('marca un tema como obsolete', () => {
+  it('marca un tema como obsolete', async () => {
     const service = makeTopicService();
-    const created = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const created = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
 
-    expect(service.markObsolete(created.id).status).toBe('obsolete');
+    expect((await service.markObsolete(created.id)).status).toBe('obsolete');
   });
 });
 
 describe('TopicService - vinculacion de materiales', () => {
-  function setup() {
+  async function setup() {
     const materialRepository = new InMemoryMaterialRepository();
     const materialService = new MaterialService(materialRepository);
-    const material = materialService.createMaterial({
+    const material = await materialService.createMaterial({
       opposition_id: TEST_OPPOSITION_ID,
       title: 'Tema 1 - Documento ficticio',
       type: 'syllabus',
     });
     const service = makeTopicService({ materialRepository });
-    const topic = service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
+    const topic = await service.createTopic({ opposition_id: TEST_OPPOSITION_ID, title: 'Tema 1' });
     return { service, topic, material };
   }
 
-  it('vincula un material a un tema', () => {
-    const { service, topic, material } = setup();
-    const link = service.linkMaterial(material.id, topic.id, 'Pagina 12');
+  it('vincula un material a un tema', async () => {
+    const { service, topic, material } = await setup();
+    const link = await service.linkMaterial(material.id, topic.id, 'Pagina 12');
 
     expect(link.material_id).toBe(material.id);
     expect(link.topic_id).toBe(topic.id);
-    expect(service.listMaterialsForTopic(topic.id)).toHaveLength(1);
+    expect(await service.listMaterialsForTopic(topic.id)).toHaveLength(1);
   });
 
-  it('desvincula un material de un tema sin borrar ninguno', () => {
-    const { service, topic, material } = setup();
-    service.linkMaterial(material.id, topic.id);
+  it('desvincula un material de un tema sin borrar ninguno', async () => {
+    const { service, topic, material } = await setup();
+    await service.linkMaterial(material.id, topic.id);
 
-    expect(service.unlinkMaterial(material.id, topic.id)).toBe(true);
-    expect(service.listMaterialsForTopic(topic.id)).toHaveLength(0);
-    expect(service.getTopic(topic.id)).not.toBeNull();
+    expect(await service.unlinkMaterial(material.id, topic.id)).toBe(true);
+    expect(await service.listMaterialsForTopic(topic.id)).toHaveLength(0);
+    expect(await service.getTopic(topic.id)).not.toBeNull();
   });
 
-  it('no permite vincular un material inexistente', () => {
-    const { service, topic } = setup();
-    expectTopicError(
+  it('no permite vincular un material inexistente', async () => {
+    const { service, topic } = await setup();
+    await expectTopicError(
       () => service.linkMaterial('no-existe', topic.id),
       TopicValidationErrorCode.MATERIAL_NOT_FOUND,
     );
   });
 
-  it('no permite duplicar un vinculo material-tema', () => {
-    const { service, topic, material } = setup();
-    service.linkMaterial(material.id, topic.id);
-    expectTopicError(
+  it('no permite duplicar un vinculo material-tema', async () => {
+    const { service, topic, material } = await setup();
+    await service.linkMaterial(material.id, topic.id);
+    await expectTopicError(
       () => service.linkMaterial(material.id, topic.id),
       TopicValidationErrorCode.MATERIAL_LINK_ALREADY_EXISTS,
     );

@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import type { MyResultSummary } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Button, EmptyState, PageHeader } from '../components/ui.js';
 import type { Section } from '../components/AppLayout.js';
@@ -18,20 +20,32 @@ export function HomePage({
 
 // Inicio del estudiante (SPEC 013, 9): accion principal "Crear test", accesos
 // a material y resultados, ultimos resultados y aviso si no hay preguntas.
-// Lenguaje de estudiante; nada de estados internos.
 function StudentHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
   const { store, currentUser, currentWorkspace, currentOpposition, version } =
     useStore();
-  void version;
   const oppositionId = currentOpposition?.id;
+  const [validated, setValidated] = useState(0);
+  const [recent, setRecent] = useState<MyResultSummary[]>([]);
 
-  const validated = store.questions
-    .listQuestions()
-    .filter((q) => q.opposition_id === oppositionId && q.status === 'validated')
-    .length;
-  const recent = currentUser
-    ? store.platform.listMyResults(currentUser).slice(0, 3)
-    : [];
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const questions = await store.questions.listQuestions();
+      const validatedCount = questions.filter(
+        (q) => q.opposition_id === oppositionId && q.status === 'validated',
+      ).length;
+      const results = currentUser
+        ? await store.platform.listMyResults(currentUser)
+        : [];
+      if (!cancelled) {
+        setValidated(validatedCount);
+        setRecent(results.slice(0, 3));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, oppositionId, version]);
 
   return (
     <div>
@@ -92,28 +106,45 @@ function StudentHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
 
 // Inicio del gestor (owner/admin): guia de los pasos de preparacion.
 function AdminHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
-  const { store, currentOpposition } = useStore();
+  const { store, currentOpposition, version } = useStore();
   const oppositionId = currentOpposition?.id;
-  const materials = store.materials
-    .listMaterials()
-    .filter((m) => m.opposition_id === oppositionId);
-  const questions = store.questions
-    .listQuestions()
-    .filter((q) => q.opposition_id === oppositionId);
-  const pending = questions.filter((q) =>
-    ['draft', 'pending_review', 'needs_fix'].includes(q.status),
-  ).length;
-  const validated = questions.filter((q) => q.status === 'validated').length;
+  const [stats, setStats] = useState({
+    materials: 0,
+    pending: 0,
+    validated: 0,
+    tests: 0,
+  });
 
-  const stats = [
-    { label: 'Materiales', value: materials.length },
-    { label: 'Pendientes de revisar', value: pending },
-    { label: 'Preguntas validadas', value: validated },
-    {
-      label: 'Tests creados',
-      value: store.createdTests.filter((t) => t.opposition_id === oppositionId)
-        .length,
-    },
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const materials = (await store.materials.listMaterials()).filter(
+        (m) => m.opposition_id === oppositionId,
+      );
+      const questions = (await store.questions.listQuestions()).filter(
+        (q) => q.opposition_id === oppositionId,
+      );
+      const next = {
+        materials: materials.length,
+        pending: questions.filter((q) =>
+          ['draft', 'pending_review', 'needs_fix'].includes(q.status),
+        ).length,
+        validated: questions.filter((q) => q.status === 'validated').length,
+        tests: store.createdTests.filter((t) => t.opposition_id === oppositionId)
+          .length,
+      };
+      if (!cancelled) setStats(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, oppositionId, version]);
+
+  const statCards = [
+    { label: 'Materiales', value: stats.materials },
+    { label: 'Pendientes de revisar', value: stats.pending },
+    { label: 'Preguntas validadas', value: stats.validated },
+    { label: 'Tests creados', value: stats.tests },
   ];
 
   const steps: { title: string; text: string; cta: string; to: Section }[] = [
@@ -151,7 +182,7 @@ function AdminHome({ onNavigate }: { onNavigate: (s: Section) => void }) {
       />
 
       <div className="card-grid" style={{ marginBottom: 24 }}>
-        {stats.map((s) => (
+        {statCards.map((s) => (
           <div className="card" key={s.label}>
             <div className="stat">{s.value}</div>
             <div className="muted small">{s.label}</div>

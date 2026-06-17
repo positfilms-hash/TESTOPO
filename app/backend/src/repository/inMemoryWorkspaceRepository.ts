@@ -4,17 +4,17 @@ import type { WorkspaceRepository } from './workspaceRepository.js';
 export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   private readonly workspaces = new Map<string, Workspace>();
 
-  create(workspace: Workspace): Workspace {
+  async create(workspace: Workspace): Promise<Workspace> {
     this.workspaces.set(workspace.id, clone(workspace));
     return clone(workspace);
   }
 
-  findById(id: string): Workspace | null {
+  async findById(id: string): Promise<Workspace | null> {
     const workspace = this.workspaces.get(id);
     return workspace ? clone(workspace) : null;
   }
 
-  findBySlug(slug: string): Workspace | null {
+  async findBySlug(slug: string): Promise<Workspace | null> {
     for (const workspace of this.workspaces.values()) {
       if (workspace.slug === slug) {
         return clone(workspace);
@@ -23,11 +23,11 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     return null;
   }
 
-  findAll(): Workspace[] {
+  async findAll(): Promise<Workspace[]> {
     return [...this.workspaces.values()].map(clone);
   }
 
-  save(workspace: Workspace): Workspace {
+  async save(workspace: Workspace): Promise<Workspace> {
     this.workspaces.set(workspace.id, clone(workspace));
     return clone(workspace);
   }
@@ -36,3 +36,4 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
 function clone(workspace: Workspace): Workspace {
   return structuredClone(workspace);
 }
+

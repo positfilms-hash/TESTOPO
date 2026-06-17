@@ -7,12 +7,12 @@ import type { TopicFilter, TopicRepository } from './topicRepository.js';
 export class InMemoryTopicRepository implements TopicRepository {
   private readonly topics = new Map<string, Topic>();
 
-  create(topic: Topic): Topic {
+  async create(topic: Topic): Promise<Topic> {
     this.topics.set(topic.id, clone(topic));
     return clone(topic);
   }
 
-  findAll(filter: TopicFilter = {}): Topic[] {
+  async findAll(filter: TopicFilter = {}): Promise<Topic[]> {
     let result = [...this.topics.values()];
     if (filter.status !== undefined) {
       result = result.filter((topic) => topic.status === filter.status);
@@ -30,12 +30,12 @@ export class InMemoryTopicRepository implements TopicRepository {
     return result.map(clone);
   }
 
-  findById(id: string): Topic | null {
+  async findById(id: string): Promise<Topic | null> {
     const topic = this.topics.get(id);
     return topic ? clone(topic) : null;
   }
 
-  save(topic: Topic): Topic {
+  async save(topic: Topic): Promise<Topic> {
     if (!this.topics.has(topic.id)) {
       throw new Error(`Cannot save unknown topic: ${topic.id}`);
     }
@@ -47,3 +47,4 @@ export class InMemoryTopicRepository implements TopicRepository {
 function clone(topic: Topic): Topic {
   return structuredClone(topic);
 }
+
