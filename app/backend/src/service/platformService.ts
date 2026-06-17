@@ -58,6 +58,18 @@ import type {
   QuestionReviewFeedback,
 } from '../models/questionReviewFeedback.js';
 import type {
+  ApplyResult,
+  ProposalDetail,
+  SyllabusIndexService,
+} from './syllabusIndexService.js';
+import type {
+  MaterialTopicSuggestion,
+  SyllabusIndexNodeProposal,
+  SyllabusIndexProposal,
+  SyllabusNodeStatus,
+} from '../models/syllabusIndex.js';
+import { SyllabusIndexError, SyllabusIndexErrorCode } from '../syllabus/syllabusIndexErrors.js';
+import type {
   GenerateTestRequest,
   GeneratedTest,
   TestGeneratorService,
@@ -89,6 +101,8 @@ export interface PlatformServiceDeps {
   review: QuestionReviewService;
   /** Resumen de feedback de revision (SPEC 018.4). Opcional. */
   feedback?: QuestionFeedbackService;
+  /** Constructor de indice de temario con IA (SPEC 019). Opcional. */
+  syllabus?: SyllabusIndexService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -292,6 +306,110 @@ export class PlatformService {
     });
   }
 
+  // --- Indice de temario con IA (SPEC 019). Solo gestion (owner/admin). -----
+
+  async proposeSyllabusIndex(
+    actor: User,
+    input: {
+      opposition_id: string;
+      material_ids?: string[];
+      only_unclassified?: boolean;
+    },
+  ): Promise<ProposalDetail> {
+    await this.requireManageOpposition(actor, input.opposition_id);
+    const syllabus = this.requireSyllabus();
+    const opposition = await this.deps.oppositionRepository.findById(
+      input.opposition_id,
+    );
+    return syllabus.proposeIndex({
+      opposition_id: input.opposition_id,
+      workspace_id: opposition?.workspace_id ?? null,
+      opposition_title: opposition?.title ?? null,
+      created_by: actor.id,
+      material_ids: input.material_ids,
+      only_unclassified: input.only_unclassified,
+    });
+  }
+
+  async listSyllabusProposals(
+    actor: User,
+    oppositionId: string,
+  ): Promise<SyllabusIndexProposal[]> {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireSyllabus().listProposals(oppositionId);
+  }
+
+  async getSyllabusProposal(
+    actor: User,
+    proposalId: string,
+  ): Promise<ProposalDetail> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().getProposalDetail(proposalId);
+  }
+
+  async editSyllabusNode(
+    actor: User,
+    proposalId: string,
+    nodeId: string,
+    changes: Parameters<SyllabusIndexService['updateNode']>[1],
+  ): Promise<SyllabusIndexNodeProposal> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().updateNode(nodeId, changes);
+  }
+
+  async addSyllabusNode(
+    actor: User,
+    proposalId: string,
+    input: Parameters<SyllabusIndexService['addNode']>[1],
+  ): Promise<SyllabusIndexNodeProposal> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().addNode(proposalId, input);
+  }
+
+  async setSyllabusNodeStatus(
+    actor: User,
+    proposalId: string,
+    nodeId: string,
+    status: SyllabusNodeStatus,
+  ): Promise<SyllabusIndexNodeProposal> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().setNodeStatus(nodeId, status);
+  }
+
+  async setSyllabusSuggestionStatus(
+    actor: User,
+    proposalId: string,
+    suggestionId: string,
+    status: MaterialTopicSuggestion['status'],
+  ): Promise<MaterialTopicSuggestion> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().setSuggestionStatus(suggestionId, status);
+  }
+
+  async approveSyllabusProposal(
+    actor: User,
+    proposalId: string,
+  ): Promise<SyllabusIndexProposal> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().approveProposal(proposalId, actor.id);
+  }
+
+  async rejectSyllabusProposal(
+    actor: User,
+    proposalId: string,
+  ): Promise<SyllabusIndexProposal> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().rejectProposal(proposalId);
+  }
+
+  async applySyllabusProposal(
+    actor: User,
+    proposalId: string,
+  ): Promise<ApplyResult> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabus().applyProposal(proposalId);
+  }
+
   // --- Estudio (miembro del workspace con acceso a la oposicion) -----------
 
   async createTest(
@@ -429,6 +547,29 @@ export class PlatformService {
   ): Promise<void> {
     const question = await this.deps.questions.getQuestion(questionId);
     await this.requireManageOpposition(actor, question?.opposition_id);
+  }
+
+  private requireSyllabus(): SyllabusIndexService {
+    if (!this.deps.syllabus) {
+      throw new SyllabusIndexError([
+        SyllabusIndexErrorCode.PROVIDER_NOT_CONFIGURED,
+      ]);
+    }
+    return this.deps.syllabus;
+  }
+
+  // Resuelve la oposicion de una propuesta de indice y exige gestionarla.
+  private async requireManageProposal(
+    actor: User,
+    proposalId: string,
+  ): Promise<void> {
+    const proposal = await this.requireSyllabus().getProposal(proposalId);
+    if (!proposal) {
+      throw new SyllabusIndexError([
+        SyllabusIndexErrorCode.PROPOSAL_NOT_FOUND,
+      ]);
+    }
+    await this.requireManageOpposition(actor, proposal.opposition_id);
   }
 
   private async requireAttemptOwner(

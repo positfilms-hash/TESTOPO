@@ -8,6 +8,7 @@ import {
   Field,
   PageHeader,
 } from '../components/ui.js';
+import { SyllabusIndexPanel } from './SyllabusIndexPanel.js';
 
 // Temario unificado (SPEC 017): el temario y el material se gestionan juntos.
 // Se selecciona un tema en el arbol y, a la derecha, se ven y suben sus
@@ -19,6 +20,7 @@ export function TopicPage() {
   const [parentId, setParentId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showSyllabus, setShowSyllabus] = useState(false);
   const [tree, setTree] = useState<TopicTreeNode[]>([]);
   const [allTopics, setAllTopics] = useState<Topic[]>([]);
 
@@ -84,8 +86,21 @@ export function TopicPage() {
       <PageHeader
         title="Temario"
         subtitle="Organiza temas y su material en un mismo lugar."
-        action={<Button onClick={() => setAdding((v) => !v)}>Anadir tema</Button>}
+        action={
+          <div className="row">
+            <Button variant="secondary" onClick={() => setShowSyllabus((v) => !v)}>
+              Crear indice con IA
+            </Button>
+            <Button onClick={() => setAdding((v) => !v)}>Anadir tema</Button>
+          </div>
+        }
       />
+
+      {showSyllabus && (
+        <div style={{ marginBottom: 16 }}>
+          <SyllabusIndexPanel onClose={() => setShowSyllabus(false)} />
+        </div>
+      )}
 
       {adding && (
         <div className="card" style={{ maxWidth: 520 }}>

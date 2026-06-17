@@ -141,3 +141,15 @@ export * from './generation/anthropicQuestionGenerationProvider.js';
 export * from './generation/openAiQuestionGenerationProvider.js';
 export * from './generation/createQuestionGenerationProvider.js';
 export * from './service/questionFeedbackService.js';
+
+// SPEC 019 - AI Syllabus Index Builder
+export * from './models/syllabusIndex.js';
+export * from './syllabus/syllabusIndexErrors.js';
+export * from './generation/syllabusIndexConfig.js';
+export * from './generation/syllabusIndexTypes.js';
+export * from './generation/mockSyllabusIndexProvider.js';
+export * from './generation/openAiSyllabusIndexProvider.js';
+export * from './generation/createSyllabusIndexProvider.js';
+export * from './repository/syllabusIndexRepository.js';
+export * from './repository/inMemorySyllabusIndexRepository.js';
+export * from './service/syllabusIndexService.js';
