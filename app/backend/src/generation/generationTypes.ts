@@ -49,6 +49,14 @@ export interface GeneratedCandidate {
   options: GeneratedOption[];
   explanation: string;
   difficulty: Difficulty;
+  /**
+   * Fragmento exacto del material en el que se basa la pregunta (SPEC 018.4,
+   * 9-11, regla 5). Lo aporta la IA real; el servicio lo conserva en la fuente.
+   * Opcional: el mock y el modo manual no lo rellenan.
+   */
+  source_excerpt?: string | null;
+  /** Referencia exacta de la fuente indicada por la IA (articulo, apartado…). */
+  source_reference?: string | null;
 }
 
 // Proveedor desacoplado de generacion (SPEC 004, 10; SPEC 018.4, 8). Permite

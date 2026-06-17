@@ -24,6 +24,7 @@ import { normalizeOptionText } from '../validation/normalizeOptionText.js';
 import { QuestionService } from './questionService.js';
 import type {
   GenerateQuestionsRequest,
+  GeneratedCandidate,
   QuestionGenerationProvider,
 } from '../generation/generationTypes.js';
 import {
@@ -196,7 +197,7 @@ export class QuestionGenerationService {
     const errors: QuestionGenerationErrorCode[] = [];
 
     for (const candidate of candidates) {
-      const source = this.buildSource(request, material);
+      const source = this.buildSource(request, material, candidate);
 
       const candidateErrors = validateGeneratedCandidate(candidate, source);
       if (candidateErrors.length > 0) {
@@ -367,21 +368,30 @@ export class QuestionGenerationService {
 
   // Construye la fuente trazable de la pregunta. Si hay material, apunta a el;
   // si es texto manual sin material, se marca como fuente manual/temporal.
+  // Si la IA aporta fragmento/referencia exactos (SPEC 018.4, 9-11), se
+  // conservan; si no, se cae al comportamiento de SPEC 004.
   private buildSource(
     request: GenerateQuestionsRequest,
     material: Material | null,
+    candidate?: GeneratedCandidate,
   ): Source {
+    const candidateReference = isNonEmptyString(candidate?.source_reference)
+      ? candidate.source_reference
+      : null;
+    const candidateExcerpt = isNonEmptyString(candidate?.source_excerpt)
+      ? candidate.source_excerpt
+      : null;
+
     if (material) {
+      const fallbackExcerpt =
+        request.mode === 'from_material_excerpt' ? (request.excerpt ?? null) : null;
       return {
         id: this.generateId(),
         material_id: material.id,
         title: material.title,
         type: material.type,
-        reference: request.reference ?? '',
-        excerpt:
-          request.mode === 'from_material_excerpt'
-            ? (request.excerpt ?? null)
-            : null,
+        reference: candidateReference ?? request.reference ?? '',
+        excerpt: candidateExcerpt ?? fallbackExcerpt,
         status: material.status,
       };
     }
@@ -390,8 +400,10 @@ export class QuestionGenerationService {
       material_id: null,
       title: 'Material manual (temporal)',
       type: 'other',
-      reference: request.reference ?? '',
-      excerpt: request.manual_text ? request.manual_text.slice(0, 280) : null,
+      reference: candidateReference ?? request.reference ?? '',
+      excerpt:
+        candidateExcerpt ??
+        (request.manual_text ? request.manual_text.slice(0, 280) : null),
       status: 'active',
     };
   }
