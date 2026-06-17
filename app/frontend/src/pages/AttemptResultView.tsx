@@ -1,12 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/StoreContext.js';
-import { Button, PageHeader } from '../components/ui.js';
-
-const DIFFICULTY_LABELS: Record<string, string> = {
-  easy: 'Facil',
-  medium: 'Media',
-  hard: 'Dificil',
-};
+import { Button, PageHeader, difficultyLabel } from '../components/ui.js';
 
 // Resultado de un intento + revision con explicacion y fuente (SPEC 008/013).
 // La revision solo es visible despues de enviar el test (lo garantiza el
@@ -84,7 +78,7 @@ export function AttemptResultView({
               {q.topic && <span>Tema: {q.topic} · </span>}
               {q.difficulty && (
                 <span>
-                  Dificultad: {DIFFICULTY_LABELS[q.difficulty] ?? q.difficulty}
+                  Dificultad: {difficultyLabel(q.difficulty)}
                   {q.source_reference ? ' · ' : ''}
                 </span>
               )}

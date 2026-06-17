@@ -6,7 +6,14 @@ import {
   type RequestedDifficulty,
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
-import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  PageHeader,
+  difficultyLabel,
+} from '../components/ui.js';
 
 type View =
   | { kind: 'list' }
@@ -78,7 +85,8 @@ function QuestionsList({
               <div style={{ maxWidth: '70%' }}>
                 <div>{q.statement}</div>
                 <div className="muted small">
-                  {q.topic ?? 'sin tema'} · {q.difficulty ?? 'sin dificultad'} ·{' '}
+                  {q.topic ?? 'sin tema'} ·{' '}
+                  {q.difficulty ? difficultyLabel(q.difficulty) : 'sin dificultad'} ·{' '}
                   {q.source?.title ?? 'sin fuente'}
                 </div>
               </div>
@@ -161,7 +169,8 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="row spread" style={{ marginBottom: 8 }}>
           <Badge status={question.status} />
           <span className="muted small">
-            {question.topic ?? 'sin tema'} · {question.difficulty ?? 'sin dificultad'}
+            {question.topic ?? 'sin tema'} ·{' '}
+            {question.difficulty ? difficultyLabel(question.difficulty) : 'sin dificultad'}
           </span>
         </div>
         <h3 style={{ marginTop: 0 }}>{question.statement}</h3>
