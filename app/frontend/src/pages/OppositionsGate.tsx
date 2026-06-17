@@ -6,8 +6,9 @@ export function OppositionsGate() {
   const {
     store,
     currentUser,
+    currentWorkspace,
     selectOpposition,
-    logout,
+    clearWorkspace,
     refresh,
     version,
   } = useStore();
@@ -20,7 +21,9 @@ export function OppositionsGate() {
   // `version` fuerza recalcular tras crear una oposicion.
   void version;
   const oppositions = currentUser
-    ? store.oppositions.listForUser(currentUser)
+    ? store.oppositions
+        .listForUser(currentUser)
+        .filter((o) => o.workspace_id === currentWorkspace?.id)
     : [];
 
   const create = () => {
@@ -28,6 +31,7 @@ export function OppositionsGate() {
     setError(null);
     try {
       const opposition = store.oppositions.createOpposition(currentUser, {
+        workspace_id: currentWorkspace?.id,
         title,
         slug,
       });
@@ -45,10 +49,10 @@ export function OppositionsGate() {
     <div style={{ maxWidth: 640, margin: '60px auto' }}>
       <PageHeader
         title="Mis oposiciones"
-        subtitle={`Hola, ${currentUser?.name}. Elige una oposicion para entrar.`}
+        subtitle={`Espacio: ${currentWorkspace?.name}. Elige una oposicion para entrar.`}
         action={
-          <Button variant="secondary" onClick={logout}>
-            Salir
+          <Button variant="secondary" onClick={clearWorkspace}>
+            Cambiar espacio
           </Button>
         }
       />

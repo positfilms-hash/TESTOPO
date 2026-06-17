@@ -251,6 +251,12 @@ export class TestAttemptService {
     });
   }
 
+  // Devuelve el intento crudo (o null). Util para comprobar propiedad (SPEC 010,
+  // 13.6: el estudiante solo ve sus propios intentos).
+  getAttempt(attemptId: string): TestAttempt | null {
+    return this.attempts.findById(attemptId);
+  }
+
   // 10.6 Consultar resultado.
   getResult(attemptId: string): AttemptResult {
     const attempt = this.requireAttempt(attemptId);

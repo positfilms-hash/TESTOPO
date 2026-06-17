@@ -104,3 +104,13 @@ export * from './repository/oppositionAccessRepository.js';
 export * from './repository/inMemoryOppositionAccessRepository.js';
 export * from './service/userService.js';
 export * from './service/oppositionService.js';
+
+// SPEC 011 - Workspaces & Account Plans
+export * from './models/workspace.js';
+export * from './models/workspaceMember.js';
+export * from './repository/workspaceRepository.js';
+export * from './repository/inMemoryWorkspaceRepository.js';
+export * from './repository/workspaceMemberRepository.js';
+export * from './repository/inMemoryWorkspaceMemberRepository.js';
+export * from './service/workspaceService.js';
+export * from './service/platformService.js';

@@ -21,6 +21,10 @@ import {
   InMemoryOppositionRepository,
   InMemoryOppositionAccessRepository,
   OppositionService,
+  InMemoryWorkspaceRepository,
+  InMemoryWorkspaceMemberRepository,
+  WorkspaceService,
+  PlatformService,
   type PracticeTest,
   type Opposition,
 } from '@backend';
@@ -34,6 +38,7 @@ export const SEED_STUDENT = {
 
 export interface AppStore {
   users: UserService;
+  workspaces: WorkspaceService;
   oppositions: OppositionService;
   materials: MaterialService;
   topics: TopicService;
@@ -43,6 +48,8 @@ export interface AppStore {
   review: QuestionReviewService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
+  /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
+  platform: PlatformService;
   /** Tests creados en esta sesion (registro de conveniencia para la UI). */
   createdTests: PracticeTest[];
 }
@@ -56,9 +63,16 @@ export function createAppStore(seed = true): AppStore {
   const userRepo = new InMemoryUserRepository();
   const oppositionRepo = new InMemoryOppositionRepository();
   const accessRepo = new InMemoryOppositionAccessRepository();
+  const workspaceRepo = new InMemoryWorkspaceRepository();
+  const workspaceMemberRepo = new InMemoryWorkspaceMemberRepository();
 
   const users = new UserService(userRepo);
-  const oppositions = new OppositionService(oppositionRepo, accessRepo);
+  const workspaces = new WorkspaceService(workspaceRepo, workspaceMemberRepo);
+  const oppositions = new OppositionService(
+    oppositionRepo,
+    accessRepo,
+    workspaceMemberRepo,
+  );
   const materials = new MaterialService(materialRepo);
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -99,9 +113,22 @@ export function createAppStore(seed = true): AppStore {
     questionService: questions,
     testGenerator,
   });
+  const platform = new PlatformService({
+    oppositionRepository: oppositionRepo,
+    workspaceMembers: workspaceMemberRepo,
+    oppositions,
+    materials,
+    topics,
+    questions,
+    generation,
+    review,
+    testGenerator,
+    attempts,
+  });
 
   const store: AppStore = {
     users,
+    workspaces,
     oppositions,
     materials,
     topics,
@@ -111,6 +138,7 @@ export function createAppStore(seed = true): AppStore {
     review,
     testGenerator,
     attempts,
+    platform,
     createdTests: [],
   };
 
@@ -136,7 +164,19 @@ function seedFixtures(store: AppStore): Opposition {
     role: 'student',
   });
 
+  // Workspace por defecto (SPEC 011): el admin es owner; el estudiante, miembro.
+  const workspace = store.workspaces.createOrganizationWorkspace(admin, {
+    name: 'Workspace MVP',
+    slug: 'workspace-mvp',
+  });
+  store.workspaces.addMember(admin, {
+    workspace_id: workspace.id,
+    user_id: student.id,
+    role: 'student',
+  });
+
   const opposition = store.oppositions.createOpposition(admin, {
+    workspace_id: workspace.id,
     title: 'Oposicion MVP',
     slug: 'oposicion-mvp',
     description: 'Oposicion de ejemplo para la demo.',
@@ -183,13 +223,15 @@ function seedFixtures(store: AppStore): Opposition {
     store.questions.createQuestion({
       opposition_id: oppositionId,
       statement: `Pregunta ficticia ${n}: cual es la afirmacion correcta sobre ${topicText}?`,
+      // Textos neutros: el enunciado de la opcion NO debe revelar cual es la
+      // correcta (la respuesta solo se muestra tras enviar el test).
       options: [
-        { text: `Afirmacion correcta ${n}`, is_correct: true },
-        { text: `Afirmacion incorrecta ${n}-A`, is_correct: false },
-        { text: `Afirmacion incorrecta ${n}-B`, is_correct: false },
-        { text: `Afirmacion incorrecta ${n}-C`, is_correct: false },
+        { text: `${topicText}: opcion A (pregunta ${n})`, is_correct: true },
+        { text: `${topicText}: opcion B (pregunta ${n})`, is_correct: false },
+        { text: `${topicText}: opcion C (pregunta ${n})`, is_correct: false },
+        { text: `${topicText}: opcion D (pregunta ${n})`, is_correct: false },
       ],
-      explanation: `La afirmacion correcta ${n} se deduce del material ficticio sobre ${topicText}.`,
+      explanation: `La opcion A se deduce del material ficticio sobre ${topicText}.`,
       source: {
         id: `src-${n}`,
         material_id: material.id,

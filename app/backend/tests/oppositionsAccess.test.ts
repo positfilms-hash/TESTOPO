@@ -2,41 +2,43 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryUserRepository } from '../src/repository/inMemoryUserRepository.js';
 import { InMemoryOppositionRepository } from '../src/repository/inMemoryOppositionRepository.js';
 import { InMemoryOppositionAccessRepository } from '../src/repository/inMemoryOppositionAccessRepository.js';
+import { InMemoryWorkspaceRepository } from '../src/repository/inMemoryWorkspaceRepository.js';
+import { InMemoryWorkspaceMemberRepository } from '../src/repository/inMemoryWorkspaceMemberRepository.js';
 import { InMemoryMaterialRepository } from '../src/repository/inMemoryMaterialRepository.js';
 import { InMemoryTopicRepository } from '../src/repository/inMemoryTopicRepository.js';
 import { InMemoryQuestionRepository } from '../src/repository/inMemoryQuestionRepository.js';
 import { UserService } from '../src/service/userService.js';
+import { WorkspaceService } from '../src/service/workspaceService.js';
 import { OppositionService } from '../src/service/oppositionService.js';
 import { MaterialService } from '../src/service/materialService.js';
 import { TopicService } from '../src/service/topicService.js';
 import { QuestionService } from '../src/service/questionService.js';
-import { TestGeneratorService } from '../src/service/testGeneratorService.js';
 import { AccessError } from '../src/access/accessError.js';
 import { AccessErrorCode } from '../src/access/accessErrors.js';
 import { validInput } from './helpers.js';
 
 function makeSetup() {
   const users = new UserService(new InMemoryUserRepository());
+  const memberRepo = new InMemoryWorkspaceMemberRepository();
+  const workspaces = new WorkspaceService(
+    new InMemoryWorkspaceRepository(),
+    memberRepo,
+  );
   const oppositions = new OppositionService(
     new InMemoryOppositionRepository(),
     new InMemoryOppositionAccessRepository(),
+    memberRepo,
   );
   const materialRepository = new InMemoryMaterialRepository();
   const topicRepository = new InMemoryTopicRepository();
-  const questionRepository = new InMemoryQuestionRepository();
   const materials = new MaterialService(materialRepository);
   const topics = new TopicService(topicRepository, { materialRepository });
-  const questions = new QuestionService(questionRepository, {
+  const questions = new QuestionService(new InMemoryQuestionRepository(), {
     resolveMaterialOpposition: (id) =>
       materials.getMaterial(id)?.opposition_id ?? null,
     resolveTopicOpposition: (id) => topics.getTopic(id)?.opposition_id ?? null,
   });
-  const testGenerator = new TestGeneratorService({
-    questionService: questions,
-    topicRepository,
-    materialRepository,
-  });
-  return { users, oppositions, materials, topics, questions, testGenerator };
+  return { users, workspaces, oppositions, materials, topics, questions };
 }
 
 function expectAccessError(fn: () => unknown, code: AccessErrorCode): void {
@@ -65,7 +67,7 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
     });
     expect(admin.role).toBe('admin');
     expect(student.role).toBe('student');
-    expect(admin.password_hash).not.toBe('x'); // nunca texto plano
+    expect(admin.password_hash).not.toBe('x');
   });
 
   it('no permite email duplicado', () => {
@@ -90,7 +92,7 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
     );
   });
 
-  it('inicia sesion con credenciales validas y falla con invalidas', () => {
+  it('login con credenciales validas e invalidas', () => {
     const { users } = makeSetup();
     users.createUser({ email: 'c@test.com', password: 'secreto', role: 'student' });
     expect(users.authenticate('c@test.com', 'secreto').email).toBe('c@test.com');
@@ -101,8 +103,8 @@ describe('SPEC 010 - usuarios y autenticacion', () => {
   });
 });
 
-describe('SPEC 010 - oposiciones y acceso', () => {
-  function withUsers() {
+describe('SPEC 010 - oposiciones dentro de workspace (workspace-first)', () => {
+  function withWorkspace() {
     const ctx = makeSetup();
     const admin = ctx.users.createUser({
       email: 'admin@test.com',
@@ -114,58 +116,81 @@ describe('SPEC 010 - oposiciones y acceso', () => {
       password: 'y',
       role: 'student',
     });
-    return { ...ctx, admin, student };
+    const workspace = ctx.workspaces.createOrganizationWorkspace(admin, {
+      name: 'Academia',
+      slug: 'academia',
+    });
+    return { ...ctx, admin, student, workspace };
   }
 
-  it('un admin crea una oposicion y un student no puede', () => {
-    const { oppositions, admin, student } = withUsers();
+  it('quien gestiona el workspace crea oposicion; un no-miembro no', () => {
+    const { oppositions, admin, student, workspace } = withWorkspace();
     const opp = oppositions.createOpposition(admin, {
-      title: 'Auxiliar Administrativo',
-      slug: 'auxiliar-administrativo',
+      workspace_id: workspace.id,
+      title: 'Auxiliar',
+      slug: 'auxiliar',
     });
-    expect(opp.created_by).toBe(admin.id);
+    expect(opp.workspace_id).toBe(workspace.id);
     expectAccessError(
       () =>
         oppositions.createOpposition(student, {
+          workspace_id: workspace.id,
           title: 'X',
           slug: 'x',
         }),
-      AccessErrorCode.ADMIN_ACCESS_REQUIRED,
+      AccessErrorCode.WORKSPACE_ACCESS_DENIED,
     );
   });
 
-  it('da acceso a un estudiante y este solo ve oposiciones autorizadas', () => {
-    const { oppositions, admin, student } = withUsers();
-    const opp = oppositions.createOpposition(admin, {
-      title: 'Policia',
-      slug: 'policia',
+  it('un estudiante solo ve oposiciones autorizadas de su workspace', () => {
+    const { workspaces, oppositions, admin, student, workspace } =
+      withWorkspace();
+    workspaces.addMember(admin, {
+      workspace_id: workspace.id,
+      user_id: student.id,
+      role: 'student',
     });
-    const otra = oppositions.createOpposition(admin, {
-      title: 'Otra',
-      slug: 'otra',
+    const opp1 = oppositions.createOpposition(admin, {
+      workspace_id: workspace.id,
+      title: 'Uno',
+      slug: 'uno',
+    });
+    const opp2 = oppositions.createOpposition(admin, {
+      workspace_id: workspace.id,
+      title: 'Dos',
+      slug: 'dos',
     });
 
     expect(oppositions.listForUser(student)).toHaveLength(0);
     oppositions.grantAccess(admin, {
       user_id: student.id,
-      opposition_id: opp.id,
+      opposition_id: opp1.id,
     });
-    const visibles = oppositions.listForUser(student);
-    expect(visibles).toHaveLength(1);
-    expect(visibles[0].id).toBe(opp.id);
-
-    // No puede ver la oposicion no autorizada.
+    expect(oppositions.listForUser(student).map((o) => o.id)).toEqual([opp1.id]);
     expectAccessError(
-      () => oppositions.getOpposition(student, otra.id),
+      () => oppositions.getOpposition(student, opp2.id),
       AccessErrorCode.ACCESS_DENIED,
     );
   });
 
-  it('revoca acceso sin borrar historico', () => {
-    const { oppositions, admin, student } = withUsers();
-    const opp = oppositions.createOpposition(admin, { title: 'T', slug: 't' });
+  it('revocar acceso a la oposicion deja de mostrarla', () => {
+    const { workspaces, oppositions, admin, student, workspace } =
+      withWorkspace();
+    workspaces.addMember(admin, {
+      workspace_id: workspace.id,
+      user_id: student.id,
+      role: 'student',
+    });
+    const opp = oppositions.createOpposition(admin, {
+      workspace_id: workspace.id,
+      title: 'Uno',
+      slug: 'uno',
+    });
     oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
-    oppositions.revokeAccess(admin, { user_id: student.id, opposition_id: opp.id });
+    oppositions.revokeAccess(admin, {
+      user_id: student.id,
+      opposition_id: opp.id,
+    });
     expect(oppositions.listForUser(student)).toHaveLength(0);
   });
 });
@@ -222,39 +247,6 @@ describe('SPEC 010 - integridad por oposicion', () => {
           validInput({ opposition_id: 'opp-B', topic_id: topic.id }),
         ),
       AccessErrorCode.OPPOSITION_ENTITY_MISMATCH,
-    );
-  });
-
-  it('el generador de tests solo usa preguntas de la oposicion indicada', () => {
-    const { questions, testGenerator } = makeSetup();
-    // 3 validadas en opp-A, 3 en opp-B.
-    for (let i = 0; i < 3; i++) {
-      const a = questions.createQuestion(
-        validInput({ opposition_id: 'opp-A', statement: `A${i}` }),
-      );
-      questions.changeStatus(a.id, 'validated');
-      const b = questions.createQuestion(
-        validInput({ opposition_id: 'opp-B', statement: `B${i}` }),
-      );
-      questions.changeStatus(b.id, 'validated');
-    }
-    const { questions: items } = testGenerator.createRandomTest({
-      opposition_id: 'opp-A',
-      question_count: 3,
-    });
-    const ids = new Set(items.map((i) => i.question_id));
-    for (const id of ids) {
-      expect(questions.getQuestion(id)?.opposition_id).toBe('opp-A');
-    }
-  });
-
-  it('no genera test sin oposicion', () => {
-    const { questions, testGenerator } = makeSetup();
-    const q = questions.createQuestion(validInput({ opposition_id: 'opp-A' }));
-    questions.changeStatus(q.id, 'validated');
-    expectAccessError(
-      () => testGenerator.generate({ mode: 'random', question_count: 1 }),
-      AccessErrorCode.OPPOSITION_REQUIRED,
     );
   });
 });

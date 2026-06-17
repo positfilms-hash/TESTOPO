@@ -31,7 +31,7 @@ export function LoginPage() {
         <Field label="Email">
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" />
         </Field>
-        <Field label="Contrasena">
+        <Field label="Contraseña">
           <input
             type="password"
             value={password}

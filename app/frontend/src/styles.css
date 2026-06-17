@@ -255,3 +255,25 @@ body {
 .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 .stat { font-size: 1.8rem; font-weight: 700; color: var(--primary); }
+
+/* Movil: la barra lateral pasa arriba a ancho completo (no fuerza el layout). */
+@media (max-width: 640px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
+  .main {
+    padding: 20px 16px;
+    max-width: 100%;
+  }
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,7 @@
 
 import type { User } from '../models/user.js';
 import type { OppositionAccessRepository } from '../repository/oppositionAccessRepository.js';
+import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRepository.js';
 import { AccessError } from './accessError.js';
 import { AccessErrorCode } from './accessErrors.js';
 
@@ -90,4 +91,53 @@ export function requireStudentAccess(
     return current;
   }
   throw new AccessError([AccessErrorCode.STUDENT_ACCESS_REQUIRED]);
+}
+
+// --- Workspaces (SPEC 011) -------------------------------------------------
+
+export function isActiveWorkspaceMember(
+  memberRepo: WorkspaceMemberRepository,
+  userId: string,
+  workspaceId: string,
+): boolean {
+  const member = memberRepo.find(workspaceId, userId);
+  return member !== null && member.status === 'active';
+}
+
+// owner/admin activos pueden gestionar el workspace y crear oposiciones.
+export function canManageWorkspace(
+  memberRepo: WorkspaceMemberRepository,
+  user: User,
+  workspaceId: string,
+): boolean {
+  const member = memberRepo.find(workspaceId, user.id);
+  return (
+    member !== null &&
+    member.status === 'active' &&
+    (member.role === 'owner' || member.role === 'admin')
+  );
+}
+
+export function requireWorkspaceMember(
+  memberRepo: WorkspaceMemberRepository,
+  user: User | null | undefined,
+  workspaceId: string,
+): User {
+  const current = requireUser(user);
+  if (!isActiveWorkspaceMember(memberRepo, current.id, workspaceId)) {
+    throw new AccessError([AccessErrorCode.WORKSPACE_ACCESS_DENIED]);
+  }
+  return current;
+}
+
+export function requireManageWorkspace(
+  memberRepo: WorkspaceMemberRepository,
+  user: User | null | undefined,
+  workspaceId: string,
+): User {
+  const current = requireUser(user);
+  if (!canManageWorkspace(memberRepo, current, workspaceId)) {
+    throw new AccessError([AccessErrorCode.WORKSPACE_ACCESS_DENIED]);
+  }
+  return current;
 }

@@ -15,8 +15,8 @@ const TYPE_LABELS: Record<MaterialType, string> = {
 };
 
 export function MaterialPage() {
-  const { store, refresh, currentUser, currentOpposition } = useStore();
-  const isAdmin = currentUser?.role === 'admin';
+  const { store, refresh, currentOpposition, isWorkspaceManager } = useStore();
+  const isAdmin = isWorkspaceManager;
   const [view, setView] = useState<View>({ kind: 'list' });
 
   if (view.kind === 'new') {
@@ -89,7 +89,7 @@ function MaterialForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const { store, currentOpposition } = useStore();
+  const { store, currentUser, currentOpposition } = useStore();
   const [title, setTitle] = useState('');
   const [type, setType] = useState<MaterialType>('syllabus');
   const [reference, setReference] = useState('');
@@ -99,8 +99,9 @@ function MaterialForm({
 
   const submit = () => {
     setError(null);
+    if (!currentUser) return;
     try {
-      store.materials.createMaterial({
+      store.platform.createMaterial(currentUser, {
         opposition_id: currentOpposition?.id,
         title,
         type,
@@ -153,8 +154,8 @@ function MaterialForm({
 }
 
 function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { store, refresh, currentUser } = useStore();
-  const isAdmin = currentUser?.role === 'admin';
+  const { store, refresh, currentUser, isWorkspaceManager } = useStore();
+  const isAdmin = isWorkspaceManager;
   const material = store.materials.getMaterial(id);
   const [title, setTitle] = useState(material?.title ?? '');
   const [reference, setReference] = useState(material?.reference ?? '');
@@ -165,14 +166,19 @@ function MaterialDetail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   const save = () => {
-    store.materials.editMaterial(id, { title, reference: reference || null });
+    if (!currentUser) return;
+    store.platform.editMaterial(currentUser, id, {
+      title,
+      reference: reference || null,
+    });
     setNotice('Cambios guardados.');
     refresh();
   };
 
   const markObsolete = () => {
-    if (!window.confirm('Marcar este material como obsoleto?')) return;
-    store.materials.markObsolete(id);
+    if (!currentUser) return;
+    if (!window.confirm('¿Marcar este material como obsoleto?')) return;
+    store.platform.markMaterialObsolete(currentUser, id);
     refresh();
     onBack();
   };

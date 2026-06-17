@@ -54,7 +54,8 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
   const createTest = () => {
     setNotice(null);
     try {
-      const { test } = store.testGenerator.generate({
+      if (!currentUser) return;
+      const { test } = store.platform.createTest(currentUser, {
         mode,
         opposition_id: currentOpposition?.id,
         question_count: count,
@@ -74,7 +75,8 @@ function TestsList({ onStart }: { onStart: (attemptId: string) => void }) {
   };
 
   const start = (testId: string) => {
-    const attempt = store.attempts.startAttempt(testId, currentUser?.id ?? null);
+    if (!currentUser) return;
+    const attempt = store.platform.startAttempt(currentUser, testId);
     refresh();
     onStart(attempt.id);
   };
@@ -153,13 +155,17 @@ function TakeTest({
   attemptId: string;
   onSubmitted: () => void;
 }) {
-  const { store, refresh } = useStore();
-  const view = useMemo(() => store.attempts.getTestForTaking(attemptId), [store, attemptId]);
+  const { store, refresh, currentUser } = useStore();
+  const view = useMemo(
+    () => store.platform.getTestForTaking(currentUser!, attemptId),
+    [store, currentUser, attemptId],
+  );
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const select = (testQuestionId: string, optionId: string) => {
+    if (!currentUser) return;
     setAnswers((prev) => ({ ...prev, [testQuestionId]: optionId }));
-    store.attempts.saveAnswer({
+    store.platform.saveAnswer(currentUser, {
       attempt_id: attemptId,
       test_question_id: testQuestionId,
       selected_option_id: optionId,
@@ -167,8 +173,9 @@ function TakeTest({
   };
 
   const submit = () => {
-    if (!window.confirm('Enviar el test? No podras cambiar las respuestas.')) return;
-    store.attempts.submitAttempt(attemptId);
+    if (!currentUser) return;
+    if (!window.confirm('¿Enviar el test? No podras cambiar las respuestas.')) return;
+    store.platform.submitAttempt(currentUser, attemptId);
     refresh();
     onSubmitted();
   };
@@ -209,12 +216,12 @@ function TakeTest({
 }
 
 function ResultView({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
-  const { store } = useStore();
-  const result = store.attempts.getResult(attemptId);
+  const { store, currentUser } = useStore();
+  const result = store.platform.getResult(currentUser!, attemptId);
   const [showReview, setShowReview] = useState(false);
   const review = useMemo(
-    () => (showReview ? store.attempts.getReview(attemptId) : null),
-    [showReview, store, attemptId],
+    () => (showReview ? store.platform.getReview(currentUser!, attemptId) : null),
+    [showReview, store, currentUser, attemptId],
   );
 
   return (
