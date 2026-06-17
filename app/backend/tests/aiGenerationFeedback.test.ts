@@ -444,6 +444,8 @@ describe('SPEC 018.4 - proveedor configurable', () => {
                       ],
                       explanation: 'Porque A.',
                       difficulty: 'medium',
+                      source_excerpt: 'Fragmento exacto citado por la IA.',
+                      source_reference: 'Articulo 1.2',
                     },
                   ],
                 }),
@@ -480,6 +482,37 @@ describe('SPEC 018.4 - proveedor configurable', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0].statement).toBe('Pregunta IA ficticia');
     expect(candidates[0].options.filter((o) => o.is_correct)).toHaveLength(1);
+    expect(candidates[0].source_excerpt).toBe('Fragmento exacto citado por la IA.');
+    expect(candidates[0].source_reference).toBe('Articulo 1.2');
     expect(capturedBody).toContain('ambiguous_statement');
+    expect(capturedBody).toContain('source_excerpt');
+  });
+
+  it('conserva el fragmento/referencia de la IA en la fuente de la pregunta', async () => {
+    const s = makeSetup();
+    const material = await materialWithText(s.materials);
+    const topic = await s.topics.createTopic({
+      opposition_id: TEST_OPPOSITION_ID,
+      title: 'Tema 1',
+    });
+    const provider = stubProvider([
+      goodCandidate({
+        source_excerpt: 'Fragmento exacto usado por la IA',
+        source_reference: 'Tema 1, apartado 3',
+      }),
+    ]);
+
+    const { questions: created } = await s
+      .makeGeneration(provider)
+      .generateFromMaterial({
+        material_id: material.id,
+        topic_id: topic.id,
+        difficulty: 'easy',
+        question_count: 1,
+      });
+
+    expect(created).toHaveLength(1);
+    expect(created[0].source?.excerpt).toBe('Fragmento exacto usado por la IA');
+    expect(created[0].source?.reference).toBe('Tema 1, apartado 3');
   });
 });

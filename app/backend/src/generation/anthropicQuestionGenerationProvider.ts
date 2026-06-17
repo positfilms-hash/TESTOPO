@@ -59,8 +59,18 @@ const OUTPUT_SCHEMA = {
           },
           explanation: { type: 'string' },
           difficulty: { type: 'string', enum: [...DIFFICULTIES] },
+          // Fuente exacta usada (SPEC 018.4, regla 5): fragmento + referencia.
+          source_excerpt: { type: 'string' },
+          source_reference: { type: 'string' },
         },
-        required: ['statement', 'options', 'explanation', 'difficulty'],
+        required: [
+          'statement',
+          'options',
+          'explanation',
+          'difficulty',
+          'source_excerpt',
+          'source_reference',
+        ],
       },
     },
   },
@@ -184,7 +194,16 @@ function toCandidate(raw: unknown): GeneratedCandidate | null {
   const options = optionsRaw
     .filter((o): o is Record<string, unknown> => typeof o === 'object' && o !== null)
     .map((o) => ({ text: String(o.text ?? ''), is_correct: o.is_correct === true }));
-  return { statement, options, explanation, difficulty };
+  return {
+    statement,
+    options,
+    explanation,
+    difficulty,
+    source_excerpt: isNonEmptyString(obj.source_excerpt) ? obj.source_excerpt : null,
+    source_reference: isNonEmptyString(obj.source_reference)
+      ? obj.source_reference
+      : null,
+  };
 }
 
 function buildSystemPrompt(): string {
@@ -197,8 +216,10 @@ function buildSystemPrompt(): string {
     '3. Cada pregunta debe tener una unica respuesta correcta.',
     '4. Cada pregunta debe incluir explicacion.',
     '5. No generes preguntas ambiguas ni de opinion.',
-    '6. No marques ninguna pregunta como validada.',
-    '7. Si no hay suficiente material, devuelve menos preguntas.',
+    '6. Para cada pregunta indica en source_excerpt el fragmento exacto del',
+    '   material usado y en source_reference su referencia (articulo, apartado).',
+    '7. No marques ninguna pregunta como validada.',
+    '8. Si no hay suficiente material, devuelve menos preguntas.',
     'Devuelve unicamente el JSON solicitado.',
   ].join('\n');
 }
