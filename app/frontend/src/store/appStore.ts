@@ -23,6 +23,8 @@ import {
   QuestionReviewService,
   InMemoryQuestionReviewFeedbackRepository,
   QuestionFeedbackService,
+  InMemorySyllabusIndexRepository,
+  SyllabusIndexService,
   InMemoryTestRepository,
   InMemoryTestQuestionRepository,
   TestGeneratorService,
@@ -62,6 +64,8 @@ export interface AppStore {
   review: QuestionReviewService;
   /** Resumen de feedback de revision (SPEC 018.4). */
   feedback: QuestionFeedbackService;
+  /** Indice de temario con IA (SPEC 019). */
+  syllabus: SyllabusIndexService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -153,6 +157,13 @@ export function createAppStore(seed = true): AppStore {
     topicRepository: topicRepo,
     feedbackRepository: feedbackRepo,
   });
+  // Indice de temario con IA (SPEC 019): proveedor mock en el navegador.
+  const syllabus = new SyllabusIndexService({
+    materialRepository: materialRepo,
+    topicService: topics,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    repository: new InMemorySyllabusIndexRepository(),
+  });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
     topicRepository: topicRepo,
@@ -178,6 +189,7 @@ export function createAppStore(seed = true): AppStore {
     generation,
     review,
     feedback,
+    syllabus,
     testGenerator,
     attempts,
   });
@@ -196,6 +208,7 @@ export function createAppStore(seed = true): AppStore {
     validation,
     review,
     feedback,
+    syllabus,
     testGenerator,
     attempts,
     platform,
