@@ -15,6 +15,10 @@ import {
   InMemoryMaterialRepository,
   MaterialService,
   PdfMaterialService,
+  MaterialImportService,
+  FflateZipReader,
+  InMemoryMaterialImportBatchRepository,
+  InMemoryMaterialImportItemRepository,
   NaivePdfTextExtractor,
   InMemoryFileStorage,
   InMemoryTopicRepository,
@@ -59,6 +63,17 @@ function makeSetup() {
     extractor: new NaivePdfTextExtractor(),
   });
   const topics = new TopicService(topicRepo, { materialRepository: materialRepo });
+  const materialImport = new MaterialImportService({
+    materials: materialRepo,
+    topics,
+    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+    oppositions: oppositionRepo,
+    storage: new InMemoryFileStorage(),
+    extractor: new NaivePdfTextExtractor(),
+    zipReader: new FflateZipReader(),
+    batches: new InMemoryMaterialImportBatchRepository(),
+    items: new InMemoryMaterialImportItemRepository(),
+  });
   const questions = new QuestionService(new InMemoryQuestionRepository(), {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
     resolveTopicStatus: (id) => topics.getTopic(id)?.status ?? null,
@@ -103,6 +118,7 @@ function makeSetup() {
     oppositions,
     materials,
     pdfMaterials,
+    materialImport,
     topics,
     questions,
     generation,

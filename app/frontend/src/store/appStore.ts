@@ -6,6 +6,10 @@ import {
   InMemoryMaterialRepository,
   MaterialService,
   PdfMaterialService,
+  MaterialImportService,
+  FflateZipReader,
+  InMemoryMaterialImportBatchRepository,
+  InMemoryMaterialImportItemRepository,
   NaivePdfTextExtractor,
   InMemoryFileStorage,
   InMemoryTopicRepository,
@@ -47,7 +51,8 @@ export interface AppStore {
   oppositions: OppositionService;
   materials: MaterialService;
   pdfMaterials: PdfMaterialService;
-  /** Vinculos material-tema (SPEC 003/012): para mostrar temas asociados. */
+  materialImport: MaterialImportService;
+  /** Vinculos material-tema (SPEC 003/012/017): materiales por tema. */
   topicMaterialLinks: TopicMaterialLinkRepository;
   topics: TopicService;
   questions: QuestionService;
@@ -83,16 +88,32 @@ export function createAppStore(seed = true): AppStore {
   );
   const materials = new MaterialService(materialRepo);
   const topicMaterialLinkRepo = new InMemoryTopicMaterialLinkRepository();
+  // Almacenamiento y extractor compartidos para que PDFs subidos e importados
+  // vivan en el mismo sitio (SPEC 012/017).
+  const fileStorage = new InMemoryFileStorage();
+  const pdfExtractor = new NaivePdfTextExtractor();
   const pdfMaterials = new PdfMaterialService({
     materials: materialRepo,
     topics: topicRepo,
     topicMaterialLinks: topicMaterialLinkRepo,
     oppositions: oppositionRepo,
-    storage: new InMemoryFileStorage(),
-    extractor: new NaivePdfTextExtractor(),
+    storage: fileStorage,
+    extractor: pdfExtractor,
   });
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
+    linkRepository: topicMaterialLinkRepo,
+  });
+  const materialImport = new MaterialImportService({
+    materials: materialRepo,
+    topics,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    oppositions: oppositionRepo,
+    storage: fileStorage,
+    extractor: pdfExtractor,
+    zipReader: new FflateZipReader(),
+    batches: new InMemoryMaterialImportBatchRepository(),
+    items: new InMemoryMaterialImportItemRepository(),
   });
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: (id) => materials.getMaterial(id)?.status ?? null,
@@ -136,6 +157,7 @@ export function createAppStore(seed = true): AppStore {
     oppositions,
     materials,
     pdfMaterials,
+    materialImport,
     topics,
     questions,
     generation,
@@ -150,6 +172,7 @@ export function createAppStore(seed = true): AppStore {
     oppositions,
     materials,
     pdfMaterials,
+    materialImport,
     topicMaterialLinks: topicMaterialLinkRepo,
     topics,
     questions,

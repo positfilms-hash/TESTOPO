@@ -120,3 +120,12 @@ export * from './pdf/pdfErrors.js';
 export * from './pdf/pdfTextExtractor.js';
 export * from './storage/fileStorage.js';
 export * from './service/pdfMaterialService.js';
+
+// SPEC 017 - Unified Syllabus & Bulk Material Import
+export * from './models/materialImportBatch.js';
+export * from './models/materialImportItem.js';
+export * from './import/importErrors.js';
+export * from './import/zipReader.js';
+export * from './repository/materialImportRepository.js';
+export * from './repository/inMemoryMaterialImportRepository.js';
+export * from './service/materialImportService.js';
