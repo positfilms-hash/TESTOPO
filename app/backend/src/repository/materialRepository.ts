@@ -8,6 +8,8 @@ import type { Material } from '../models/material.js';
 export interface MaterialFilter {
   type?: MaterialType;
   status?: MaterialStatus;
+  /** Filtra por oposicion (SPEC 010/012). */
+  opposition_id?: string;
 }
 
 export interface MaterialRepository {

@@ -24,6 +24,11 @@ export class InMemoryMaterialRepository implements MaterialRepository {
     if (filter.status !== undefined) {
       result = result.filter((material) => material.status === filter.status);
     }
+    if (filter.opposition_id !== undefined) {
+      result = result.filter(
+        (material) => material.opposition_id === filter.opposition_id,
+      );
+    }
     return result.map(clone);
   }
 
