@@ -119,7 +119,7 @@ describe('SPEC 010 - oposiciones y acceso', () => {
 
   it('un admin crea una oposicion y un student no puede', () => {
     const { oppositions, admin, student } = withUsers();
-    const opp = oppositions.createOpposition(admin, {
+    const opp = oppositions.createOpposition(admin, { workspace_id: 'ws-test',
       title: 'Auxiliar Administrativo',
       slug: 'auxiliar-administrativo',
     });
@@ -136,11 +136,11 @@ describe('SPEC 010 - oposiciones y acceso', () => {
 
   it('da acceso a un estudiante y este solo ve oposiciones autorizadas', () => {
     const { oppositions, admin, student } = withUsers();
-    const opp = oppositions.createOpposition(admin, {
+    const opp = oppositions.createOpposition(admin, { workspace_id: 'ws-test',
       title: 'Policia',
       slug: 'policia',
     });
-    const otra = oppositions.createOpposition(admin, {
+    const otra = oppositions.createOpposition(admin, { workspace_id: 'ws-test',
       title: 'Otra',
       slug: 'otra',
     });
@@ -163,7 +163,7 @@ describe('SPEC 010 - oposiciones y acceso', () => {
 
   it('revoca acceso sin borrar historico', () => {
     const { oppositions, admin, student } = withUsers();
-    const opp = oppositions.createOpposition(admin, { title: 'T', slug: 't' });
+    const opp = oppositions.createOpposition(admin, { workspace_id: 'ws-test', title: 'T', slug: 't' });
     oppositions.grantAccess(admin, { user_id: student.id, opposition_id: opp.id });
     oppositions.revokeAccess(admin, { user_id: student.id, opposition_id: opp.id });
     expect(oppositions.listForUser(student)).toHaveLength(0);

@@ -11,12 +11,14 @@ function renderApp() {
   );
 }
 
-// Entra como admin o estudiante y selecciona la oposicion sembrada.
+// Entra como admin o estudiante, elige el workspace y la oposicion sembrados.
 function enter(role: 'admin' | 'student') {
   fireEvent.click(
     screen.getByText(role === 'admin' ? 'Entrar como Admin' : 'Entrar como Estudiante'),
   );
-  // Pantalla de "Mis oposiciones": entrar en la oposicion MVP.
+  // "Mis espacios": entrar en el Workspace MVP.
+  fireEvent.click(screen.getByText('Entrar'));
+  // "Mis oposiciones": entrar en la Oposicion MVP.
   fireEvent.click(screen.getByText('Entrar'));
 }
 

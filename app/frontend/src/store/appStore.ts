@@ -21,6 +21,9 @@ import {
   InMemoryOppositionRepository,
   InMemoryOppositionAccessRepository,
   OppositionService,
+  InMemoryWorkspaceRepository,
+  InMemoryWorkspaceMemberRepository,
+  WorkspaceService,
   type PracticeTest,
   type Opposition,
 } from '@backend';
@@ -34,6 +37,7 @@ export const SEED_STUDENT = {
 
 export interface AppStore {
   users: UserService;
+  workspaces: WorkspaceService;
   oppositions: OppositionService;
   materials: MaterialService;
   topics: TopicService;
@@ -56,9 +60,14 @@ export function createAppStore(seed = true): AppStore {
   const userRepo = new InMemoryUserRepository();
   const oppositionRepo = new InMemoryOppositionRepository();
   const accessRepo = new InMemoryOppositionAccessRepository();
+  const workspaceRepo = new InMemoryWorkspaceRepository();
+  const workspaceMemberRepo = new InMemoryWorkspaceMemberRepository();
 
   const users = new UserService(userRepo);
-  const oppositions = new OppositionService(oppositionRepo, accessRepo);
+  const workspaces = new WorkspaceService(workspaceRepo, workspaceMemberRepo);
+  const oppositions = new OppositionService(oppositionRepo, accessRepo, {
+    workspaceMemberRepository: workspaceMemberRepo,
+  });
   const materials = new MaterialService(materialRepo);
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -102,6 +111,7 @@ export function createAppStore(seed = true): AppStore {
 
   const store: AppStore = {
     users,
+    workspaces,
     oppositions,
     materials,
     topics,
@@ -136,7 +146,19 @@ function seedFixtures(store: AppStore): Opposition {
     role: 'student',
   });
 
+  // Workspace por defecto (SPEC 011): el admin es owner; el estudiante, miembro.
+  const workspace = store.workspaces.createOrganizationWorkspace(admin, {
+    name: 'Workspace MVP',
+    slug: 'workspace-mvp',
+  });
+  store.workspaces.addMember(admin, {
+    workspace_id: workspace.id,
+    user_id: student.id,
+    role: 'student',
+  });
+
   const opposition = store.oppositions.createOpposition(admin, {
+    workspace_id: workspace.id,
     title: 'Oposicion MVP',
     slug: 'oposicion-mvp',
     description: 'Oposicion de ejemplo para la demo.',

@@ -14,16 +14,20 @@ import type {
 import type { User } from '../models/user.js';
 import type { OppositionRepository } from '../repository/oppositionRepository.js';
 import type { OppositionAccessRepository } from '../repository/oppositionAccessRepository.js';
+import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRepository.js';
 import { AccessError } from '../access/accessError.js';
 import { AccessErrorCode } from '../access/accessErrors.js';
 import {
   requireAdmin,
   requireManageOpposition,
+  requireManageWorkspace,
   requireOppositionAccess,
   requireUser,
 } from '../access/permissions.js';
 
 export interface CreateOppositionInput {
+  /** Workspace al que pertenece la oposicion (SPEC 011). Obligatorio. */
+  workspace_id?: string;
   title?: string;
   slug?: string;
   description?: string | null;
@@ -33,11 +37,17 @@ export interface CreateOppositionInput {
 export interface OppositionServiceOptions {
   generateId?: () => string;
   now?: () => Date;
+  /**
+   * Si se proporciona (SPEC 011), crear una oposicion exige que el actor pueda
+   * gestionar el workspace (owner/admin). Si no, solo se exige `workspace_id`.
+   */
+  workspaceMemberRepository?: WorkspaceMemberRepository;
 }
 
 export class OppositionService {
   private readonly generateId: () => string;
   private readonly now: () => Date;
+  private readonly members?: WorkspaceMemberRepository;
 
   constructor(
     private readonly oppositions: OppositionRepository,
@@ -46,11 +56,20 @@ export class OppositionService {
   ) {
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
+    this.members = options.workspaceMemberRepository;
   }
 
   // 14.4 Crear oposicion (solo admin). El creador queda como `owner`.
+  // SPEC 011: la oposicion debe pertenecer a un workspace; si hay repo de
+  // miembros, el actor debe poder gestionar ese workspace (owner/admin).
   createOpposition(actor: User, input: CreateOppositionInput): Opposition {
     requireAdmin(actor);
+    if (!isNonEmptyString(input.workspace_id)) {
+      throw new AccessError([AccessErrorCode.OPPOSITION_WORKSPACE_REQUIRED]);
+    }
+    if (this.members) {
+      requireManageWorkspace(this.members, actor, input.workspace_id);
+    }
     if (!isNonEmptyString(input.title)) {
       throw new AccessError([AccessErrorCode.OPPOSITION_TITLE_REQUIRED]);
     }
@@ -68,6 +87,7 @@ export class OppositionService {
     const timestamp = this.now();
     const opposition = this.oppositions.create({
       id: this.generateId(),
+      workspace_id: input.workspace_id,
       title: input.title,
       description: input.description ?? null,
       slug: input.slug,
