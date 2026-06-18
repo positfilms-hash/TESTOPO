@@ -5,6 +5,8 @@ import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.j
 
 type View =
   | { kind: 'list' }
+  // SPEC 022: punto de entrada unico "Subir material" (PDF o texto).
+  | { kind: 'upload' }
   | { kind: 'new' }
   | { kind: 'pdf' }
   | { kind: 'detail'; id: string };
@@ -49,7 +51,7 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
   if (view.kind === 'new') {
     return (
       <MaterialForm
-        onCancel={() => setView({ kind: 'list' })}
+        onCancel={() => setView({ kind: 'upload' })}
         onSaved={() => {
           refresh();
           setView({ kind: 'list' });
@@ -61,12 +63,43 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
   if (view.kind === 'pdf') {
     return (
       <PdfUploadForm
-        onCancel={() => setView({ kind: 'list' })}
+        onCancel={() => setView({ kind: 'upload' })}
         onDone={() => {
           refresh();
           setView({ kind: 'list' });
         }}
       />
+    );
+  }
+
+  // SPEC 022: un unico CTA "Subir material" agrupa la subida de PDF y el alta de
+  // material por texto en la misma experiencia. La importacion ZIP/multiple
+  // sigue como flujo secundario aparte.
+  if (view.kind === 'upload') {
+    return (
+      <div>
+        <PageHeader
+          title="Subir material"
+          subtitle="Sube un PDF o pega el texto del documento."
+        />
+        <div className="card">
+          <p className="muted">
+            Anade material a esta oposicion subiendo un archivo PDF o registrando
+            su texto manualmente.
+          </p>
+          <div className="row">
+            <Button onClick={() => setView({ kind: 'pdf' })}>Subir PDF</Button>
+            <Button variant="secondary" onClick={() => setView({ kind: 'new' })}>
+              Pegar texto
+            </Button>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <Button variant="secondary" small onClick={() => setView({ kind: 'list' })}>
+            Volver
+          </Button>
+        </div>
+      </div>
     );
   }
 
@@ -90,9 +123,8 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
         action={
           isAdmin ? (
             <div className="row">
-              <Button onClick={() => setView({ kind: 'pdf' })}>Subir PDF</Button>
-              <Button variant="secondary" onClick={() => setView({ kind: 'new' })}>
-                Anadir material
+              <Button onClick={() => setView({ kind: 'upload' })}>
+                Subir material
               </Button>
             </div>
           ) : undefined
@@ -102,7 +134,7 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
         <EmptyState
           message={
             isAdmin
-              ? "Todavia no has anadido material. Empieza con 'Anadir material'."
+              ? "Todavia no has anadido material. Empieza con 'Subir material'."
               : 'Todavia no hay material disponible en esta oposicion.'
           }
         />

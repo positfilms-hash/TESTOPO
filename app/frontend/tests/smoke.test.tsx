@@ -67,6 +67,33 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     ).toBeInTheDocument();
   });
 
+  it('admin: Material usa un unico CTA "Subir material" (SPEC 022)', async () => {
+    renderApp();
+    await enter('admin');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText('Material'),
+    );
+    // Un unico boton principal; ya no hay "Subir PDF"/"Anadir material" sueltos.
+    expect(
+      await screen.findByRole('button', { name: 'Subir material' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Anadir material' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Subir PDF' })).toBeNull();
+    // El flujo unico permite tanto subir PDF como pegar texto.
+    fireEvent.click(screen.getByRole('button', { name: 'Subir material' }));
+    expect(
+      await screen.findByRole('button', { name: 'Subir PDF' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Pegar texto' }),
+    ).toBeInTheDocument();
+    // Y se puede completar una subida PDF desde ese flujo.
+    fireEvent.click(screen.getByRole('button', { name: 'Subir PDF' }));
+    expect(
+      await screen.findByText('Sube un temario, ley o examen en PDF.'),
+    ).toBeInTheDocument();
+  });
+
   it('admin: Temario unificado muestra material y acciones al elegir tema (SPEC 017)', async () => {
     renderApp();
     await enter('admin');

@@ -3,17 +3,12 @@
 // La logica de negocio NO se reimplementa aqui: solo se instancia y se usa.
 
 import {
-  InMemoryMaterialRepository,
   MaterialService,
   PdfMaterialService,
   MaterialImportService,
   FflateZipReader,
-  InMemoryMaterialImportBatchRepository,
-  InMemoryMaterialImportItemRepository,
   NaivePdfTextExtractor,
   InMemoryFileStorage,
-  InMemoryTopicRepository,
-  InMemoryTopicMaterialLinkRepository,
   type TopicMaterialLinkRepository,
   TopicService,
   InMemoryQuestionRepository,
@@ -77,15 +72,13 @@ export interface AppStore {
 }
 
 export function createAppStore(seed = true): AppStore {
-  const materialRepo = new InMemoryMaterialRepository();
-  const topicRepo = new InMemoryTopicRepository();
   const questionRepo = new InMemoryQuestionRepository();
   const testRepo = new InMemoryTestRepository();
   const testQuestionRepo = new InMemoryTestQuestionRepository();
 
-  // SPEC 020/021: profiles/workspaces/workspace_members + oppositions/access
-  // pueden ir a Supabase; el resto del dominio sigue en memoria. Por defecto
-  // memoria (la demo no toca Supabase). Supabase solo si
+  // SPEC 020/021/022: profiles/workspaces/workspace_members + oppositions/access
+  // + materials/topics/imports pueden ir a Supabase; questions/tests siguen en
+  // memoria. Por defecto memoria (la demo no toca Supabase). Supabase solo si
   // VITE_APP_PERSISTENCE_MODE=supabase y configurado.
   let supabasePort: SupabaseClientPort | undefined;
   if (requestedPersistenceMode().toLowerCase() === 'supabase' && isSupabaseConfigured()) {
@@ -98,6 +91,9 @@ export function createAppStore(seed = true): AppStore {
   const workspaceMemberRepo = core.workspaceMembers;
   const oppositionRepo = core.oppositions;
   const accessRepo = core.oppositionAccess;
+  const materialRepo = core.materials;
+  const topicRepo = core.topics;
+  const topicMaterialLinkRepo = core.topicMaterialLinks;
 
   const users = new UserService(core.users);
   const workspaces = new WorkspaceService(core.workspaces, core.workspaceMembers);
@@ -107,7 +103,6 @@ export function createAppStore(seed = true): AppStore {
     workspaceMemberRepo,
   );
   const materials = new MaterialService(materialRepo);
-  const topicMaterialLinkRepo = new InMemoryTopicMaterialLinkRepository();
   // Almacenamiento y extractor compartidos para que PDFs subidos e importados
   // vivan en el mismo sitio (SPEC 012/017).
   const fileStorage = new InMemoryFileStorage();
@@ -132,8 +127,8 @@ export function createAppStore(seed = true): AppStore {
     storage: fileStorage,
     extractor: pdfExtractor,
     zipReader: new FflateZipReader(),
-    batches: new InMemoryMaterialImportBatchRepository(),
-    items: new InMemoryMaterialImportItemRepository(),
+    batches: core.importBatches,
+    items: core.importItems,
   });
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: async (id) =>

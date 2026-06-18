@@ -152,6 +152,11 @@ export * from './repository/supabase/supabaseWorkspaceMemberRepository.js';
 // SPEC 021 - Supabase Repositories: Oppositions & Access
 export * from './repository/supabase/supabaseOppositionRepository.js';
 export * from './repository/supabase/supabaseOppositionAccessRepository.js';
+// SPEC 022 - Supabase Repositories: Materials & Topics
+export * from './repository/supabase/supabaseMaterialRepository.js';
+export * from './repository/supabase/supabaseTopicRepository.js';
+export * from './repository/supabase/supabaseTopicMaterialLinkRepository.js';
+export * from './repository/supabase/supabaseMaterialImportRepositories.js';
 export * from './repository/supabase/createCoreRepositories.js';
 
 // SPEC 019 - AI Syllabus Index Builder

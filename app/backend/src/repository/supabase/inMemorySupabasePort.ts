@@ -33,6 +33,18 @@ class InMemoryTable implements SupabaseTablePort {
     this.rows.set(id, updated);
     return { ...updated };
   }
+
+  async deleteMatch(criteria: SupabaseRow): Promise<number> {
+    const entries = Object.entries(criteria);
+    let deleted = 0;
+    for (const [id, row] of [...this.rows.entries()]) {
+      if (entries.every(([key, value]) => row[key] === value)) {
+        this.rows.delete(id);
+        deleted += 1;
+      }
+    }
+    return deleted;
+  }
 }
 
 export class InMemorySupabasePort implements SupabaseClientPort {
