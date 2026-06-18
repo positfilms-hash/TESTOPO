@@ -109,12 +109,26 @@ se copian como preguntas `validated` ni se sirven como test de estudiante.
 - Suben material: `owner`, `admin`, `manager` autorizado, `premium owner` en
   workspace personal. **No** suben: `student`, sin acceso, eliminado. Guard:
   `requireManageOpposition` en `PlatformService.smartUpload`.
-- ZIP/carpeta: se rechazan rutas `../`, absolutas, backslash/drive Windows, ZIP
-  anidado y extensiones peligrosas; límites 200 MB ZIP / 500 archivos / 50 MB por
-  archivo (`import/importErrors.ts`, `import/smartUploadErrors.ts`).
+- `upload_category` y `source_type` se validan **en runtime** dentro de
+  `smartUpload` (no solo por TypeScript): una llamada directa con un valor raro
+  recibe `SMART_UPLOAD_INVALID_CATEGORY` / `SMART_UPLOAD_INVALID_FILE_TYPE` antes
+  de tocar el repositorio (evita romper el check constraint de la tabla).
+- **Criterio de rechazo** (decidido en SPEC 028):
+  - **Amenazas estructurales del lote → abortan TODO** (no se importa nada):
+    rutas `../`, rutas absolutas, backslash/drive Windows, ZIP anidado, ZIP
+    demasiado grande, lote con más de 500 archivos. Lanzan `SmartUploadError`.
+  - **Archivo individual no apto → se OMITE (skipped), sin abortar el lote**:
+    extensión peligrosa/no permitida (`.exe`, `.bat`, …), archivo > 50 MB,
+    duplicado. El resto del lote se importa y el archivo queda registrado como
+    `skipped` en su `material_import_item` con el motivo. Así un único archivo
+    problemático no tira abajo una subida de cientos de documentos.
+  - Límites: 200 MB ZIP / 500 archivos por lote / 50 MB por archivo
+    (`import/importErrors.ts`, `import/smartUploadErrors.ts`).
 - El estudiante no ve lotes/items de importación, errores internos, material
-  `needs_review`/`obsolete`, ni los internos de tests antiguos. RLS (022/025) +
-  guards de servicio siguen activos.
+  `needs_review`/`obsolete`, ni los materiales `old_test`/`official_exam` (son
+  **fuente interna de generación**, no material de estudio: `listMaterials`/
+  `getMaterial` los excluyen para no gestores vía `isStudentVisibleMaterial`).
+  RLS (022/025) + guards de servicio siguen activos.
 
 ## Mapa de código
 
@@ -126,6 +140,6 @@ se copian como preguntas `validated` ni se sirven como test de estudiante.
 | Servicio | `app/backend/src/service/materialImportService.ts` (`smartUpload`) |
 | Facade | `app/backend/src/service/platformService.ts` (`smartUpload`, `proposeSyllabusIndex`) |
 | Índice IA | `app/backend/src/service/syllabusIndexService.ts`, `generation/mockSyllabusIndexProvider.ts` |
-| Migración | `supabase/migrations/026_smart_upload_categories.sql` |
+| Migración | `supabase/migrations/028_smart_upload_categories.sql` |
 | UI | `app/frontend/src/pages/MaterialPage.tsx` (`SmartUploadForm`), `SyllabusIndexPanel.tsx` |
 | Tests | `app/backend/tests/smartUpload.test.ts` |
