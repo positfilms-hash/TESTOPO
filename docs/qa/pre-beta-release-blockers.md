@@ -19,11 +19,11 @@ QA (automática en modo memory). La columna "Cobertura" indica cómo se previene
 | 12 | Se mezclan workspaces/oposiciones | `oppositionsAccess.test.ts`, RLS | ✅ |
 | 13 | Service role en frontend | `supabaseSecurity.test.ts` | ✅ |
 | 14 | `.env` subido al repo | `.gitignore` | ✅ |
-| 15 | RLS permite lectura indebida | `025_rls_hardening.sql` + plan manual | ✅ app · 🔎 staging |
+| 15 | RLS permite lectura indebida | `025_rls_hardening.sql` + plan manual | ✅ app · ✅ staging (2026-06-18) |
 | 16 | Borrado de cuenta rompe datos compartidos | Edge Function (solo revoke/archive/soft-delete) | ✅ diseño · 🔎 staging |
 | 17 | Owner único borra cuenta y deja org sin owner | bloqueo en `delete-account` + `accountDeletion.ts` | ✅ |
 | 18 | Registro/login/reset rotos | `authValidation.test.ts` + manual | ✅ app · 🔎 staging |
-| 19 | No se completa flujo student/admin | `studentPortal.test.ts` + guion manual | ✅ app · 🔎 staging |
+| 19 | No se completa flujo student/admin | `studentPortal.test.ts` + guion manual + `smoke.test.tsx` (regresion BUG-002) | ✅ fix aplicado, pendiente reverificar en staging |
 
 ## Notas
 
@@ -37,6 +37,21 @@ QA (automática en modo memory). La columna "Cobertura" indica cómo se previene
 
 ## Conclusión
 
-Sin blockers **abiertos** en la cobertura automática (modo memory). Pendiente:
-ejecutar el [guion manual](./pre-beta-manual-test-script.md) y el
-[plan de RLS](../security/rls-test-plan.md) contra staging antes de SPEC 028.
+Sin blockers abiertos en la cobertura automática (modo memory). El
+[plan de RLS](../security/rls-test-plan.md) ya se ejecutó contra staging
+(2026-06-18, sin hallazgos — ver `pre-beta-bug-log.md`). Pendiente: ejecutar el
+[guion manual](./pre-beta-manual-test-script.md) (flujos 13.1–13.4) contra
+staging antes de SPEC 028.
+
+Tras la revision visual/manual de Codex contra staging, BUG-002 quedo
+registrado como blocker. **Fix aplicado** (ver detalle en
+`pre-beta-bug-log.md`): el efecto de `accessReady` en `StoreContext.tsx`
+dependia de `version` (el contador que incrementa `refresh()`), lo que
+desmontaba el arbol autenticado entero cada vez que cualquier pantalla
+llamaba `refresh()` tras una mutacion — incluido `start()` justo antes de
+mostrar `Realizar test`. Se quito esa dependencia y se anadio una regresion
+en `smoke.test.tsx`. 57/57 tests de frontend en verde.
+
+Pendiente antes de cerrar el blocker: reverificar manualmente en staging
+(login student-a.qa, crear test, pulsar `Empezar`) para confirmar que el fix
+tambien aplica con persistencia Supabase real, no solo en modo memory.

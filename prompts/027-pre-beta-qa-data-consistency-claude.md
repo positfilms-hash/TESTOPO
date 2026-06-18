@@ -46,6 +46,7 @@ docs/architecture/persistence.md
 docs/security/rls-policies.md
 docs/security/account-deletion.md
 docs/security/rls-test-plan.md
+docs/qa/codex-visual-review-runbook.md
 ```
 
 Si alguno no existe todavia porque una spec anterior no fue mergeada, no inventes un proceso paralelo: crea la documentacion esperada en la ubicacion de la spec correspondiente o deja una nota clara en el bug log/checklist.
@@ -77,6 +78,12 @@ docs/qa/pre-beta-permissions-checklist.md
 docs/qa/pre-beta-bug-log.md
 docs/qa/pre-beta-manual-test-script.md
 docs/qa/pre-beta-release-blockers.md
+```
+
+Para revision visual, no inventes otro proceso. Usa como referencia:
+
+```text
+docs/qa/codex-visual-review-runbook.md
 ```
 
 Opcional:
