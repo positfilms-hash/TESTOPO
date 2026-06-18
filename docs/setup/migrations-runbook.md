@@ -131,7 +131,7 @@ fila en `profiles` → crear workspace personal → aparece en `workspaces` y
 | 023 | `023_questions_options.sql` ✅ | questions, question_options, validación, reviews, feedback, generation runs |
 | 024 | `024_tests_attempts_answers.sql` ✅ | tests, test_questions, test_attempts, test_answers |
 | 025 | `025_rls_hardening.sql` ✅ | endurecimiento RLS de todo el dominio + helpers + inmutabilidad de profiles |
-| 026 | `026_account_deletion_fn.sql` | Edge Function + borrado real de Auth |
+| 026 | (no es migración SQL) ✅ | **Edge Function** `delete-account` (Deno) — borrado real de Auth. Ver [supabase-edge-functions.md](./supabase-edge-functions.md) |
 
 > Las migraciones 021+ las **define Codex en su spec**; este runbook solo fija la
 > convención y el proceso. La numeración puede ajustarse si cambia el orden.

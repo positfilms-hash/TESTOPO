@@ -78,7 +78,8 @@ Requisitos del modo `supabase`:
 1. `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` configuradas.
 2. Migraciones aplicadas en orden: `0001_init.sql`, `020_profiles_workspaces.sql`,
    `021_oppositions_access.sql`, `022_materials_topics.sql`,
-   `023_questions_options.sql` y `024_tests_attempts_answers.sql`.
+   `023_questions_options.sql`, `024_tests_attempts_answers.sql` y
+   `025_rls_hardening.sql`.
 
 Si falta la configuración, la app cae automáticamente a `memory` y siembra los
 datos demo en memoria.
@@ -133,7 +134,10 @@ Migración de dominio **completada** (021–024). Lo que queda:
 - ~~**SPEC 025** — RLS Hardening.~~ ✅ hecho (filtrado fino student + inmutabilidad
   de `profiles`; gap de `is_correct` documentado para beta — ver
   [`rls-known-gaps.md`](../security/rls-known-gaps.md)).
-- **SPEC 026** — Edge Functions para borrado de cuenta (`auth.users`).
+- ~~**SPEC 026** — Edge Function de borrado de cuenta (`auth.users`).~~ ✅ hecho
+  (Edge Function `delete-account` con service role; ver
+  [`account-deletion.md`](../security/account-deletion.md) y
+  [`supabase-edge-functions.md`](../setup/supabase-edge-functions.md)).
 - **SPEC 027** — Beta Readiness (cierre del gap `is_correct` vía RPC/vista).
 
 El proceso operativo de cada migración (aplicar, convenciones, idempotencia,

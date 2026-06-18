@@ -4,16 +4,20 @@ import { Button, PageHeader } from '../components/ui.js';
 import { isSupabaseConfigured } from '../auth/supabaseClient.js';
 import { AuthError, authMessage, AuthErrorCode } from '../auth/authErrors.js';
 import * as auth from '../auth/authService.js';
+import { ACCOUNT_DELETE_CONFIRMATION } from '../auth/authService.js';
 import {
   findBlockingWorkspaces,
   type WorkspaceOwnership,
 } from '../auth/accountDeletion.js';
 
-// Cuenta y eliminacion (SPEC 018.2, 18-19). Borrado LOGICO en el MVP, con la
-// regla de no dejar un workspace de organizacion sin owner/admin.
+// Cuenta y eliminacion (SPEC 026). El borrado real (revocar accesos, archivar
+// workspace personal, soft-delete del perfil y borrar el usuario Auth) lo ejecuta
+// la Edge Function `delete-account` con la service role en servidor. Aqui solo se
+// confirma (escribir ELIMINAR) y se invoca la funcion.
 export function AccountPage({ onBack }: { onBack: () => void }) {
   const { store, currentUser, logout } = useStore();
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const confirmed = confirmText.trim() === ACCOUNT_DELETE_CONFIRMATION;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -100,9 +104,10 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
       <div className="card" style={{ maxWidth: 560 }}>
         <h3 style={{ marginTop: 0 }}>Eliminar cuenta</h3>
         <p className="muted small">
-          Esta accion eliminara tu cuenta. Puede que algunos datos asociados se
-          conserven de forma anonimizada o por motivos tecnicos. Esta accion no
-          se puede deshacer.
+          Esta accion no se puede deshacer. Si perteneces a una academia, perderas
+          el acceso a tus oposiciones. Si eres el unico propietario de un
+          workspace, debes transferirlo antes. Algunos datos (como resultados de
+          tests) pueden conservarse de forma anonimizada por integridad historica.
         </p>
 
         {error && <div className="notice error">{error}</div>}
@@ -110,22 +115,26 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
         {isBlocked && (
           <div className="notice error">
             No puedes eliminar tu cuenta porque eres el unico propietario de un
-            workspace. Anade otro propietario o administrador antes.
+            workspace. Anade o transfiere la propiedad a otro usuario antes de
+            eliminarla.
           </div>
         )}
 
-        <label className="row small" style={{ gap: 8, marginBottom: 12 }}>
+        <label className="small" style={{ display: 'block', marginBottom: 12 }}>
+          Escribe <strong>{ACCOUNT_DELETE_CONFIRMATION}</strong> para confirmar:
           <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(e) => setConfirmed(e.target.checked)}
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
             disabled={isBlocked}
+            placeholder={ACCOUNT_DELETE_CONFIRMATION}
+            aria-label="Confirmacion de eliminacion"
+            style={{ display: 'block', marginTop: 4 }}
           />
-          Confirmo que quiero eliminar mi cuenta.
         </label>
 
         <Button variant="danger" onClick={deleteAccount} disabled={busy || isBlocked || !confirmed}>
-          {busy ? 'Eliminando…' : 'Eliminar cuenta'}
+          {busy ? 'Eliminando…' : 'Eliminar mi cuenta'}
         </Button>
       </div>
     </div>
