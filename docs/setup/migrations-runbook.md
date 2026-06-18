@@ -126,7 +126,7 @@ fila en `profiles` → crear workspace personal → aparece en `workspaces` y
 | --- | --- | --- |
 | 018.2 | `0001_init.sql` ✅ | profiles, núcleo + RLS básica |
 | 020 | `020_profiles_workspaces.sql` ✅ | updated_at + índices del bloque cuenta/espacios |
-| 021 | `021_oppositions_access.sql` | oppositions, opposition_access |
+| 021 | `021_oppositions_access.sql` ✅ | oppositions, opposition_access (+ pre-flight RLS de la 020) |
 | 022 | `022_materials_topics.sql` | materials, topics |
 | 023 | `023_questions_options.sql` | questions, question_options |
 | 024 | `024_tests_attempts_answers.sql` | tests, test_questions, test_attempts, test_answers |

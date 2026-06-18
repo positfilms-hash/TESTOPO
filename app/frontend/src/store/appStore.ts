@@ -33,8 +33,6 @@ import {
   TestGeneratorService,
   TestAttemptService,
   UserService,
-  InMemoryOppositionRepository,
-  InMemoryOppositionAccessRepository,
   OppositionService,
   WorkspaceService,
   PlatformService,
@@ -84,12 +82,11 @@ export function createAppStore(seed = true): AppStore {
   const questionRepo = new InMemoryQuestionRepository();
   const testRepo = new InMemoryTestRepository();
   const testQuestionRepo = new InMemoryTestQuestionRepository();
-  const oppositionRepo = new InMemoryOppositionRepository();
-  const accessRepo = new InMemoryOppositionAccessRepository();
 
-  // SPEC 020: profiles/workspaces/workspace_members pueden ir a Supabase; el
-  // resto del dominio sigue en memoria. Por defecto memoria (la demo no toca
-  // Supabase). Supabase solo si VITE_APP_PERSISTENCE_MODE=supabase y configurado.
+  // SPEC 020/021: profiles/workspaces/workspace_members + oppositions/access
+  // pueden ir a Supabase; el resto del dominio sigue en memoria. Por defecto
+  // memoria (la demo no toca Supabase). Supabase solo si
+  // VITE_APP_PERSISTENCE_MODE=supabase y configurado.
   let supabasePort: SupabaseClientPort | undefined;
   if (requestedPersistenceMode().toLowerCase() === 'supabase' && isSupabaseConfigured()) {
     supabasePort = createSupabasePort(getSupabase());
@@ -99,6 +96,8 @@ export function createAppStore(seed = true): AppStore {
     supabase: supabasePort ?? null,
   });
   const workspaceMemberRepo = core.workspaceMembers;
+  const oppositionRepo = core.oppositions;
+  const accessRepo = core.oppositionAccess;
 
   const users = new UserService(core.users);
   const workspaces = new WorkspaceService(core.workspaces, core.workspaceMembers);

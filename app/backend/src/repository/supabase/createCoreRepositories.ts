@@ -7,13 +7,19 @@
 import type { UserRepository } from '../userRepository.js';
 import type { WorkspaceRepository } from '../workspaceRepository.js';
 import type { WorkspaceMemberRepository } from '../workspaceMemberRepository.js';
+import type { OppositionRepository } from '../oppositionRepository.js';
+import type { OppositionAccessRepository } from '../oppositionAccessRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
+import { InMemoryOppositionRepository } from '../inMemoryOppositionRepository.js';
+import { InMemoryOppositionAccessRepository } from '../inMemoryOppositionAccessRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
 import { SupabaseWorkspaceMemberRepository } from './supabaseWorkspaceMemberRepository.js';
+import { SupabaseOppositionRepository } from './supabaseOppositionRepository.js';
+import { SupabaseOppositionAccessRepository } from './supabaseOppositionAccessRepository.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -26,6 +32,9 @@ export interface CoreRepositories {
   users: UserRepository;
   workspaces: WorkspaceRepository;
   workspaceMembers: WorkspaceMemberRepository;
+  /** SPEC 021: oposiciones y accesos tambien viajan a Supabase con el bloque. */
+  oppositions: OppositionRepository;
+  oppositionAccess: OppositionAccessRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -73,6 +82,8 @@ export function createCoreRepositories(
       users: new SupabaseProfileRepository(port),
       workspaces: new SupabaseWorkspaceRepository(port),
       workspaceMembers: new SupabaseWorkspaceMemberRepository(port),
+      oppositions: new SupabaseOppositionRepository(port),
+      oppositionAccess: new SupabaseOppositionAccessRepository(port),
       mode,
     };
   }
@@ -81,6 +92,8 @@ export function createCoreRepositories(
     users: new InMemoryUserRepository(),
     workspaces: new InMemoryWorkspaceRepository(),
     workspaceMembers: new InMemoryWorkspaceMemberRepository(),
+    oppositions: new InMemoryOppositionRepository(),
+    oppositionAccess: new InMemoryOppositionAccessRepository(),
     mode,
   };
 }

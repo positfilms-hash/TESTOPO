@@ -3,11 +3,12 @@
 Guía para conectar TESTOPO con tu proyecto de Supabase (auth real + base de
 datos). **No incluyas claves reales en el repositorio.** Todo va en `.env`.
 
-> Estado actual (SPEC 020): Supabase persiste **autenticación** y el bloque base
-> de cuenta/espacios: `profiles`, `workspaces` y `workspace_members`. El resto
-> del dominio (oposiciones, materiales, preguntas, tests…) sigue **en memoria por
-> sesión**; su migración llegará en specs posteriores (021–024). Este estado
-> híbrido es el esperado — ver [`docs/architecture/persistence.md`](../architecture/persistence.md).
+> Estado actual (SPEC 021): Supabase persiste **autenticación**, el bloque base
+> de cuenta/espacios (`profiles`, `workspaces`, `workspace_members`) y las
+> **oposiciones** (`oppositions`, `opposition_access`). El resto del dominio
+> (materiales, temas, preguntas, tests…) sigue **en memoria por sesión**; su
+> migración llegará en specs posteriores (022–024). Este estado híbrido es el
+> esperado — ver [`docs/architecture/persistence.md`](../architecture/persistence.md).
 > Si no defines las variables, la app sigue funcionando en **modo demo** (todo en
 > memoria) y la auth muestra `SUPABASE_NOT_CONFIGURED`.
 
@@ -73,6 +74,10 @@ Aplica **en orden** los archivos de `supabase/migrations/` con una de estas vía
 2. `020_profiles_workspaces.sql` (SPEC 020) — idempotente; añade el patrón
    `updated_at` (función + triggers) e índices útiles para los repositorios de
    `profiles`/`workspaces`/`workspace_members`. No migra el resto del dominio.
+3. `021_oppositions_access.sql` (SPEC 021) — idempotente; `updated_at` + índices
+   para `oppositions`/`opposition_access` y dos correcciones de pre-flight de la
+   SPEC 020 (bootstrap del primer workspace y bloqueo de cambio de
+   `profiles.role` desde clientes autenticados).
 
 Para aplicar/crear migraciones con la CLI (`supabase link` / `db push`),
 convenciones de nombres e idempotencia y la secuencia prevista 021–024, ver el
