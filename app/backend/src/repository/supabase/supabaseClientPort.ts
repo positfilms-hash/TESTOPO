@@ -16,6 +16,8 @@ export interface SupabaseTablePort {
   selectAll(): Promise<SupabaseRow[]>;
   /** Actualiza por `id` (merge) y devuelve la fila resultante. */
   updateById(id: string, patch: SupabaseRow): Promise<SupabaseRow>;
+  /** Borra las filas que cumplen `criteria` y devuelve cuantas se borraron. */
+  deleteMatch(criteria: SupabaseRow): Promise<number>;
 }
 
 export interface SupabaseClientPort {

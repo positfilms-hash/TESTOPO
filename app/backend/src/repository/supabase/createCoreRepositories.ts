@@ -9,17 +9,38 @@ import type { WorkspaceRepository } from '../workspaceRepository.js';
 import type { WorkspaceMemberRepository } from '../workspaceMemberRepository.js';
 import type { OppositionRepository } from '../oppositionRepository.js';
 import type { OppositionAccessRepository } from '../oppositionAccessRepository.js';
+import type { MaterialRepository } from '../materialRepository.js';
+import type { TopicRepository } from '../topicRepository.js';
+import type { TopicMaterialLinkRepository } from '../topicMaterialLinkRepository.js';
+import type {
+  MaterialImportBatchRepository,
+  MaterialImportItemRepository,
+} from '../materialImportRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
 import { InMemoryOppositionRepository } from '../inMemoryOppositionRepository.js';
 import { InMemoryOppositionAccessRepository } from '../inMemoryOppositionAccessRepository.js';
+import { InMemoryMaterialRepository } from '../inMemoryMaterialRepository.js';
+import { InMemoryTopicRepository } from '../inMemoryTopicRepository.js';
+import { InMemoryTopicMaterialLinkRepository } from '../inMemoryTopicMaterialLinkRepository.js';
+import {
+  InMemoryMaterialImportBatchRepository,
+  InMemoryMaterialImportItemRepository,
+} from '../inMemoryMaterialImportRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
 import { SupabaseWorkspaceMemberRepository } from './supabaseWorkspaceMemberRepository.js';
 import { SupabaseOppositionRepository } from './supabaseOppositionRepository.js';
 import { SupabaseOppositionAccessRepository } from './supabaseOppositionAccessRepository.js';
+import { SupabaseMaterialRepository } from './supabaseMaterialRepository.js';
+import { SupabaseTopicRepository } from './supabaseTopicRepository.js';
+import { SupabaseTopicMaterialLinkRepository } from './supabaseTopicMaterialLinkRepository.js';
+import {
+  SupabaseMaterialImportBatchRepository,
+  SupabaseMaterialImportItemRepository,
+} from './supabaseMaterialImportRepositories.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -35,6 +56,12 @@ export interface CoreRepositories {
   /** SPEC 021: oposiciones y accesos tambien viajan a Supabase con el bloque. */
   oppositions: OppositionRepository;
   oppositionAccess: OppositionAccessRepository;
+  /** SPEC 022: materiales, temario e importaciones tambien viajan al bloque. */
+  materials: MaterialRepository;
+  topics: TopicRepository;
+  topicMaterialLinks: TopicMaterialLinkRepository;
+  importBatches: MaterialImportBatchRepository;
+  importItems: MaterialImportItemRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -84,6 +111,11 @@ export function createCoreRepositories(
       workspaceMembers: new SupabaseWorkspaceMemberRepository(port),
       oppositions: new SupabaseOppositionRepository(port),
       oppositionAccess: new SupabaseOppositionAccessRepository(port),
+      materials: new SupabaseMaterialRepository(port),
+      topics: new SupabaseTopicRepository(port),
+      topicMaterialLinks: new SupabaseTopicMaterialLinkRepository(port),
+      importBatches: new SupabaseMaterialImportBatchRepository(port),
+      importItems: new SupabaseMaterialImportItemRepository(port),
       mode,
     };
   }
@@ -94,6 +126,11 @@ export function createCoreRepositories(
     workspaceMembers: new InMemoryWorkspaceMemberRepository(),
     oppositions: new InMemoryOppositionRepository(),
     oppositionAccess: new InMemoryOppositionAccessRepository(),
+    materials: new InMemoryMaterialRepository(),
+    topics: new InMemoryTopicRepository(),
+    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+    importBatches: new InMemoryMaterialImportBatchRepository(),
+    importItems: new InMemoryMaterialImportItemRepository(),
     mode,
   };
 }

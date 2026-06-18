@@ -1,7 +1,7 @@
-# Persistencia: estado híbrido (SPEC 020 → 021)
+# Persistencia: estado híbrido (SPEC 020 → 022)
 
 TESTOPO migra su dominio a Supabase de forma **progresiva**, tabla por tabla,
-detrás de las interfaces async preparadas en la SPEC 018.3. Tras la SPEC 021 la
+detrás de las interfaces async preparadas en la SPEC 018.3. Tras la SPEC 022 la
 app vive en un **estado híbrido** que es correcto y esperado: parte del dominio
 ya se persiste en Supabase y el resto sigue en memoria por sesión.
 
@@ -14,7 +14,8 @@ ya se persiste en Supabase y el resto sigue en memoria por sesión.
 | `workspaces` | **Supabase** |
 | `workspace_members` | **Supabase** |
 | `oppositions`, `opposition_access` | **Supabase** (SPEC 021) |
-| `materials`, `topics` | InMemory |
+| `materials`, `topics`, `material_topic_links` | **Supabase** (SPEC 022) |
+| `material_import_batches`, `material_import_items` | **Supabase** (SPEC 022) |
 | `questions`, `question_options` | InMemory |
 | `tests`, `test_questions` | InMemory |
 | `test_attempts`, `test_answers` | InMemory |
@@ -39,7 +40,8 @@ Reglas del factory:
 
 - `memory` (o sin valor) → repositorios InMemory.
 - `supabase` **y** puerto configurado → repositorios Supabase para
-  `profiles`/`workspaces`/`workspace_members`/`oppositions`/`opposition_access`.
+  `profiles`/`workspaces`/`workspace_members`/`oppositions`/`opposition_access`/
+  `materials`/`topics`/`material_topic_links`/import batches/items.
 - `supabase` **sin** puerto → cae a `memory` (fallback seguro; CI/tests pasan sin
   Supabase real).
 - Un valor desconocido → error `PERSISTENCE_MODE_INVALID`.
@@ -69,8 +71,8 @@ VITE_APP_PERSISTENCE_MODE=memory
 Requisitos del modo `supabase`:
 
 1. `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` configuradas.
-2. Migraciones aplicadas en orden: `0001_init.sql`, `020_profiles_workspaces.sql`
-   y `021_oppositions_access.sql`.
+2. Migraciones aplicadas en orden: `0001_init.sql`, `020_profiles_workspaces.sql`,
+   `021_oppositions_access.sql` y `022_materials_topics.sql`.
 
 Si falta la configuración, la app cae automáticamente a `memory` y siembra los
 datos demo en memoria.
@@ -78,11 +80,15 @@ datos demo en memoria.
 ## RLS y guards de aplicación
 
 La RLS básica de `profiles`, `workspaces`, `workspace_members`, `oppositions` y
-`opposition_access` se crea en `0001_init.sql`. La RLS **no sustituye todavía** a
-los guards de la capa de servicios (`PlatformService`/`WorkspaceService`/
-`OppositionService`): la autorización real (usuario autenticado, membresía
-activa, rol owner/admin/student) sigue comprobándose en la aplicación. La RLS es
-defensa adicional. El endurecimiento completo de RLS queda para la SPEC 025.
+`opposition_access` se crea en `0001_init.sql`; la de `materials`, `topics`,
+`material_topic_links` y las tablas de importación en `022_materials_topics.sql`
+(scope vía la oposición → workspace, con el helper `opposition_workspace`). La
+RLS **no sustituye todavía** a los guards de la capa de servicios
+(`PlatformService`/`WorkspaceService`/`OppositionService`/`MaterialService`/
+`TopicService`): la autorización real (usuario autenticado, membresía activa, rol
+owner/admin/student, material/tema activo) sigue comprobándose en la aplicación.
+La RLS es defensa adicional. El endurecimiento completo (incluido el filtrado
+fino "student solo ve material/tema `active`") queda para la SPEC 025.
 
 La migración `021_oppositions_access.sql` añade además dos correcciones de
 pre-flight sobre el bloque de la SPEC 020, necesarias para operar contra
@@ -101,7 +107,7 @@ workspaces reales:
 El orden técnico recomendado (la numeración puede ajustarse):
 
 - ~~**SPEC 021** — Oppositions & Access.~~ ✅ hecho.
-- **SPEC 022** — Materials & Topics.
+- ~~**SPEC 022** — Materials & Topics.~~ ✅ hecho.
 - **SPEC 023** — Questions & Options.
 - **SPEC 024** — Tests, Attempts & Answers.
 - **SPEC 025** — RLS Hardening.

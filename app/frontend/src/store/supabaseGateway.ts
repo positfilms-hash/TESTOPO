@@ -47,6 +47,17 @@ export function createSupabasePort(client: SupabaseClient): SupabaseClientPort {
           }
           return (data ?? {}) as SupabaseRow;
         },
+        async deleteMatch(criteria: SupabaseRow): Promise<number> {
+          const { data, error } = await client
+            .from(name)
+            .delete()
+            .match(criteria)
+            .select();
+          if (error) {
+            throw new Error(`Supabase delete ${name}: ${error.message}`);
+          }
+          return (data ?? []).length;
+        },
       };
     },
   };
