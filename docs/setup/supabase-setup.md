@@ -3,13 +3,11 @@
 Guía para conectar TESTOPO con tu proyecto de Supabase (auth real + base de
 datos). **No incluyas claves reales en el repositorio.** Todo va en `.env`.
 
-> Estado actual (SPEC 023): Supabase persiste **autenticación**, cuenta/espacios
-> (`profiles`, `workspaces`, `workspace_members`), **oposiciones** (`oppositions`,
-> `opposition_access`), el **temario/materiales** (`materials`, `topics`,
-> `material_topic_links`, import batches/items) y el **banco de preguntas**
-> (`questions`, `question_options`, validación, reviews, feedback, generation
-> runs). El resto (`tests`, intentos, respuestas) sigue **en memoria por
-> sesión**; se migrará en la SPEC 024. Estado híbrido esperado — ver
+> Estado actual (SPEC 024): la **migración principal del MVP está completa**.
+> Supabase persiste autenticación, cuenta/espacios, oposiciones/acceso,
+> temario/materiales, el banco de preguntas y los **tests/intentos/respuestas**
+> (`tests`, `test_questions`, `test_attempts`, `test_answers`). El modo memoria
+> (`APP_PERSISTENCE_MODE=memory`) sigue disponible para tests y demo — ver
 > [`docs/architecture/persistence.md`](../architecture/persistence.md).
 > Si no defines las variables, la app sigue funcionando en **modo demo** (todo en
 > memoria) y la auth muestra `SUPABASE_NOT_CONFIGURED`.
@@ -89,6 +87,10 @@ Aplica **en orden** los archivos de `supabase/migrations/` con una de estas vía
    `question_reviews`, `question_review_feedback` y `question_generation_runs`,
    con índices y RLS básica (alumno solo lee preguntas `validated`; tablas
    internas solo para gestores). No migra tests ni intentos.
+6. `024_tests_attempts_answers.sql` (SPEC 024) — idempotente; crea `tests`,
+   `test_questions`, `test_attempts` y `test_answers` con índices y RLS básica
+   (el alumno solo ve **sus** intentos/respuestas). **Cierra la migración
+   principal del MVP.**
 
 Para aplicar/crear migraciones con la CLI (`supabase link` / `db push`),
 convenciones de nombres e idempotencia y la secuencia prevista 021–024, ver el

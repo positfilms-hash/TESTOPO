@@ -21,8 +21,6 @@ import {
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
-  InMemoryTestRepository,
-  InMemoryTestQuestionRepository,
   TestGeneratorService,
   TestAttemptService,
   UserService,
@@ -70,12 +68,9 @@ export interface AppStore {
 }
 
 export function createAppStore(seed = true): AppStore {
-  const testRepo = new InMemoryTestRepository();
-  const testQuestionRepo = new InMemoryTestQuestionRepository();
-
-  // SPEC 020/021/022: profiles/workspaces/workspace_members + oppositions/access
-  // + materials/topics/imports pueden ir a Supabase; questions/tests siguen en
-  // memoria. Por defecto memoria (la demo no toca Supabase). Supabase solo si
+  // SPEC 020-024: practicamente todo el MVP puede ir a Supabase (cuenta,
+  // oposiciones, materiales/temario, banco de preguntas, tests/intentos). Por
+  // defecto memoria (la demo no toca Supabase). Supabase solo si
   // VITE_APP_PERSISTENCE_MODE=supabase y configurado.
   let supabasePort: SupabaseClientPort | undefined;
   if (requestedPersistenceMode().toLowerCase() === 'supabase' && isSupabaseConfigured()) {
@@ -93,6 +88,8 @@ export function createAppStore(seed = true): AppStore {
   const topicMaterialLinkRepo = core.topicMaterialLinks;
   const questionRepo = core.questions;
   const feedbackRepo = core.questionFeedback;
+  const testRepo = core.tests;
+  const testQuestionRepo = core.testQuestions;
 
   const users = new UserService(core.users);
   const workspaces = new WorkspaceService(core.workspaces, core.workspaceMembers);
@@ -188,6 +185,9 @@ export function createAppStore(seed = true): AppStore {
     testQuestionRepository: testQuestionRepo,
     questionService: questions,
     testGenerator,
+    // SPEC 024: intentos y respuestas se persisten via el factory.
+    attemptRepository: core.testAttempts,
+    answerRepository: core.testAnswers,
   });
   const platform = new PlatformService({
     oppositionRepository: oppositionRepo,

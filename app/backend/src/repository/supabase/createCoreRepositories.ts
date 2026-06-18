@@ -21,6 +21,10 @@ import type { GenerationRunRepository } from '../generationRunRepository.js';
 import type { QuestionReviewRepository } from '../questionReviewRepository.js';
 import type { QuestionReviewFeedbackRepository } from '../questionReviewFeedbackRepository.js';
 import type { QuestionValidationReportRepository } from '../questionValidationReportRepository.js';
+import type { TestRepository } from '../testRepository.js';
+import type { TestQuestionRepository } from '../testQuestionRepository.js';
+import type { TestAttemptRepository } from '../testAttemptRepository.js';
+import type { TestAnswerRepository } from '../testAnswerRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -38,6 +42,10 @@ import { InMemoryGenerationRunRepository } from '../inMemoryGenerationRunReposit
 import { InMemoryQuestionReviewRepository } from '../inMemoryQuestionReviewRepository.js';
 import { InMemoryQuestionReviewFeedbackRepository } from '../inMemoryQuestionReviewFeedbackRepository.js';
 import { InMemoryQuestionValidationReportRepository } from '../inMemoryQuestionValidationReportRepository.js';
+import { InMemoryTestRepository } from '../inMemoryTestRepository.js';
+import { InMemoryTestQuestionRepository } from '../inMemoryTestQuestionRepository.js';
+import { InMemoryTestAttemptRepository } from '../inMemoryTestAttemptRepository.js';
+import { InMemoryTestAnswerRepository } from '../inMemoryTestAnswerRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -58,6 +66,12 @@ import {
   SupabaseQuestionReviewFeedbackRepository,
   SupabaseQuestionValidationReportRepository,
 } from './supabaseQuestionBankRepositories.js';
+import {
+  SupabaseTestRepository,
+  SupabaseTestQuestionRepository,
+  SupabaseTestAttemptRepository,
+  SupabaseTestAnswerRepository,
+} from './supabaseTestRepositories.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -86,6 +100,11 @@ export interface CoreRepositories {
   questionReviews: QuestionReviewRepository;
   questionFeedback: QuestionReviewFeedbackRepository;
   questionValidationReports: QuestionValidationReportRepository;
+  /** SPEC 024: tests, preguntas de test, intentos y respuestas (cierra el MVP). */
+  tests: TestRepository;
+  testQuestions: TestQuestionRepository;
+  testAttempts: TestAttemptRepository;
+  testAnswers: TestAnswerRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -145,6 +164,10 @@ export function createCoreRepositories(
       questionReviews: new SupabaseQuestionReviewRepository(port),
       questionFeedback: new SupabaseQuestionReviewFeedbackRepository(port),
       questionValidationReports: new SupabaseQuestionValidationReportRepository(port),
+      tests: new SupabaseTestRepository(port),
+      testQuestions: new SupabaseTestQuestionRepository(port),
+      testAttempts: new SupabaseTestAttemptRepository(port),
+      testAnswers: new SupabaseTestAnswerRepository(port),
       mode,
     };
   }
@@ -165,6 +188,10 @@ export function createCoreRepositories(
     questionReviews: new InMemoryQuestionReviewRepository(),
     questionFeedback: new InMemoryQuestionReviewFeedbackRepository(),
     questionValidationReports: new InMemoryQuestionValidationReportRepository(),
+    tests: new InMemoryTestRepository(),
+    testQuestions: new InMemoryTestQuestionRepository(),
+    testAttempts: new InMemoryTestAttemptRepository(),
+    testAnswers: new InMemoryTestAnswerRepository(),
     mode,
   };
 }
