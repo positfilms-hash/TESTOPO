@@ -104,6 +104,12 @@ docs/qa/pre-beta-manual-test-script.md
 docs/qa/pre-beta-release-blockers.md
 ```
 
+Usar como referencia de revision visual de Codex:
+
+```text
+docs/qa/codex-visual-review-runbook.md
+```
+
 Opcional:
 
 ```text
