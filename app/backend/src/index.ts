@@ -149,6 +149,9 @@ export * from './repository/supabase/supabaseRepositoryErrors.js';
 export * from './repository/supabase/supabaseProfileRepository.js';
 export * from './repository/supabase/supabaseWorkspaceRepository.js';
 export * from './repository/supabase/supabaseWorkspaceMemberRepository.js';
+// SPEC 021 - Supabase Repositories: Oppositions & Access
+export * from './repository/supabase/supabaseOppositionRepository.js';
+export * from './repository/supabase/supabaseOppositionAccessRepository.js';
 export * from './repository/supabase/createCoreRepositories.js';
 
 // SPEC 019 - AI Syllabus Index Builder
