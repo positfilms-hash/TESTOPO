@@ -134,7 +134,10 @@ Migración de dominio **completada** (021–024). Lo que queda:
 - ~~**SPEC 025** — RLS Hardening.~~ ✅ hecho (filtrado fino student + inmutabilidad
   de `profiles`; gap de `is_correct` documentado para beta — ver
   [`rls-known-gaps.md`](../security/rls-known-gaps.md)).
-- **SPEC 026** — Edge Functions para borrado de cuenta (`auth.users`).
+- ~~**SPEC 026** — Edge Function de borrado de cuenta (`auth.users`).~~ ✅ hecho
+  (Edge Function `delete-account` con service role; ver
+  [`account-deletion.md`](../security/account-deletion.md) y
+  [`supabase-edge-functions.md`](../setup/supabase-edge-functions.md)).
 - **SPEC 027** — Beta Readiness (cierre del gap `is_correct` vía RPC/vista).
 
 El proceso operativo de cada migración (aplicar, convenciones, idempotencia,

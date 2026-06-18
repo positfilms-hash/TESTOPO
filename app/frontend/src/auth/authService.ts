@@ -110,9 +110,15 @@ export async function updatePassword(newPassword: string): Promise<void> {
   }
 }
 
-// Eliminacion de cuenta (MVP): borrado LOGICO. Comprueba las reglas, marca el
-// perfil como `deleted` y cierra sesion. El borrado real en auth.users requiere
-// la clave de servicio y debe hacerse desde servidor (fuera de alcance aqui).
+// Frase de confirmacion que el usuario debe escribir para borrar la cuenta.
+export const ACCOUNT_DELETE_CONFIRMATION = 'ELIMINAR';
+
+// Eliminacion de cuenta (SPEC 026): el trabajo privilegiado (revocar accesos,
+// archivar workspace personal, soft-delete del perfil y borrado real del usuario
+// Auth) lo hace la Edge Function `delete-account` con la service role en
+// servidor. El frontend solo invoca la funcion autenticada y cierra sesion; NUNCA
+// usa la service role ni borra `auth.users` directamente. Las comprobaciones del
+// cliente son pre-flight de UX; la funcion las repite de forma autoritativa.
 export async function requestAccountDeletion(args: {
   userId: string;
   confirmed: boolean;
@@ -120,12 +126,33 @@ export async function requestAccountDeletion(args: {
 }): Promise<void> {
   assertCanDeleteAccount(args);
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('profiles')
-    .update({ status: 'deleted', updated_at: new Date().toISOString() })
-    .eq('id', args.userId);
+  const { error } = await supabase.functions.invoke('delete-account', {
+    body: { confirmation: ACCOUNT_DELETE_CONFIRMATION },
+  });
   if (error) {
-    throw new AuthError([AuthErrorCode.ACCOUNT_DELETE_FAILED]);
+    throw new AuthError([await mapDeleteError(error)]);
   }
   await supabase.auth.signOut();
+}
+
+// Traduce el error de la Edge Function a un codigo de UI. Intenta leer el cuerpo
+// (codigo devuelto por la funcion); si no, error generico.
+async function mapDeleteError(error: unknown): Promise<AuthErrorCode> {
+  let code: string | undefined;
+  try {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      const payload = (await ctx.json()) as { error?: string };
+      code = payload?.error;
+    }
+  } catch {
+    // cuerpo no JSON: error generico.
+  }
+  if (code === 'ACCOUNT_DELETE_WORKSPACE_OWNER_BLOCKED') {
+    return AuthErrorCode.ACCOUNT_DELETE_WORKSPACE_OWNER_BLOCKED;
+  }
+  if (code === 'ACCOUNT_DELETE_CONFIRMATION_REQUIRED') {
+    return AuthErrorCode.ACCOUNT_DELETE_CONFIRMATION_REQUIRED;
+  }
+  return AuthErrorCode.ACCOUNT_DELETE_FAILED;
 }
