@@ -47,11 +47,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   if (storeRef.current === null) {
     storeRef.current = createAppStore();
   }
-  // Datos demo: se siembran de forma asincrona al arrancar (SPEC 018.3).
+  // Datos demo: se siembran de forma asincrona al arrancar (SPEC 018.3). Solo en
+  // modo memoria; con persistencia Supabase la cuenta es real (SPEC 020).
   const [seeded, setSeeded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    void seedDemoData(storeRef.current as AppStore).then(() => {
+    const store = storeRef.current as AppStore;
+    if (store.persistence !== 'memory') {
+      setSeeded(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void seedDemoData(store).then(() => {
       if (!cancelled) setSeeded(true);
     });
     return () => {

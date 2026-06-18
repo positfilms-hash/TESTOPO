@@ -25,21 +25,23 @@ import {
   QuestionFeedbackService,
   InMemorySyllabusIndexRepository,
   SyllabusIndexService,
+  createCoreRepositories,
+  type SupabaseClientPort,
+  type PersistenceMode,
   InMemoryTestRepository,
   InMemoryTestQuestionRepository,
   TestGeneratorService,
   TestAttemptService,
-  InMemoryUserRepository,
   UserService,
   InMemoryOppositionRepository,
   InMemoryOppositionAccessRepository,
   OppositionService,
-  InMemoryWorkspaceRepository,
-  InMemoryWorkspaceMemberRepository,
   WorkspaceService,
   PlatformService,
   type PracticeTest,
 } from '@backend';
+import { isSupabaseConfigured, getSupabase } from '../auth/supabaseClient.js';
+import { createSupabasePort, requestedPersistenceMode } from './supabaseGateway.js';
 
 // Credenciales sembradas para entrar rapido en la demo (ficticias).
 export const SEED_ADMIN = { email: 'admin@testopo.dev', password: 'admin1234' };
@@ -72,6 +74,8 @@ export interface AppStore {
   platform: PlatformService;
   /** Tests creados en esta sesion (registro de conveniencia para la UI). */
   createdTests: PracticeTest[];
+  /** Modo de persistencia efectivo del bloque cuenta/espacios (SPEC 020). */
+  persistence: PersistenceMode;
 }
 
 export function createAppStore(seed = true): AppStore {
@@ -80,14 +84,24 @@ export function createAppStore(seed = true): AppStore {
   const questionRepo = new InMemoryQuestionRepository();
   const testRepo = new InMemoryTestRepository();
   const testQuestionRepo = new InMemoryTestQuestionRepository();
-  const userRepo = new InMemoryUserRepository();
   const oppositionRepo = new InMemoryOppositionRepository();
   const accessRepo = new InMemoryOppositionAccessRepository();
-  const workspaceRepo = new InMemoryWorkspaceRepository();
-  const workspaceMemberRepo = new InMemoryWorkspaceMemberRepository();
 
-  const users = new UserService(userRepo);
-  const workspaces = new WorkspaceService(workspaceRepo, workspaceMemberRepo);
+  // SPEC 020: profiles/workspaces/workspace_members pueden ir a Supabase; el
+  // resto del dominio sigue en memoria. Por defecto memoria (la demo no toca
+  // Supabase). Supabase solo si VITE_APP_PERSISTENCE_MODE=supabase y configurado.
+  let supabasePort: SupabaseClientPort | undefined;
+  if (requestedPersistenceMode().toLowerCase() === 'supabase' && isSupabaseConfigured()) {
+    supabasePort = createSupabasePort(getSupabase());
+  }
+  const core = createCoreRepositories({
+    persistence: requestedPersistenceMode(),
+    supabase: supabasePort ?? null,
+  });
+  const workspaceMemberRepo = core.workspaceMembers;
+
+  const users = new UserService(core.users);
+  const workspaces = new WorkspaceService(core.workspaces, core.workspaceMembers);
   const oppositions = new OppositionService(
     oppositionRepo,
     accessRepo,
@@ -213,6 +227,7 @@ export function createAppStore(seed = true): AppStore {
     attempts,
     platform,
     createdTests: [],
+    persistence: core.mode,
   };
 
   void seed;

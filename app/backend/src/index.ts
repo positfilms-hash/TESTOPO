@@ -142,6 +142,15 @@ export * from './generation/openAiQuestionGenerationProvider.js';
 export * from './generation/createQuestionGenerationProvider.js';
 export * from './service/questionFeedbackService.js';
 
+// SPEC 020 - Supabase Repositories: Profiles & Workspaces
+export * from './repository/supabase/supabaseClientPort.js';
+export * from './repository/supabase/inMemorySupabasePort.js';
+export * from './repository/supabase/supabaseRepositoryErrors.js';
+export * from './repository/supabase/supabaseProfileRepository.js';
+export * from './repository/supabase/supabaseWorkspaceRepository.js';
+export * from './repository/supabase/supabaseWorkspaceMemberRepository.js';
+export * from './repository/supabase/createCoreRepositories.js';
+
 // SPEC 019 - AI Syllabus Index Builder
 export * from './models/syllabusIndex.js';
 export * from './syllabus/syllabusIndexErrors.js';
