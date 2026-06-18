@@ -134,17 +134,21 @@ describe('SPEC 022 - import batch/item repositories', () => {
       uploaded_by: 'admin',
       status: 'pending',
       source_type: 'zip',
+      upload_category: 'opposition_material',
       original_filename: 'temario.zip',
       total_files: 2,
       imported_files: 0,
       skipped_files: 0,
       failed_files: 0,
+      analyzed_files: 0,
       errors: [],
+      warnings: [],
       created_at: NOW,
       updated_at: NOW,
     };
     await batches.create(batch);
     expect((await batches.findById('b1'))?.source_type).toBe('zip');
+    expect((await batches.findById('b1'))?.upload_category).toBe('opposition_material');
 
     const done = await batches.save({ ...batch, status: 'completed', imported_files: 2, errors: ['x'] });
     expect(done.status).toBe('completed');
@@ -154,10 +158,15 @@ describe('SPEC 022 - import batch/item repositories', () => {
     const item: MaterialImportItem = {
       id: 'i1',
       batch_id: 'b1',
+      workspace_id: 'ws-1',
+      opposition_id: 'opo-1',
       material_id: 'm1',
       topic_id: 't1',
       original_path: 'Tema 1/intro.pdf',
       original_filename: 'intro.pdf',
+      upload_category: 'opposition_material',
+      detected_category: 'opposition_material',
+      ai_classification_confidence: null,
       status: 'imported',
       error: null,
       created_at: NOW,

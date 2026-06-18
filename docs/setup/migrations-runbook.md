@@ -132,6 +132,7 @@ fila en `profiles` → crear workspace personal → aparece en `workspaces` y
 | 024 | `024_tests_attempts_answers.sql` ✅ | tests, test_questions, test_attempts, test_answers |
 | 025 | `025_rls_hardening.sql` ✅ | endurecimiento RLS de todo el dominio + helpers + inmutabilidad de profiles |
 | 026 | (no es migración SQL) ✅ | **Edge Function** `delete-account` (Deno) — borrado real de Auth. Ver [supabase-edge-functions.md](./supabase-edge-functions.md) |
+| 028 | `026_smart_upload_categories.sql` ✅ | Smart Bulk Upload: columnas de categoría en import batches/items (idempotente, sin cambios de RLS). Ver [material-ingestion.md](../architecture/material-ingestion.md) |
 
 > Las migraciones 021+ las **define Codex en su spec**; este runbook solo fija la
 > convención y el proceso. La numeración puede ajustarse si cambia el orden.

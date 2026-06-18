@@ -22,9 +22,9 @@ export enum ImportErrorCode {
   DUPLICATE_SKIPPED = 'IMPORT_DUPLICATE_SKIPPED',
 }
 
-// Limites de importacion para el MVP (SPEC 017, 17).
+// Limites de importacion (SPEC 017, 17; actualizado por SPEC 028, 27).
 export const MAX_ZIP_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
-export const MAX_ZIP_FILES = 300;
+export const MAX_ZIP_FILES = 500; // SPEC 028: maximo de archivos por lote.
 export const MAX_IMPORT_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB por archivo
 
 // Extensiones permitidas en esta spec (DOCX queda fuera por ahora).

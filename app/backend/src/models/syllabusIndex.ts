@@ -115,14 +115,22 @@ export interface MaterialTopicSuggestion {
 }
 
 // --- Resumen de patron de examen (SPEC 019, 15). Contexto, NO banco de preguntas. ---
+// SPEC 028 anade scope (`workspace_id`/`opposition_id`), el lote de subida que lo
+// origino (`batch_id`) y notas de cobertura (`coverage_notes`).
 export interface ExamPatternSummary {
   id: string;
   run_id: string;
+  workspace_id: string | null;
+  opposition_id: string | null;
+  /** Lote de subida masiva que origino el analisis (SPEC 028); null si no aplica. */
+  batch_id: string | null;
   material_id: string;
   detected_question_count: number | null;
   detected_topics: string[];
   difficulty_notes: string | null;
   style_notes: string | null;
+  /** Notas de cobertura tematica aproximada del examen (SPEC 028). */
+  coverage_notes: string | null;
   warnings: string[];
   created_at: Date;
   updated_at: Date;

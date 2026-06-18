@@ -58,6 +58,10 @@ export interface ProposeIndexInput {
   material_ids?: string[];
   /** Solo materiales sin tema (sin vinculo material-tema). */
   only_unclassified?: boolean;
+  /** Lote de carga masiva que origino el analisis (SPEC 028); sella los patrones. */
+  batch_id?: string | null;
+  /** Pistas de carpeta por material (material_id -> ruta) para sugerir temas (SPEC 028). */
+  folder_paths?: Record<string, string>;
 }
 
 export interface ProposalDetail {
@@ -131,6 +135,7 @@ export class SyllabusIndexService {
     const { providerMaterials, truncated } = this.buildProviderMaterials(
       analyzable,
       warnings,
+      input.folder_paths,
     );
     void truncated;
 
@@ -259,11 +264,15 @@ export class SyllabusIndexService {
         await this.repo.createExamPattern({
           id: this.generateId(),
           run_id: run.id,
+          workspace_id: input.workspace_id ?? null,
+          opposition_id: input.opposition_id,
+          batch_id: input.batch_id ?? null,
           material_id: pattern.material_id,
           detected_question_count: pattern.detected_question_count ?? null,
           detected_topics: pattern.detected_topics ?? [],
           difficulty_notes: pattern.difficulty_notes ?? null,
           style_notes: pattern.style_notes ?? null,
+          coverage_notes: pattern.coverage_notes ?? null,
           warnings: pattern.warnings ?? [],
           created_at: timestamp,
           updated_at: timestamp,
@@ -593,12 +602,14 @@ export class SyllabusIndexService {
   private buildProviderMaterials(
     analyzable: Material[],
     warnings: string[],
+    folderPaths?: Record<string, string>,
   ): {
     providerMaterials: {
       id: string;
       title: string;
       type: Material['type'];
       text: string;
+      folder_path?: string | null;
     }[];
     truncated: boolean;
   } {
@@ -613,7 +624,13 @@ export class SyllabusIndexService {
       if (text.length < full.length) {
         truncated = true;
       }
-      return { id: m.id, title: m.title, type: m.type, text };
+      return {
+        id: m.id,
+        title: m.title,
+        type: m.type,
+        text,
+        folder_path: folderPaths?.[m.id] ?? null,
+      };
     });
     if (truncated) {
       warnings.push(

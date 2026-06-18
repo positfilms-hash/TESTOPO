@@ -5,11 +5,14 @@ import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.j
 
 type View =
   | { kind: 'list' }
-  // SPEC 022: punto de entrada unico "Subir material" (PDF o texto).
+  // SPEC 028: punto de entrada unico "Subir material" = carga masiva por
+  // categoria (ZIP/carpeta/PDFs). "Pegar texto" queda como alta manual (`new`).
   | { kind: 'upload' }
   | { kind: 'new' }
-  | { kind: 'pdf' }
   | { kind: 'detail'; id: string };
+
+// SPEC 028: solo dos categorias de cara al usuario.
+type UploadCategory = 'opposition_material' | 'old_tests';
 
 const EXTRACTION_LABELS: Record<string, string> = {
   not_started: 'Sin procesar',
@@ -60,46 +63,18 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
     );
   }
 
-  if (view.kind === 'pdf') {
+  // SPEC 028: un unico CTA "Subir material" abre la carga masiva por categoria
+  // (ZIP / carpeta / varios PDFs). "Pegar texto" queda como alta manual.
+  if (view.kind === 'upload') {
     return (
-      <PdfUploadForm
-        onCancel={() => setView({ kind: 'upload' })}
+      <SmartUploadForm
+        onCancel={() => setView({ kind: 'list' })}
+        onPasteText={() => setView({ kind: 'new' })}
         onDone={() => {
           refresh();
           setView({ kind: 'list' });
         }}
       />
-    );
-  }
-
-  // SPEC 022: un unico CTA "Subir material" agrupa la subida de PDF y el alta de
-  // material por texto en la misma experiencia. La importacion ZIP/multiple
-  // sigue como flujo secundario aparte.
-  if (view.kind === 'upload') {
-    return (
-      <div>
-        <PageHeader
-          title="Subir material"
-          subtitle="Sube un PDF o pega el texto del documento."
-        />
-        <div className="card">
-          <p className="muted">
-            Anade material a esta oposicion subiendo un archivo PDF o registrando
-            su texto manualmente.
-          </p>
-          <div className="row">
-            <Button onClick={() => setView({ kind: 'pdf' })}>Subir PDF</Button>
-            <Button variant="secondary" onClick={() => setView({ kind: 'new' })}>
-              Pegar texto
-            </Button>
-          </div>
-        </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <Button variant="secondary" small onClick={() => setView({ kind: 'list' })}>
-            Volver
-          </Button>
-        </div>
-      </div>
     );
   }
 
@@ -233,145 +208,318 @@ function MaterialForm({
   );
 }
 
-function PdfUploadForm({
+// SPEC 028 - Carga masiva inteligente: el usuario elige una categoria (material
+// de la oposicion / tests antiguos), sube ZIP / carpeta / varios PDFs, y la app
+// desglosa, extrae texto y, opcionalmente, lanza el indice IA (que solo propone).
+type SmartSummary = {
+  category: UploadCategory;
+  imported: number;
+  analyzed: number;
+  skipped: number;
+  failed: number;
+  warnings: string[];
+  folderPaths: Record<string, string>;
+};
+
+// Soporte de subida de carpeta (`webkitdirectory`). En navegadores sin soporte
+// (o jsdom) recomendamos comprimir en ZIP.
+const FOLDER_SUPPORTED =
+  typeof document !== 'undefined' &&
+  'webkitdirectory' in document.createElement('input');
+
+async function toUploadFiles(
+  fileList: FileList,
+  useRelativePath: boolean,
+): Promise<{ original_path: string; original_filename: string; mime_type: string | null; bytes: Uint8Array }[]> {
+  return Promise.all(
+    Array.from(fileList).map(async (f) => ({
+      original_path:
+        useRelativePath && (f as File & { webkitRelativePath?: string }).webkitRelativePath
+          ? (f as File & { webkitRelativePath: string }).webkitRelativePath
+          : f.name,
+      original_filename: f.name,
+      mime_type: f.type || null,
+      bytes: new Uint8Array(await f.arrayBuffer()),
+    })),
+  );
+}
+
+function SmartUploadForm({
   onCancel,
   onDone,
+  onPasteText,
 }: {
   onCancel: () => void;
   onDone: () => void;
+  onPasteText: () => void;
 }) {
   const { store, currentUser, currentOpposition } = useStore();
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState<MaterialType>('syllabus');
-  const [reference, setReference] = useState('');
-  const [description, setDescription] = useState('');
-  const [topicId, setTopicId] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ ok: boolean; extracted: boolean } | null>(
-    null,
-  );
+  const [category, setCategory] = useState<UploadCategory>('opposition_material');
+  const [runAiIndex, setRunAiIndex] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SmartSummary | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  // Temas de la oposicion actual para vincular opcionalmente.
-  const [topics, setTopics] = useState<{ id: string; code: string | null; title: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void store.topics.listTopics().then((all) => {
-      if (!cancelled) {
-        setTopics(all.filter((t) => t.opposition_id === currentOpposition?.id));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [store, currentOpposition]);
+  const isOldTests = category === 'old_tests';
 
-  const submit = async () => {
-    setError(null);
+  const runUpload = async (
+    sourceType: 'zip' | 'folder' | 'multi_file',
+    payload:
+      | { zip: { original_filename: string; bytes: Uint8Array } }
+      | { files: { original_path: string; original_filename: string; mime_type: string | null; bytes: Uint8Array }[] },
+  ) => {
     if (!currentUser) return;
-    if (!file) {
-      setError('Selecciona un archivo PDF.');
-      return;
-    }
     setBusy(true);
+    setError(null);
+    setAiNotice(null);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const material = await store.platform.uploadPdf(currentUser, {
+      const { batch, items } = await store.platform.smartUpload(currentUser, {
         opposition_id: currentOpposition?.id,
-        title,
-        type,
-        reference: reference || null,
-        description: description || null,
-        topic_ids: topicId ? [topicId] : [],
-        file: {
-          original_filename: file.name,
-          mime_type: file.type || 'application/pdf',
-          bytes,
-        },
+        upload_category: category,
+        source_type: sourceType,
+        ...payload,
       });
-      setResult({
-        ok: true,
-        extracted: material.extraction_status === 'completed',
+      const folderPaths: Record<string, string> = {};
+      for (const item of items) {
+        if (item.material_id) folderPaths[item.material_id] = item.original_path;
+      }
+      setSummary({
+        category,
+        imported: batch.imported_files,
+        analyzed: batch.analyzed_files,
+        skipped: batch.skipped_files,
+        failed: batch.failed_files,
+        warnings: batch.warnings,
+        folderPaths,
       });
-    } catch {
-      setError(
-        'No se pudo subir el PDF. Revisa el titulo, el tipo y que el archivo sea un PDF valido (max. 50 MB).',
-      );
+    } catch (err) {
+      setError(smartUploadErrorMessage(err));
     } finally {
       setBusy(false);
     }
   };
 
-  if (result?.ok) {
+  const onPickZip = async (file: File | null) => {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await runUpload('zip', { zip: { original_filename: file.name, bytes } });
+  };
+
+  const onPickFolder = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    await runUpload('folder', { files: await toUploadFiles(fileList, true) });
+  };
+
+  const onPickFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    await runUpload('multi_file', { files: await toUploadFiles(fileList, false) });
+  };
+
+  const createAiIndex = async () => {
+    if (!currentUser || !summary) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await store.platform.proposeSyllabusIndex(currentUser, {
+        opposition_id: currentOpposition?.id ?? '',
+        folder_paths: summary.folderPaths,
+      });
+      setAiNotice(
+        'La IA ha propuesto un indice de temario pendiente de revision. Revisalo y aplicalo desde Temario.',
+      );
+    } catch {
+      setError('No se ha podido lanzar el indice con IA. Intentalo de nuevo desde Temario.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // --- Pantalla de resumen (SPEC 028, 26) ---
+  if (summary) {
     return (
       <div>
-        <PageHeader title="Subir PDF" subtitle="Resultado de la subida." />
-        <div className="notice success">PDF subido correctamente.</div>
-        <div className={`notice ${result.extracted ? 'success' : 'error'}`}>
-          {result.extracted
-            ? 'Texto extraido correctamente. Ya puedes usar este material para generar preguntas.'
-            : 'El PDF se ha subido, pero no se ha podido extraer texto. Puede que sea un PDF escaneado.'}
-        </div>
-        <div className="row">
-          <Button onClick={onDone}>Volver al material</Button>
+        <PageHeader title="Importacion completada" subtitle="Resumen de la subida." />
+        <div className="card" style={{ maxWidth: 560 }}>
+          <strong>
+            {summary.category === 'old_tests'
+              ? 'Tests antiguos'
+              : 'Material de la oposicion'}
+          </strong>
+          <ul className="muted small">
+            <li>{summary.imported} archivos importados</li>
+            <li>{summary.analyzed} con texto extraido</li>
+            {summary.imported - summary.analyzed > 0 && (
+              <li>{summary.imported - summary.analyzed} sin texto extraible</li>
+            )}
+            {summary.skipped > 0 && <li>{summary.skipped} omitidos por formato no permitido</li>}
+            {summary.failed > 0 && <li>{summary.failed} con error</li>}
+          </ul>
+          {summary.warnings.length > 0 && (
+            <div className="notice error small">
+              {summary.warnings.join(' ')}
+            </div>
+          )}
+          {summary.category === 'old_tests' ? (
+            <p className="muted small">
+              Se analizaran los tests antiguos como referencia de estilo y
+              cobertura. No se generan preguntas validadas automaticamente.
+            </p>
+          ) : (
+            <p className="muted small">
+              Siguiente paso recomendado: deja que la IA proponga un indice de
+              temario. Solo es una propuesta; la revisas antes de aplicarla.
+            </p>
+          )}
+          {aiNotice && <div className="notice success">{aiNotice}</div>}
+          {error && <div className="notice error">{error}</div>}
+          <div className="row" style={{ marginTop: 12 }}>
+            {summary.category === 'opposition_material' && !aiNotice && (
+              <Button onClick={createAiIndex} disabled={busy}>
+                {busy ? 'Lanzando…' : 'Crear indice con IA'}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onDone}>
+              Volver al material
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // --- Formulario de carga ---
   return (
     <div>
-      <PageHeader title="Subir PDF" subtitle="Sube un temario, ley o examen en PDF." />
+      <PageHeader
+        title="Subir material"
+        subtitle="Sube un ZIP, una carpeta o varios PDFs de una vez."
+      />
       {error && <div className="notice error">{error}</div>}
       <div className="card" style={{ maxWidth: 560 }}>
-        <Field label="Titulo">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tema 1 - Constitucion" />
-        </Field>
-        <Field label="Tipo">
-          <select value={type} onChange={(e) => setType(e.target.value as MaterialType)}>
-            {MATERIAL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Tema relacionado (opcional)">
-          <select value={topicId} onChange={(e) => setTopicId(e.target.value)}>
-            <option value="">Sin tema</option>
-            {topics.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.code ? `${t.code} · ` : ''}
-                {t.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Referencia (opcional)">
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Tema 1, articulo 14…" />
-        </Field>
-        <Field label="Archivo PDF">
+        <p className="muted">Que vas a subir?</p>
+        <label className="row" style={{ gap: 8, cursor: 'pointer' }}>
           <input
-            type="file"
-            accept="application/pdf,.pdf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            type="radio"
+            name="upload-category"
+            checked={category === 'opposition_material'}
+            onChange={() => {
+              setCategory('opposition_material');
+              setRunAiIndex(true);
+            }}
           />
-        </Field>
-        <Field label="Descripcion (opcional)">
-          <input value={description} onChange={(e) => setDescription(e.target.value)} />
-        </Field>
-        <div className="row">
-          <Button onClick={submit} disabled={busy}>
-            {busy ? 'Subiendo…' : 'Subir PDF'}
+          <span>
+            <strong>Material de la oposicion</strong>
+            <div className="muted small">Temario, apuntes, leyes, esquemas, PDFs de estudio.</div>
+          </span>
+        </label>
+        <label className="row" style={{ gap: 8, cursor: 'pointer', marginTop: 8 }}>
+          <input
+            type="radio"
+            name="upload-category"
+            checked={category === 'old_tests'}
+            onChange={() => {
+              setCategory('old_tests');
+              setRunAiIndex(false);
+            }}
+          />
+          <span>
+            <strong>Tests antiguos</strong>
+            <div className="muted small">Examenes oficiales, simulacros, modelos de examen.</div>
+          </span>
+        </label>
+
+        {!isOldTests && (
+          <label className="row" style={{ gap: 8, marginTop: 12, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={runAiIndex}
+              onChange={(e) => setRunAiIndex(e.target.checked)}
+            />
+            <span className="small">Sugerir indice con IA despues de importar</span>
+          </label>
+        )}
+
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
+          <label className="btn" style={{ cursor: 'pointer' }}>
+            {busy ? 'Subiendo…' : 'Subir ZIP'}
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              style={{ display: 'none' }}
+              disabled={busy}
+              onChange={(e) => onPickZip(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          {FOLDER_SUPPORTED && (
+            <label className="btn secondary" style={{ cursor: 'pointer' }}>
+              Subir carpeta
+              <input
+                type="file"
+                // @ts-expect-error webkitdirectory no esta en los tipos estandar.
+                webkitdirectory=""
+                directory=""
+                multiple
+                style={{ display: 'none' }}
+                disabled={busy}
+                onChange={(e) => onPickFolder(e.target.files)}
+              />
+            </label>
+          )}
+          <label className="btn secondary" style={{ cursor: 'pointer' }}>
+            Subir PDFs
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+              style={{ display: 'none' }}
+              disabled={busy}
+              onChange={(e) => onPickFiles(e.target.files)}
+            />
+          </label>
+        </div>
+
+        {!FOLDER_SUPPORTED && (
+          <p className="muted small" style={{ marginTop: 8 }}>
+            Tambien puedes comprimir la carpeta en ZIP y subirla aqui.
+          </p>
+        )}
+
+        <div className="row" style={{ marginTop: 16 }}>
+          <Button variant="secondary" small onClick={onPasteText}>
+            Pegar texto
           </Button>
-          <Button variant="secondary" onClick={onCancel}>
-            Cancelar
+          <Button variant="secondary" small onClick={onCancel}>
+            Volver
           </Button>
         </div>
       </div>
     </div>
   );
+}
+
+// Mensaje de usuario a partir de un error de carga masiva (SPEC 028, 32/33).
+function smartUploadErrorMessage(err: unknown): string {
+  const codes =
+    err && typeof err === 'object' && Array.isArray((err as { codes?: unknown }).codes)
+      ? ((err as { codes: string[] }).codes)
+      : [];
+  if (codes.includes('SMART_UPLOAD_TOO_MANY_FILES')) {
+    return 'El lote supera el maximo de archivos permitidos (500).';
+  }
+  if (codes.includes('SMART_UPLOAD_ZIP_TOO_LARGE')) {
+    return 'El ZIP o algun archivo supera el tamano maximo permitido.';
+  }
+  if (codes.includes('SMART_UPLOAD_UNSAFE_PATH')) {
+    return 'El ZIP contiene rutas no seguras y se ha rechazado.';
+  }
+  if (codes.includes('SMART_UPLOAD_NESTED_ZIP_NOT_ALLOWED')) {
+    return 'No se permiten ZIP dentro de otro ZIP.';
+  }
+  if (codes.includes('SMART_UPLOAD_FILE_REQUIRED')) {
+    return 'Selecciona al menos un archivo valido.';
+  }
+  return 'No se ha podido completar la subida. Revisa los archivos (PDF, TXT, MD o ZIP) y vuelve a intentarlo.';
 }
 
 function MaterialDetail({

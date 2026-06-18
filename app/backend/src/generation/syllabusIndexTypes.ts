@@ -9,6 +9,8 @@ export interface SyllabusMaterialInput {
   title: string;
   type: MaterialType;
   text: string;
+  /** Ruta de carpeta original del material (SPEC 028); pista para sugerir temas. */
+  folder_path?: string | null;
 }
 
 export interface SyllabusIndexProviderInput {
@@ -36,6 +38,8 @@ export interface AIExamPatternSummary {
   detected_topics?: string[];
   difficulty_notes?: string | null;
   style_notes?: string | null;
+  /** Notas de cobertura tematica aproximada del examen (SPEC 028). */
+  coverage_notes?: string | null;
   warnings?: string[];
 }
 

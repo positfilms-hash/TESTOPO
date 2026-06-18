@@ -213,18 +213,11 @@ function TopicNode({
   );
 }
 
-interface ImportSummary {
-  imported: number;
-  skipped: number;
-  failed: number;
-  errors: string[];
-}
-
+// SPEC 028: la subida de material se centraliza en la seccion "Material"
+// (carga masiva por categoria). Aqui el tema solo muestra, en modo lectura, el
+// material que ya tiene asociado.
 function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: string }) {
-  const { store, refresh, currentUser, currentOpposition, version } = useStore();
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const { store, version } = useStore();
   const [materials, setMaterials] = useState<Material[]>([]);
 
   useEffect(() => {
@@ -243,98 +236,16 @@ function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: str
     };
   }, [store, topicId, version]);
 
-  const uploadFiles = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0 || !currentUser) return;
-    setBusy(true);
-    setNotice(null);
-    setSummary(null);
-    try {
-      const files = await Promise.all(
-        Array.from(fileList).map(async (f) => ({
-          original_filename: f.name,
-          mime_type: f.type || null,
-          bytes: new Uint8Array(await f.arrayBuffer()),
-        })),
-      );
-      const { batch } = await store.platform.importFilesToTopic(currentUser, {
-        opposition_id: currentOpposition?.id,
-        topic_id: topicId,
-        files,
-      });
-      setSummary(toSummary(batch));
-      refresh();
-    } catch {
-      setNotice('No se pudo subir el material. Revisa los archivos (PDF, TXT o MD).');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const importZip = async (file: File | null) => {
-    if (!file || !currentUser) return;
-    setBusy(true);
-    setNotice(null);
-    setSummary(null);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const { batch } = await store.platform.importZip(currentUser, {
-        opposition_id: currentOpposition?.id,
-        parent_topic_id: topicId,
-        zip: { original_filename: file.name, bytes },
-      });
-      setSummary(toSummary(batch));
-      refresh();
-    } catch {
-      setNotice(
-        'No se pudo importar el ZIP. Puede contener rutas no seguras, ZIP anidados o superar los limites.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="card">
       <PageHeader title={topicTitle} subtitle={`${materials.length} material(es)`} />
-
-      {notice && <div className="notice error">{notice}</div>}
-      {summary && (
-        <div className="notice success">
-          Importacion: {summary.imported} importados, {summary.skipped} omitidos,{' '}
-          {summary.failed} fallidos.
-          {summary.errors.length > 0 && (
-            <div className="small">Avisos: {summary.errors.join(', ')}</div>
-          )}
-        </div>
-      )}
-
-      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <label className="btn small" style={{ cursor: 'pointer' }}>
-          {busy ? 'Subiendo…' : 'Subir material'}
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
-            style={{ display: 'none' }}
-            disabled={busy}
-            onChange={(e) => uploadFiles(e.target.files)}
-          />
-        </label>
-        <label className="btn small secondary" style={{ cursor: 'pointer' }}>
-          Importar ZIP
-          <input
-            type="file"
-            accept=".zip,application/zip"
-            style={{ display: 'none' }}
-            disabled={busy}
-            onChange={(e) => importZip(e.target.files?.[0] ?? null)}
-          />
-        </label>
-      </div>
+      <p className="muted small">
+        Para anadir material usa "Subir material" en la seccion Material.
+      </p>
 
       <div style={{ marginTop: 12 }}>
         {materials.length === 0 ? (
-          <EmptyState message="Este tema todavia no tiene material. Sube uno o importa un ZIP." />
+          <EmptyState message="Este tema todavia no tiene material asociado." />
         ) : (
           materials.map((m) => (
             <div className="card" key={m.id}>
@@ -356,18 +267,4 @@ function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: str
       </div>
     </div>
   );
-}
-
-function toSummary(batch: {
-  imported_files: number;
-  skipped_files: number;
-  failed_files: number;
-  errors: string[];
-}): ImportSummary {
-  return {
-    imported: batch.imported_files,
-    skipped: batch.skipped_files,
-    failed: batch.failed_files,
-    errors: batch.errors,
-  };
 }
