@@ -104,8 +104,11 @@ capa de servicios
 (`PlatformService`/`WorkspaceService`/`OppositionService`/`MaterialService`/
 `TopicService`): la autorización real (usuario autenticado, membresía activa, rol
 owner/admin/student, material/tema activo) sigue comprobándose en la aplicación.
-La RLS es defensa adicional. El endurecimiento completo (incluido el filtrado
-fino "student solo ve material/tema `active`") queda para la SPEC 025.
+La RLS es defensa adicional. La **SPEC 025** endurece estas políticas (el alumno
+solo ve oposiciones/materiales/temas con acceso **activo** y `status='active'`, y
+no puede cambiar `role`/`status`/`email`); el detalle está en
+[`docs/security/rls-policies.md`](../security/rls-policies.md), con plan de
+pruebas y gaps en `rls-test-plan.md` y `rls-known-gaps.md`.
 
 La migración `021_oppositions_access.sql` añade además dos correcciones de
 pre-flight sobre el bloque de la SPEC 020, necesarias para operar contra
@@ -127,10 +130,11 @@ Migración de dominio **completada** (021–024). Lo que queda:
 - ~~**SPEC 022** — Materials & Topics.~~ ✅ hecho.
 - ~~**SPEC 023** — Questions & Options.~~ ✅ hecho.
 - ~~**SPEC 024** — Tests, Attempts & Answers.~~ ✅ hecho.
-- **SPEC 025** — RLS Hardening (cierra los gaps documentados: `is_correct` de
-  opciones y de respuestas pre-submit, filtrado fino student, etc.).
+- ~~**SPEC 025** — RLS Hardening.~~ ✅ hecho (filtrado fino student + inmutabilidad
+  de `profiles`; gap de `is_correct` documentado para beta — ver
+  [`rls-known-gaps.md`](../security/rls-known-gaps.md)).
 - **SPEC 026** — Edge Functions para borrado de cuenta (`auth.users`).
-- **SPEC 027** — Beta Readiness.
+- **SPEC 027** — Beta Readiness (cierre del gap `is_correct` vía RPC/vista).
 
 El proceso operativo de cada migración (aplicar, convenciones, idempotencia,
 verificación) está en el [runbook de migraciones](../setup/migrations-runbook.md).
