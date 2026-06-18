@@ -93,3 +93,6 @@ El orden técnico recomendado (la numeración puede ajustarse):
 - **SPEC 024** — Tests, Attempts & Answers.
 - **SPEC 025** — RLS Hardening.
 - **SPEC 026** — Edge Functions para borrado de cuenta (`auth.users`).
+
+El proceso operativo de cada migración (aplicar, convenciones, idempotencia,
+verificación) está en el [runbook de migraciones](../setup/migrations-runbook.md).
