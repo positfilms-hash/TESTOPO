@@ -3,12 +3,13 @@
 Guía para conectar TESTOPO con tu proyecto de Supabase (auth real + base de
 datos). **No incluyas claves reales en el repositorio.** Todo va en `.env`.
 
-> Estado actual (Fase 0): Supabase es la base de **autenticación** e identidad
-> (`profiles` + tablas núcleo + RLS). Los datos de dominio (materiales,
-> preguntas, tests…) siguen en memoria por sesión; su persistencia en Supabase
-> llegará en fases posteriores. Si no defines las variables, la app sigue
-> funcionando en **modo demo** (en memoria) y la auth muestra
-> `SUPABASE_NOT_CONFIGURED`.
+> Estado actual (SPEC 020): Supabase persiste **autenticación** y el bloque base
+> de cuenta/espacios: `profiles`, `workspaces` y `workspace_members`. El resto
+> del dominio (oposiciones, materiales, preguntas, tests…) sigue **en memoria por
+> sesión**; su migración llegará en specs posteriores (021–024). Este estado
+> híbrido es el esperado — ver [`docs/architecture/persistence.md`](../architecture/persistence.md).
+> Si no defines las variables, la app sigue funcionando en **modo demo** (todo en
+> memoria) y la auth muestra `SUPABASE_NOT_CONFIGURED`.
 
 ## 1. Crear el proyecto
 
@@ -43,17 +44,35 @@ SUPABASE_DATABASE_URL=postgresql://...
 
 Vite expone al frontend únicamente las variables con prefijo `VITE_`.
 
+### Modo de persistencia (SPEC 020)
+
+Para que `profiles`, `workspaces` y `workspace_members` se guarden en Supabase
+(no en memoria), añade además:
+
+```text
+APP_PERSISTENCE_MODE=supabase
+VITE_APP_PERSISTENCE_MODE=supabase
+```
+
+- Con `memory` (valor por defecto) todo corre en memoria por sesión (modo demo).
+- Con `supabase`, el bloque cuenta/espacios usa los repositorios Supabase; si
+  Supabase no está configurado (faltan URL/anon key), cae a `memory`
+  automáticamente. El resto del dominio sigue en memoria en cualquier caso.
+
 ## 4. Ejecutar las migraciones
 
-El SQL inicial está en `supabase/migrations/0001_init.sql`. Aplícalo con una de
-estas vías:
+Aplica **en orden** los archivos de `supabase/migrations/` con una de estas vías:
 
-- **SQL Editor** del panel de Supabase: pega y ejecuta el contenido del archivo.
+- **SQL Editor** del panel de Supabase: pega y ejecuta el contenido de cada
+  archivo.
 - **Supabase CLI** (si la usas): `supabase db push`.
 
-Crea `profiles`, el trigger que rellena el perfil al registrarse, las tablas
-núcleo (`workspaces`, `workspace_members`, `oppositions`, `opposition_access`) y
-las políticas RLS básicas.
+1. `0001_init.sql` — crea `profiles`, el trigger que rellena el perfil al
+   registrarse, las tablas núcleo (`workspaces`, `workspace_members`,
+   `oppositions`, `opposition_access`) y las políticas RLS básicas.
+2. `020_profiles_workspaces.sql` (SPEC 020) — idempotente; añade el patrón
+   `updated_at` (función + triggers) e índices útiles para los repositorios de
+   `profiles`/`workspaces`/`workspace_members`. No migra el resto del dominio.
 
 ## 5. Activar Auth email/contraseña
 

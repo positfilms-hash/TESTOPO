@@ -1,0 +1,86 @@
+// Factory de persistencia del bloque base cuenta/espacios (SPEC 020, 11).
+//
+// Selecciona repositorios Supabase o InMemory para `profiles`, `workspaces` y
+// `workspace_members`. El resto del dominio sigue en InMemory (estado hibrido,
+// SPEC 020, 17). Si Supabase no esta configurado, se usa InMemory (fallback).
+
+import type { UserRepository } from '../userRepository.js';
+import type { WorkspaceRepository } from '../workspaceRepository.js';
+import type { WorkspaceMemberRepository } from '../workspaceMemberRepository.js';
+import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
+import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
+import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
+import type { SupabaseClientPort } from './supabaseClientPort.js';
+import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
+import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
+import { SupabaseWorkspaceMemberRepository } from './supabaseWorkspaceMemberRepository.js';
+import {
+  SupabaseRepositoryError,
+  SupabaseRepositoryErrorCode,
+} from './supabaseRepositoryErrors.js';
+
+export const PERSISTENCE_MODES = ['memory', 'supabase'] as const;
+export type PersistenceMode = (typeof PERSISTENCE_MODES)[number];
+
+export interface CoreRepositories {
+  users: UserRepository;
+  workspaces: WorkspaceRepository;
+  workspaceMembers: WorkspaceMemberRepository;
+  /** Modo efectivo usado (tras aplicar fallback). */
+  mode: PersistenceMode;
+}
+
+export interface CreateCoreRepositoriesOptions {
+  /** Modo deseado. Por defecto `memory`. */
+  persistence?: PersistenceMode | string | null;
+  /** Puerto Supabase; obligatorio si el modo efectivo es `supabase`. */
+  supabase?: SupabaseClientPort | null;
+}
+
+// Resuelve el modo: 'supabase' solo si se pide explicitamente Y hay puerto; en
+// otro caso 'memory'. Un valor de modo desconocido es un error claro.
+export function resolvePersistenceMode(
+  requested: PersistenceMode | string | null | undefined,
+  hasSupabase: boolean,
+): PersistenceMode {
+  const mode = (requested ?? 'memory').toString().trim().toLowerCase();
+  if (mode === '' || mode === 'memory') {
+    return 'memory';
+  }
+  if (mode === 'supabase') {
+    // Fallback a memoria si no hay puerto configurado (SPEC 020, 11).
+    return hasSupabase ? 'supabase' : 'memory';
+  }
+  throw new SupabaseRepositoryError(
+    SupabaseRepositoryErrorCode.PERSISTENCE_MODE_INVALID,
+    `APP_PERSISTENCE_MODE invalido: ${mode}`,
+  );
+}
+
+export function createCoreRepositories(
+  options: CreateCoreRepositoriesOptions = {},
+): CoreRepositories {
+  const port = options.supabase ?? null;
+  const mode = resolvePersistenceMode(options.persistence, port !== null);
+
+  if (mode === 'supabase') {
+    if (!port) {
+      throw new SupabaseRepositoryError(
+        SupabaseRepositoryErrorCode.SUPABASE_NOT_CONFIGURED,
+      );
+    }
+    return {
+      users: new SupabaseProfileRepository(port),
+      workspaces: new SupabaseWorkspaceRepository(port),
+      workspaceMembers: new SupabaseWorkspaceMemberRepository(port),
+      mode,
+    };
+  }
+
+  return {
+    users: new InMemoryUserRepository(),
+    workspaces: new InMemoryWorkspaceRepository(),
+    workspaceMembers: new InMemoryWorkspaceMemberRepository(),
+    mode,
+  };
+}
