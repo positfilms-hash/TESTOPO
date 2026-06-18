@@ -10,10 +10,11 @@ import { randomUUID } from 'node:crypto';
 import type { MaterialType } from '../models/enums.js';
 import type { Material } from '../models/material.js';
 import type { Topic } from '../models/topic.js';
-import type {
-  MaterialImportBatch,
-  ImportBatchStatus,
-  ImportSourceType,
+import {
+  IMPORT_SOURCE_TYPES,
+  type MaterialImportBatch,
+  type ImportBatchStatus,
+  type ImportSourceType,
 } from '../models/materialImportBatch.js';
 import type { MaterialImportItem } from '../models/materialImportItem.js';
 import type { MaterialRepository } from '../repository/materialRepository.js';
@@ -26,9 +27,10 @@ import type {
 import type { FileStorage } from '../storage/fileStorage.js';
 import type { PdfTextExtractor } from '../pdf/pdfTextExtractor.js';
 import type { ZipReader } from '../import/zipReader.js';
-import type {
-  DetectedCategory,
-  UploadCategory,
+import {
+  isUploadCategory,
+  type DetectedCategory,
+  type UploadCategory,
 } from '../models/uploadCategory.js';
 import { TopicService } from './topicService.js';
 import {
@@ -312,8 +314,16 @@ export class MaterialImportService {
   // categoria y NO crea temas (las asociaciones se proponen luego via IA).
   async smartUpload(input: SmartUploadInput): Promise<SmartUploadResult> {
     const oppositionId = await this.requireOppositionSmart(input.opposition_id);
+    // Validacion en runtime: una llamada directa (no por TS) podria colar valores
+    // que romperian el check constraint de la tabla. SPEC 028.
     const uploadCategory = input.upload_category ?? 'opposition_material';
+    if (!isUploadCategory(uploadCategory)) {
+      throw new SmartUploadError([SmartUploadErrorCode.INVALID_CATEGORY]);
+    }
     const sourceType: ImportSourceType = input.source_type ?? 'multi_file';
+    if (!(IMPORT_SOURCE_TYPES as readonly string[]).includes(sourceType)) {
+      throw new SmartUploadError([SmartUploadErrorCode.INVALID_FILE_TYPE]);
+    }
     const uploadedBy = input.uploaded_by ?? null;
 
     // Resolver la lista de archivos (expandir ZIP o usar los ya expandidos).

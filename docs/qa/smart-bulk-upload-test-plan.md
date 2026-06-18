@@ -14,6 +14,13 @@ los tests automáticos (`app/backend/tests/smartUpload.test.ts` +
 - Tener a mano ZIPs/PDFs ficticios (sin datos reales): material de oposición, tests
   antiguos, y un ZIP combinado.
 
+> **Importante (modo de persistencia):** los tests unitarios corren en modo
+> `memory`. Para validar contra **Supabase real** arrancar el dev server con el
+> modo staging explícito: `npm run dev -- --mode staging` (Vite solo carga
+> `.env.staging.local` con ese `--mode`; el arranque normal usa el modo demo en
+> memoria). Si la app cae a `memory` sin avisar, las pruebas de RLS/Supabase no
+> son representativas.
+
 ## Casos
 
 | # | Caso | Pasos | Resultado esperado |
@@ -30,8 +37,8 @@ los tests automáticos (`app/backend/tests/smartUpload.test.ts` +
 | 10 | Lote demasiado grande | > 500 archivos | Rechazado con error de límite |
 | 11 | Índice IA | Tras caso 1, pulsar *Crear índice con IA* | Propuesta `pending_review`; carpetas → temas, subcarpetas → subtemas; NO aplicada |
 | 12 | Aplicar índice | En Temario, revisar y aplicar la propuesta aprobada | Se crean temas y se asocian materiales; sin aplicar si no está aprobada |
-| 13 | Análisis tests antiguos | Tras caso 2, lanzar análisis | Resumen de patrones (estilo/dificultad/cobertura); sin preguntas validadas |
-| 14 | Permisos student | Login como alumno con acceso | No ve *Subir material*; no ve lotes ni errores internos; solo material `active` |
+| 13 | Análisis tests antiguos | Tras caso 2 (o con el checkbox marcado, automático) lanzar análisis | Resumen de patrones (estilo/dificultad/cobertura); sin preguntas validadas |
+| 14 | Permisos student | Login como alumno con acceso, tras subir material + tests antiguos | No ve *Subir material*; no ve lotes ni errores internos; ve material de estudio `active` pero **NO** los `old_test`/`official_exam` (fuente interna) |
 | 15 | No generación directa | Confirmar | Ningún PDF produce preguntas `validated` ni tests de estudiante automáticamente |
 
 ## Checklist de seguridad (antes de cerrar)
@@ -41,11 +48,11 @@ los tests automáticos (`app/backend/tests/smartUpload.test.ts` +
 - [ ] No se exponen rutas internas (`storage_path`) al alumno.
 - [ ] ZIP traversal / ZIP anidado / extensiones peligrosas bloqueados.
 - [ ] El alumno no puede subir ni ver lotes/errores internos.
-- [ ] RLS (022/025) intacta tras aplicar `026_smart_upload_categories.sql`.
+- [ ] RLS (022/025) intacta tras aplicar `028_smart_upload_categories.sql`.
 
 ## Verificación de la migración 026
 
-- Aplicar `supabase/migrations/026_smart_upload_categories.sql` siguiendo
+- Aplicar `supabase/migrations/028_smart_upload_categories.sql` siguiendo
   [`../setup/migrations-runbook.md`](../setup/migrations-runbook.md).
 - Comprobar columnas nuevas en `material_import_batches`
   (`upload_category`, `analyzed_files`, `warnings`) y `material_import_items`

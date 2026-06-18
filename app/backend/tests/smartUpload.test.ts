@@ -605,3 +605,56 @@ describe('SPEC 028 - conexion con indice IA y patrones de examen', () => {
     expect(allTopics).toHaveLength(0);
   });
 });
+
+// --- Visibilidad para el estudiante (SPEC 028, 29) ---------------------------
+
+describe('SPEC 028 - el estudiante no ve tests antiguos', () => {
+  it('listMaterials oculta old_test/official_exam al alumno aunque esten active', async () => {
+    const { platform, admin, student, opp } = await orgSetup();
+    await platform.smartUpload(admin, {
+      opposition_id: opp.id,
+      upload_category: 'opposition_material',
+      source_type: 'multi_file',
+      files: [file('Tema.pdf', pdfWithText())],
+    });
+    const { items } = await platform.smartUpload(admin, {
+      opposition_id: opp.id,
+      upload_category: 'old_tests',
+      source_type: 'multi_file',
+      files: [file('Examen 2021.pdf', pdfWithText())],
+    });
+    const oldTestMaterialId = items[0].material_id as string;
+
+    // El alumno con acceso solo ve el material de estudio.
+    const visible = await platform.listMaterials(student, opp.id);
+    expect(
+      visible.every((m) => m.type !== 'old_test' && m.type !== 'official_exam'),
+    ).toBe(true);
+    expect(visible.some((m) => m.type === 'syllabus')).toBe(true);
+
+    // No puede abrir el detalle de un test antiguo.
+    await expect(
+      platform.getMaterial(student, oldTestMaterialId),
+    ).rejects.toBeInstanceOf(AccessError);
+
+    // El gestor si los ve.
+    const adminView = await platform.listMaterials(admin, opp.id);
+    expect(adminView.some((m) => m.type === 'old_test')).toBe(true);
+  });
+
+  it('rechaza una upload_category invalida (validacion en runtime)', async () => {
+    const { materialImport, opp } = await orgSetup();
+    await expectSmartError(
+      () =>
+        materialImport.smartUpload({
+          opposition_id: opp.id,
+          // Valor invalido que TS no deja pasar normalmente, pero una llamada
+          // directa al servicio podria colar.
+          upload_category: 'bogus' as never,
+          source_type: 'multi_file',
+          files: [file('a.pdf', pdfWithText())],
+        }),
+      SmartUploadErrorCode.INVALID_CATEGORY,
+    );
+  });
+});

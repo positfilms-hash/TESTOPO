@@ -120,7 +120,7 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
               <div>
                 <strong>{m.title}</strong>
                 <div className="muted small">
-                  {TYPE_LABELS[m.type]} · {m.reference || 'sin referencia'}
+                  {TYPE_LABELS[m.type]} - {m.reference || 'sin referencia'}
                 </div>
               </div>
               <div className="row">
@@ -189,7 +189,7 @@ function MaterialForm({
           </select>
         </Field>
         <Field label="Referencia (opcional)">
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Tema 1, articulo 14…" />
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Tema 1, articulo 14..." />
         </Field>
         <Field label="Texto del material (opcional)">
           <textarea value={contentText} onChange={(e) => setContentText(e.target.value)} />
@@ -213,6 +213,7 @@ function MaterialForm({
 // desglosa, extrae texto y, opcionalmente, lanza el indice IA (que solo propone).
 type SmartSummary = {
   category: UploadCategory;
+  batchId: string;
   imported: number;
   analyzed: number;
   skipped: number;
@@ -255,13 +256,40 @@ function SmartUploadForm({
 }) {
   const { store, currentUser, currentOpposition } = useStore();
   const [category, setCategory] = useState<UploadCategory>('opposition_material');
-  const [runAiIndex, setRunAiIndex] = useState(true);
+  // SPEC 028, 31: activado por defecto en ambas categorias (indice IA para
+  // material; analisis de patrones para tests antiguos).
+  const [runAnalysis, setRunAnalysis] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SmartSummary | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   const isOldTests = category === 'old_tests';
+
+  // Lanza el analisis IA del lote: para material propone indice de temario; para
+  // tests antiguos analiza estilo/cobertura (patrones). Ambos via SPEC 019; nada
+  // se aplica ni se valida sin revision humana.
+  const runAnalysisFor = async (s: SmartSummary): Promise<void> => {
+    if (!currentUser) return;
+    try {
+      await store.platform.proposeSyllabusIndex(currentUser, {
+        opposition_id: currentOpposition?.id ?? '',
+        folder_paths: s.folderPaths,
+        batch_id: s.batchId,
+      });
+      setAiNotice(
+        s.category === 'old_tests'
+          ? 'Se han analizado los tests antiguos como referencia de estilo y cobertura. No se han generado preguntas.'
+          : 'La IA ha propuesto un indice de temario pendiente de revision. Revisalo y aplicalo desde Temario.',
+      );
+    } catch {
+      setError(
+        s.category === 'old_tests'
+          ? 'No se ha podido analizar los tests antiguos. Intentalo de nuevo desde el resumen.'
+          : 'No se ha podido lanzar el indice con IA. Intentalo de nuevo desde Temario.',
+      );
+    }
+  };
 
   const runUpload = async (
     sourceType: 'zip' | 'folder' | 'multi_file',
@@ -284,15 +312,21 @@ function SmartUploadForm({
       for (const item of items) {
         if (item.material_id) folderPaths[item.material_id] = item.original_path;
       }
-      setSummary({
+      const s: SmartSummary = {
         category,
+        batchId: batch.id,
         imported: batch.imported_files,
         analyzed: batch.analyzed_files,
         skipped: batch.skipped_files,
         failed: batch.failed_files,
         warnings: batch.warnings,
         folderPaths,
-      });
+      };
+      setSummary(s);
+      // Auto-ejecuta el analisis si el usuario lo dejo marcado (SPEC 028, 31).
+      if (runAnalysis && s.imported > 0) {
+        await runAnalysisFor(s);
+      }
     } catch (err) {
       setError(smartUploadErrorMessage(err));
     } finally {
@@ -316,24 +350,22 @@ function SmartUploadForm({
     await runUpload('multi_file', { files: await toUploadFiles(fileList, false) });
   };
 
-  const createAiIndex = async () => {
-    if (!currentUser || !summary) return;
+  // Boton manual del resumen (si el auto-analisis estaba desmarcado o fallo).
+  const manualAnalysis = async () => {
+    if (!summary) return;
     setBusy(true);
     setError(null);
     try {
-      await store.platform.proposeSyllabusIndex(currentUser, {
-        opposition_id: currentOpposition?.id ?? '',
-        folder_paths: summary.folderPaths,
-      });
-      setAiNotice(
-        'La IA ha propuesto un indice de temario pendiente de revision. Revisalo y aplicalo desde Temario.',
-      );
-    } catch {
-      setError('No se ha podido lanzar el indice con IA. Intentalo de nuevo desde Temario.');
+      await runAnalysisFor(summary);
     } finally {
       setBusy(false);
     }
   };
+
+  const analyzeLabel =
+    summary?.category === 'old_tests'
+      ? 'Analizar tests antiguos'
+      : 'Crear indice con IA';
 
   // --- Pantalla de resumen (SPEC 028, 26) ---
   if (summary) {
@@ -362,7 +394,7 @@ function SmartUploadForm({
           )}
           {summary.category === 'old_tests' ? (
             <p className="muted small">
-              Se analizaran los tests antiguos como referencia de estilo y
+              Los tests antiguos se analizan como referencia de estilo y
               cobertura. No se generan preguntas validadas automaticamente.
             </p>
           ) : (
@@ -374,9 +406,9 @@ function SmartUploadForm({
           {aiNotice && <div className="notice success">{aiNotice}</div>}
           {error && <div className="notice error">{error}</div>}
           <div className="row" style={{ marginTop: 12 }}>
-            {summary.category === 'opposition_material' && !aiNotice && (
-              <Button onClick={createAiIndex} disabled={busy}>
-                {busy ? 'Lanzando…' : 'Crear indice con IA'}
+            {!aiNotice && summary.imported > 0 && (
+              <Button onClick={manualAnalysis} disabled={busy}>
+                {busy ? 'Analizando...' : analyzeLabel}
               </Button>
             )}
             <Button variant="secondary" onClick={onDone}>
@@ -405,7 +437,7 @@ function SmartUploadForm({
             checked={category === 'opposition_material'}
             onChange={() => {
               setCategory('opposition_material');
-              setRunAiIndex(true);
+              setRunAnalysis(true);
             }}
           />
           <span>
@@ -420,7 +452,7 @@ function SmartUploadForm({
             checked={category === 'old_tests'}
             onChange={() => {
               setCategory('old_tests');
-              setRunAiIndex(false);
+              setRunAnalysis(true);
             }}
           />
           <span>
@@ -429,20 +461,22 @@ function SmartUploadForm({
           </span>
         </label>
 
-        {!isOldTests && (
-          <label className="row" style={{ gap: 8, marginTop: 12, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={runAiIndex}
-              onChange={(e) => setRunAiIndex(e.target.checked)}
-            />
-            <span className="small">Sugerir indice con IA despues de importar</span>
-          </label>
-        )}
+        <label className="row" style={{ gap: 8, marginTop: 12, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={runAnalysis}
+            onChange={(e) => setRunAnalysis(e.target.checked)}
+          />
+          <span className="small">
+            {isOldTests
+              ? 'Analizar tests antiguos (estilo y cobertura) despues de importar'
+              : 'Crear indice con IA despues de importar'}
+          </span>
+        </label>
 
         <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
           <label className="btn" style={{ cursor: 'pointer' }}>
-            {busy ? 'Subiendo…' : 'Subir ZIP'}
+            {busy ? 'Subiendo...' : 'Subir ZIP'}
             <input
               type="file"
               accept=".zip,application/zip"
@@ -587,14 +621,14 @@ function MaterialDetail({
 
   const markObsolete = async () => {
     if (!currentUser) return;
-    if (!window.confirm('¿Marcar este material como obsoleto?')) return;
+    if (!window.confirm('Marcar este material como obsoleto?')) return;
     await store.platform.markMaterialObsolete(currentUser, id);
     refresh();
     onBack();
   };
 
   if (loading) {
-    return <div className="loading-state">Cargando…</div>;
+    return <div className="loading-state">Cargando...</div>;
   }
   if (!material) {
     return (
@@ -668,7 +702,7 @@ function MaterialDetail({
           <div className="small muted" style={{ marginTop: 4 }}>
             {EXTRACTION_LABELS[material.extraction_status] ??
               material.extraction_status}
-            {material.page_count != null && ` · ${material.page_count} pag.`}
+            {material.page_count != null && ` - ${material.page_count} pag.`}
           </div>
           {material.extraction_error && (
             <div className="small muted" style={{ marginTop: 4 }}>
@@ -700,10 +734,10 @@ function MaterialDetail({
         <details className="card" style={{ maxWidth: 560 }}>
           <summary className="muted small">Detalles tecnicos</summary>
           <div className="small muted" style={{ marginTop: 8 }}>
-            <div>original_filename: {material.original_filename ?? '—'}</div>
-            <div>mime_type: {material.mime_type ?? '—'}</div>
-            <div>size_bytes: {material.size_bytes ?? '—'}</div>
-            <div>storage_path: {material.storage_path ?? '—'}</div>
+            <div>original_filename: {material.original_filename ?? '-'}</div>
+            <div>mime_type: {material.mime_type ?? '-'}</div>
+            <div>size_bytes: {material.size_bytes ?? '-'}</div>
+            <div>storage_path: {material.storage_path ?? '-'}</div>
           </div>
         </details>
       )}

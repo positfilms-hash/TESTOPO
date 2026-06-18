@@ -176,7 +176,7 @@ export class PlatformService {
   }
 
   // Listar materiales de una oposicion. Gestor: todos. Estudiante con acceso:
-  // solo `active` (SPEC 012, reglas de visibilidad).
+  // solo `active` y NO los tipos de fuente interna (SPEC 012/028).
   async listMaterials(actor: User, oppositionId: string): Promise<Material[]> {
     // getOpposition exige membresia + acceso (gestor o estudiante activo).
     await this.deps.oppositions.getOpposition(actor, oppositionId);
@@ -186,10 +186,11 @@ export class PlatformService {
     if (await this.canManageOppositionWorkspace(actor, oppositionId)) {
       return all;
     }
-    return all.filter((material) => material.status === 'active');
+    return all.filter((material) => isStudentVisibleMaterial(material));
   }
 
-  // Ver detalle/texto de un material. Estudiante solo si esta `active`.
+  // Ver detalle/texto de un material. Estudiante solo si esta `active` y no es un
+  // tipo de fuente interna (tests antiguos/examenes; SPEC 028, 29).
   async getMaterial(actor: User, materialId: string): Promise<Material> {
     const material = await this.deps.materials.getMaterial(materialId);
     if (!material) {
@@ -197,7 +198,7 @@ export class PlatformService {
     }
     await this.deps.oppositions.getOpposition(actor, material.opposition_id);
     if (
-      material.status !== 'active' &&
+      !isStudentVisibleMaterial(material) &&
       !(await this.canManageOppositionWorkspace(actor, material.opposition_id))
     ) {
       throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
@@ -608,4 +609,19 @@ export class PlatformService {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// SPEC 028, 29: los tests antiguos / examenes son FUENTE INTERNA de generacion,
+// no material de estudio. El alumno nunca los ve, ni siquiera `active`.
+const STUDENT_HIDDEN_MATERIAL_TYPES = new Set<Material['type']>([
+  'old_test',
+  'official_exam',
+]);
+
+// Material visible para un alumno con acceso: `active` y de un tipo de estudio.
+function isStudentVisibleMaterial(material: Material): boolean {
+  return (
+    material.status === 'active' &&
+    !STUDENT_HIDDEN_MATERIAL_TYPES.has(material.type)
+  );
 }
