@@ -130,6 +130,10 @@ export * from './repository/materialImportRepository.js';
 export * from './repository/inMemoryMaterialImportRepository.js';
 export * from './service/materialImportService.js';
 
+// SPEC 028 - Smart Bulk Upload: Materials & Old Exams
+export * from './models/uploadCategory.js';
+export * from './import/smartUploadErrors.js';
+
 // SPEC 018.4 - AI Question Generation & Review Feedback Loop
 export * from './models/questionReviewFeedback.js';
 export * from './repository/questionReviewFeedbackRepository.js';

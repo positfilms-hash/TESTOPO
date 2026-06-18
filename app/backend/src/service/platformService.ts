@@ -37,6 +37,8 @@ import type {
   ImportResult,
   ImportZipInput,
   MaterialImportService,
+  SmartUploadInput,
+  SmartUploadResult,
 } from './materialImportService.js';
 import type { CreateTopicInput, TopicService } from './topicService.js';
 import type {
@@ -142,6 +144,19 @@ export class PlatformService {
   async importZip(actor: User, input: ImportZipInput): Promise<ImportResult> {
     await this.requireManageOpposition(actor, input.opposition_id);
     return this.deps.materialImport.importZip({
+      ...input,
+      uploaded_by: actor.id,
+    });
+  }
+
+  // Carga masiva inteligente (SPEC 028): punto de entrada unico `Subir material`.
+  // Solo owner/admin del workspace de la oposicion. El estudiante nunca sube.
+  async smartUpload(
+    actor: User,
+    input: SmartUploadInput,
+  ): Promise<SmartUploadResult> {
+    await this.requireManageOpposition(actor, input.opposition_id);
+    return this.deps.materialImport.smartUpload({
       ...input,
       uploaded_by: actor.id,
     });
@@ -314,6 +329,10 @@ export class PlatformService {
       opposition_id: string;
       material_ids?: string[];
       only_unclassified?: boolean;
+      // SPEC 028: lote de carga masiva + pistas de carpeta por material para que
+      // las sugerencias de tema reflejen la estructura subida.
+      batch_id?: string | null;
+      folder_paths?: Record<string, string>;
     },
   ): Promise<ProposalDetail> {
     await this.requireManageOpposition(actor, input.opposition_id);
@@ -328,6 +347,8 @@ export class PlatformService {
       created_by: actor.id,
       material_ids: input.material_ids,
       only_unclassified: input.only_unclassified,
+      batch_id: input.batch_id ?? null,
+      folder_paths: input.folder_paths,
     });
   }
 

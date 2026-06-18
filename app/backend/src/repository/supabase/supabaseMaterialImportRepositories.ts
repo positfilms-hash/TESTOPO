@@ -12,6 +12,10 @@ import type {
   MaterialImportItem,
 } from '../../models/materialImportItem.js';
 import type {
+  DetectedCategory,
+  UploadCategory,
+} from '../../models/uploadCategory.js';
+import type {
   MaterialImportBatchRepository,
   MaterialImportItemRepository,
 } from '../materialImportRepository.js';
@@ -69,13 +73,16 @@ function batchToRow(b: MaterialImportBatch): SupabaseRow {
     uploaded_by: b.uploaded_by,
     status: b.status,
     source_type: b.source_type,
+    upload_category: b.upload_category,
     original_filename: b.original_filename,
     total_files: b.total_files,
     imported_files: b.imported_files,
     skipped_files: b.skipped_files,
     failed_files: b.failed_files,
-    // `errors` es jsonb en la tabla; el modelo lo expone como string[].
+    analyzed_files: b.analyzed_files,
+    // `errors`/`warnings` son jsonb en la tabla; el modelo los expone como string[].
     errors: b.errors,
+    warnings: b.warnings,
     created_at: iso(b.created_at),
     updated_at: iso(b.updated_at),
   };
@@ -92,6 +99,7 @@ function toBatch(row: SupabaseRow): MaterialImportBatch {
         : null,
     status: row.status as ImportBatchStatus,
     source_type: row.source_type as ImportSourceType,
+    upload_category: (row.upload_category as UploadCategory) ?? 'opposition_material',
     original_filename:
       typeof row.original_filename === 'string' && row.original_filename.length > 0
         ? row.original_filename
@@ -100,7 +108,9 @@ function toBatch(row: SupabaseRow): MaterialImportBatch {
     imported_files: asNumber(row.imported_files),
     skipped_files: asNumber(row.skipped_files),
     failed_files: asNumber(row.failed_files),
+    analyzed_files: asNumber(row.analyzed_files),
     errors: Array.isArray(row.errors) ? (row.errors as string[]) : [],
+    warnings: Array.isArray(row.warnings) ? (row.warnings as string[]) : [],
     created_at: parseDate(row.created_at),
     updated_at: parseDate(row.updated_at),
   };
@@ -110,10 +120,15 @@ function itemToRow(i: MaterialImportItem): SupabaseRow {
   return {
     id: i.id,
     batch_id: i.batch_id,
+    workspace_id: i.workspace_id,
+    opposition_id: i.opposition_id,
     material_id: i.material_id,
     topic_id: i.topic_id,
     original_path: i.original_path,
     original_filename: i.original_filename,
+    upload_category: i.upload_category,
+    detected_category: i.detected_category,
+    ai_classification_confidence: i.ai_classification_confidence,
     status: i.status,
     error: i.error,
     created_at: iso(i.created_at),
@@ -125,6 +140,14 @@ function toItem(row: SupabaseRow): MaterialImportItem {
   return {
     id: String(row.id),
     batch_id: String(row.batch_id ?? ''),
+    workspace_id:
+      typeof row.workspace_id === 'string' && row.workspace_id.length > 0
+        ? row.workspace_id
+        : null,
+    opposition_id:
+      typeof row.opposition_id === 'string' && row.opposition_id.length > 0
+        ? row.opposition_id
+        : null,
     material_id:
       typeof row.material_id === 'string' && row.material_id.length > 0
         ? row.material_id
@@ -135,6 +158,14 @@ function toItem(row: SupabaseRow): MaterialImportItem {
         : null,
     original_path: String(row.original_path ?? ''),
     original_filename: String(row.original_filename ?? ''),
+    upload_category:
+      (row.upload_category as UploadCategory) ?? 'opposition_material',
+    detected_category:
+      (row.detected_category as DetectedCategory) ?? 'opposition_material',
+    ai_classification_confidence:
+      typeof row.ai_classification_confidence === 'number'
+        ? row.ai_classification_confidence
+        : null,
     status: row.status as ImportItemStatus,
     error: typeof row.error === 'string' && row.error.length > 0 ? row.error : null,
     created_at: parseDate(row.created_at),

@@ -26,6 +26,10 @@ import type {
 import type { FileStorage } from '../storage/fileStorage.js';
 import type { PdfTextExtractor } from '../pdf/pdfTextExtractor.js';
 import type { ZipReader } from '../import/zipReader.js';
+import type {
+  DetectedCategory,
+  UploadCategory,
+} from '../models/uploadCategory.js';
 import { TopicService } from './topicService.js';
 import {
   ALLOWED_IMPORT_EXTENSIONS,
@@ -36,8 +40,18 @@ import {
   MAX_ZIP_SIZE_BYTES,
   type AllowedImportExtension,
 } from '../import/importErrors.js';
+import {
+  fromImportError,
+  SmartUploadError,
+  SmartUploadErrorCode,
+} from '../import/smartUploadErrors.js';
 
 export const UNCLASSIFIED_TOPIC_TITLE = 'Material importado sin clasificar';
+
+// Nombres de carpeta top-level que la app reconoce en un ZIP/carpeta combinado
+// (SPEC 028, 12.3). Se comparan normalizados (sin acentos, en minusculas).
+const OPPOSITION_FOLDER_HINTS = ['material de la oposicion', 'material'];
+const OLD_TESTS_FOLDER_HINTS = ['tests antiguos', 'examenes', 'examenes oficiales'];
 
 export interface ImportFile {
   original_filename: string;
@@ -64,6 +78,55 @@ export interface ImportZipInput {
 export interface ImportResult {
   batch: MaterialImportBatch;
   items: MaterialImportItem[];
+}
+
+// --- Carga masiva inteligente (SPEC 028) --------------------------------------
+
+// Un archivo de la carga masiva. Para ZIP el servicio expande las entradas; para
+// carpeta/multi-archivo el frontend ya envia un archivo por elemento con su ruta
+// relativa (`original_path`, p. ej. `Tema 1/Constitucion.pdf`).
+export interface SmartUploadFile {
+  original_path: string;
+  original_filename: string;
+  mime_type?: string | null;
+  bytes: Uint8Array;
+}
+
+export interface SmartUploadInput {
+  opposition_id?: string;
+  upload_category?: UploadCategory;
+  source_type?: ImportSourceType;
+  /** ZIP a expandir (cuando `source_type = 'zip'`). */
+  zip?: { original_filename: string; bytes: Uint8Array };
+  /** Archivos ya expandidos (carpeta o multi-archivo). */
+  files?: SmartUploadFile[];
+  uploaded_by?: string | null;
+}
+
+export interface SmartUploadResult {
+  batch: MaterialImportBatch;
+  items: MaterialImportItem[];
+}
+
+// Argumentos internos de ingesta de un archivo (compartidos por la importacion
+// clasica SPEC 017 y la carga masiva SPEC 028).
+interface IngestArgs {
+  batchId: string;
+  workspaceId: string | null;
+  oppositionId: string;
+  /** Tema al que vincular el material; null en carga masiva (no crea temas). */
+  topicId: string | null;
+  originalPath: string;
+  filename: string;
+  mimeType: string | null;
+  bytes: Uint8Array;
+  type: MaterialType;
+  uploadCategory: UploadCategory;
+  detectedCategory: DetectedCategory;
+  aiConfidence: number | null;
+  uploadedBy: string | null;
+  /** Marca `needs_review` ante problema de extraccion/clasificacion (SPEC 028). */
+  flagNeedsReview: boolean;
 }
 
 export interface MaterialImportServiceDeps {
@@ -109,6 +172,7 @@ export class MaterialImportService {
       items.push(
         await this.ingestFile({
           batchId: batch.id,
+          workspaceId: batch.workspace_id || null,
           oppositionId,
           topicId: topic.id,
           originalPath: file.original_filename,
@@ -116,7 +180,11 @@ export class MaterialImportService {
           mimeType: file.mime_type ?? null,
           bytes: file.bytes,
           type: input.default_type ?? 'other',
+          uploadCategory: 'opposition_material',
+          detectedCategory: 'opposition_material',
+          aiConfidence: null,
           uploadedBy: input.uploaded_by ?? null,
+          flagNeedsReview: false,
         }),
       );
     }
@@ -218,6 +286,7 @@ export class MaterialImportService {
       items.push(
         await this.ingestFile({
           batchId: batch.id,
+          workspaceId: batch.workspace_id || null,
           oppositionId,
           topicId,
           originalPath: entry.path,
@@ -225,11 +294,96 @@ export class MaterialImportService {
           mimeType: null,
           bytes: entry.bytes,
           type: input.default_material_type ?? 'other',
+          uploadCategory: 'opposition_material',
+          detectedCategory: 'opposition_material',
+          aiConfidence: null,
           uploadedBy: input.uploaded_by ?? null,
+          flagNeedsReview: false,
         }),
       );
     }
     return this.finishBatch(batch, items);
+  }
+
+  // --- Carga masiva inteligente (SPEC 028) ---------------------------------
+
+  // Punto de entrada unico de subida masiva. Reutiliza la validacion de
+  // seguridad y la ingesta de la importacion clasica, pero clasifica por
+  // categoria y NO crea temas (las asociaciones se proponen luego via IA).
+  async smartUpload(input: SmartUploadInput): Promise<SmartUploadResult> {
+    const oppositionId = await this.requireOppositionSmart(input.opposition_id);
+    const uploadCategory = input.upload_category ?? 'opposition_material';
+    const sourceType: ImportSourceType = input.source_type ?? 'multi_file';
+    const uploadedBy = input.uploaded_by ?? null;
+
+    // Resolver la lista de archivos (expandir ZIP o usar los ya expandidos).
+    let files: SmartUploadFile[];
+    let originalFilename: string | null;
+    if (sourceType === 'zip') {
+      files = this.expandZip(input.zip);
+      originalFilename = input.zip?.original_filename ?? null;
+    } else {
+      files = (input.files ?? []).filter((f) => f && f.bytes);
+      originalFilename = null;
+    }
+    if (files.length === 0) {
+      throw new SmartUploadError([SmartUploadErrorCode.FILE_REQUIRED]);
+    }
+    if (files.length > MAX_ZIP_FILES) {
+      throw new SmartUploadError([SmartUploadErrorCode.TOO_MANY_FILES]);
+    }
+    // Validacion de seguridad de rutas (aborta todo el lote, como el ZIP).
+    for (const file of files) {
+      if (isUnsafePath(file.original_path)) {
+        throw new SmartUploadError([SmartUploadErrorCode.UNSAFE_PATH]);
+      }
+      if (extensionOf(file.original_filename) === 'zip') {
+        throw new SmartUploadError([
+          SmartUploadErrorCode.NESTED_ZIP_NOT_ALLOWED,
+        ]);
+      }
+    }
+
+    const batch = await this.startBatch(
+      oppositionId,
+      sourceType,
+      originalFilename,
+      uploadedBy,
+      uploadCategory,
+    );
+
+    const warnings: string[] = [];
+    const items: MaterialImportItem[] = [];
+    for (const file of files) {
+      const { detected, confidence } = this.classifyFile(
+        file.original_path,
+        uploadCategory,
+      );
+      if (detected === 'unknown') {
+        warnings.push(
+          `No se ha podido clasificar "${file.original_filename}"; queda pendiente de revision.`,
+        );
+      }
+      items.push(
+        await this.ingestFile({
+          batchId: batch.id,
+          workspaceId: batch.workspace_id || null,
+          oppositionId,
+          topicId: null,
+          originalPath: file.original_path,
+          filename: file.original_filename,
+          mimeType: file.mime_type ?? null,
+          bytes: file.bytes,
+          type: defaultTypeForCategory(detected),
+          uploadCategory,
+          detectedCategory: detected,
+          aiConfidence: confidence,
+          uploadedBy,
+          flagNeedsReview: true,
+        }),
+      );
+    }
+    return this.finishBatch(batch, items, warnings);
   }
 
   // 21.5 Consultar lote de importacion (resumen + items).
@@ -243,17 +397,7 @@ export class MaterialImportService {
 
   // --- Internos ------------------------------------------------------------
 
-  private async ingestFile(args: {
-    batchId: string;
-    oppositionId: string;
-    topicId: string;
-    originalPath: string;
-    filename: string;
-    mimeType: string | null;
-    bytes: Uint8Array;
-    type: MaterialType;
-    uploadedBy: string | null;
-  }): Promise<MaterialImportItem> {
+  private async ingestFile(args: IngestArgs): Promise<MaterialImportItem> {
     const ext = extensionOf(args.filename);
 
     if (!args.filename.trim()) {
@@ -271,7 +415,11 @@ export class MaterialImportService {
     if (args.bytes.length > MAX_IMPORT_FILE_SIZE_BYTES) {
       return this.recordItem(args, null, null, 'failed', ImportErrorCode.FILE_TOO_LARGE);
     }
-    if (await this.isDuplicate(args.topicId, args.filename)) {
+    const duplicate =
+      args.topicId != null
+        ? await this.isDuplicate(args.topicId, args.filename)
+        : await this.isDuplicateInOpposition(args.oppositionId, args.filename);
+    if (duplicate) {
       return this.recordItem(
         args,
         null,
@@ -291,6 +439,17 @@ export class MaterialImportService {
     const { contentText, extractionStatus, extractionError, pageCount } =
       this.extractContent(ext, args.bytes);
 
+    // SPEC 028, 30: en la carga masiva, un PDF sin texto o un archivo de
+    // categoria ambigua nace `needs_review`. En la importacion clasica
+    // (SPEC 017) el material nace `active` como hasta ahora.
+    const status: Material['status'] =
+      args.flagNeedsReview &&
+      (extractionStatus === 'not_supported' ||
+        extractionStatus === 'failed' ||
+        args.detectedCategory === 'unknown')
+        ? 'needs_review'
+        : 'active';
+
     const timestamp = this.now();
     const material: Material = {
       id: this.generateId(),
@@ -298,7 +457,7 @@ export class MaterialImportService {
       title: stripExtension(args.filename),
       description: null,
       type: args.type,
-      status: 'active',
+      status,
       original_filename: args.filename,
       mime_type: args.mimeType ?? mimeForExtension(ext),
       size_bytes: args.bytes.length,
@@ -314,13 +473,18 @@ export class MaterialImportService {
       updated_at: timestamp,
     };
     const created = await this.deps.materials.create(material);
-    await this.deps.topicMaterialLinks.create({
-      id: this.generateId(),
-      material_id: created.id,
-      topic_id: args.topicId,
-      reference: null,
-      created_at: timestamp,
-    });
+    // Solo se vincula a un tema en la importacion clasica por-tema (SPEC 017).
+    // La carga masiva (SPEC 028) NO crea temas: las asociaciones se proponen
+    // luego via el indice IA (SPEC 019), con revision humana.
+    if (args.topicId != null) {
+      await this.deps.topicMaterialLinks.create({
+        id: this.generateId(),
+        material_id: created.id,
+        topic_id: args.topicId,
+        reference: null,
+        created_at: timestamp,
+      });
+    }
     return this.recordItem(args, created.id, args.topicId, 'imported', null);
   }
 
@@ -384,7 +548,7 @@ export class MaterialImportService {
       if (!title) {
         continue;
       }
-      const key = `${parentId ?? ''} ${title}`;
+      const key = `${parentId ?? ''} ${title}`;
       const cached = cache.get(key);
       if (cached) {
         parentId = cached;
@@ -416,6 +580,7 @@ export class MaterialImportService {
     sourceType: ImportSourceType,
     originalFilename: string | null,
     uploadedBy: string | null,
+    uploadCategory: UploadCategory = 'opposition_material',
   ): Promise<MaterialImportBatch> {
     const opposition = await this.deps.oppositions.findById(oppositionId);
     const timestamp = this.now();
@@ -426,12 +591,15 @@ export class MaterialImportService {
       uploaded_by: uploadedBy,
       status: 'processing',
       source_type: sourceType,
+      upload_category: uploadCategory,
       original_filename: originalFilename,
       total_files: 0,
       imported_files: 0,
       skipped_files: 0,
       failed_files: 0,
+      analyzed_files: 0,
       errors: [],
+      warnings: [],
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -440,13 +608,26 @@ export class MaterialImportService {
   private async finishBatch(
     batch: MaterialImportBatch,
     items: MaterialImportItem[],
+    extraWarnings: string[] = [],
   ): Promise<ImportResult> {
     const imported = items.filter((i) => i.status === 'imported').length;
     const skipped = items.filter((i) => i.status === 'skipped').length;
     const failed = items.filter((i) => i.status === 'failed').length;
+    // Materiales con texto extraido: se consulta el material de cada item importado.
+    let analyzed = 0;
+    for (const item of items) {
+      if (item.status !== 'imported' || !item.material_id) {
+        continue;
+      }
+      const material = await this.deps.materials.findById(item.material_id);
+      if (material?.extraction_status === 'completed') {
+        analyzed += 1;
+      }
+    }
     const errors = [
       ...new Set(items.map((i) => i.error).filter((e): e is string => !!e)),
     ];
+    const warnings = [...new Set(extraWarnings)];
     let status: ImportBatchStatus;
     if (imported === 0) {
       status = 'failed';
@@ -462,19 +643,16 @@ export class MaterialImportService {
       imported_files: imported,
       skipped_files: skipped,
       failed_files: failed,
+      analyzed_files: analyzed,
       errors,
+      warnings,
       updated_at: this.now(),
     });
     return { batch: saved, items };
   }
 
   private recordItem(
-    args: {
-      batchId: string;
-      topicId: string;
-      originalPath: string;
-      filename: string;
-    },
+    args: IngestArgs,
     materialId: string | null,
     topicId: string | null,
     status: MaterialImportItem['status'],
@@ -484,15 +662,33 @@ export class MaterialImportService {
     return this.deps.items.create({
       id: this.generateId(),
       batch_id: args.batchId,
+      workspace_id: args.workspaceId,
+      opposition_id: args.oppositionId,
       material_id: materialId,
       topic_id: topicId,
       original_path: args.originalPath,
       original_filename: args.filename,
+      upload_category: args.uploadCategory,
+      detected_category: args.detectedCategory,
+      ai_classification_confidence: args.aiConfidence,
       status,
       error,
       created_at: timestamp,
       updated_at: timestamp,
     });
+  }
+
+  // Duplicado a nivel de oposicion (carga masiva sin tema): mismo nombre de
+  // archivo en un material ya existente de la misma oposicion.
+  private async isDuplicateInOpposition(
+    oppositionId: string,
+    filename: string,
+  ): Promise<boolean> {
+    const materials = await this.deps.materials.findAll({});
+    return materials.some(
+      (m) =>
+        m.opposition_id === oppositionId && m.original_filename === filename,
+    );
   }
 
   private async requireOpposition(
@@ -523,10 +719,119 @@ export class MaterialImportService {
     }
     return topic;
   }
+
+  // --- Internos de carga masiva (SPEC 028) ---------------------------------
+
+  private async requireOppositionSmart(
+    oppositionId: string | undefined,
+  ): Promise<string> {
+    if (!isNonEmptyString(oppositionId)) {
+      throw new SmartUploadError([
+        SmartUploadErrorCode.OPPOSITION_REQUIRED,
+      ]);
+    }
+    if (!(await this.deps.oppositions.findById(oppositionId))) {
+      throw new SmartUploadError([
+        SmartUploadErrorCode.OPPOSITION_REQUIRED,
+      ]);
+    }
+    return oppositionId;
+  }
+
+  // Expande un ZIP a archivos, reutilizando la validacion de seguridad de la
+  // importacion clasica pero traduciendo sus errores a codigos SMART_UPLOAD_*.
+  private expandZip(
+    zip: { original_filename: string; bytes: Uint8Array } | undefined,
+  ): SmartUploadFile[] {
+    if (!zip || !zip.bytes || zip.bytes.length === 0) {
+      throw new SmartUploadError([SmartUploadErrorCode.FILE_REQUIRED]);
+    }
+    if (zip.bytes.length > MAX_ZIP_SIZE_BYTES) {
+      throw new SmartUploadError([SmartUploadErrorCode.ZIP_TOO_LARGE]);
+    }
+    const entries = this.deps.zipReader
+      .read(zip.bytes)
+      .filter((e) => e.path && !e.path.startsWith('__MACOSX/'));
+    for (const entry of entries) {
+      if (isUnsafePath(entry.path)) {
+        throw new SmartUploadError([SmartUploadErrorCode.UNSAFE_PATH]);
+      }
+      if (!isDirectory(entry.path) && extensionOf(entry.path) === 'zip') {
+        throw new SmartUploadError([
+          SmartUploadErrorCode.NESTED_ZIP_NOT_ALLOWED,
+        ]);
+      }
+    }
+    const fileEntries = entries.filter((e) => !isDirectory(e.path));
+    if (fileEntries.length === 0) {
+      throw new SmartUploadError([SmartUploadErrorCode.FILE_REQUIRED]);
+    }
+    return fileEntries.map((entry) => {
+      const segments = splitPath(entry.path);
+      return {
+        original_path: entry.path,
+        original_filename: segments[segments.length - 1] ?? entry.path,
+        mime_type: null,
+        bytes: entry.bytes,
+      };
+    });
+  }
+
+  // Clasifica un archivo en una categoria detectada (SPEC 028, 16). Para una
+  // carga no combinada manda la eleccion del usuario; para `mixed` se infiere
+  // por la carpeta top-level del path.
+  private classifyFile(
+    path: string,
+    uploadCategory: UploadCategory,
+  ): { detected: DetectedCategory; confidence: number | null } {
+    if (uploadCategory === 'opposition_material') {
+      return { detected: 'opposition_material', confidence: 1 };
+    }
+    if (uploadCategory === 'old_tests') {
+      return { detected: 'old_tests', confidence: 1 };
+    }
+    // Combinado: mirar la carpeta principal del path.
+    const segments = splitPath(path);
+    const top = normalizeFolder(segments[0] ?? '');
+    if (OPPOSITION_FOLDER_HINTS.includes(top)) {
+      return { detected: 'opposition_material', confidence: 0.9 };
+    }
+    if (OLD_TESTS_FOLDER_HINTS.includes(top)) {
+      return { detected: 'old_tests', confidence: 0.9 };
+    }
+    return { detected: 'unknown', confidence: null };
+  }
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// Tipo de material por defecto segun la categoria detectada (SPEC 028, 9/30).
+function defaultTypeForCategory(detected: DetectedCategory): MaterialType {
+  switch (detected) {
+    case 'opposition_material':
+      return 'syllabus';
+    case 'old_tests':
+      return 'old_test';
+    default:
+      return 'other';
+  }
+}
+
+// Normaliza un nombre de carpeta para comparar pistas de categoria: minusculas,
+// sin acentos, sin espacios sobrantes.
+function normalizeFolder(name: string): string {
+  // Quita las marcas diacriticas combinantes (U+0300..U+036F) tras NFD, sin
+  // incluir esos caracteres en el fuente (mantiene el archivo en ASCII).
+  return Array.from(name.normalize('NFD'))
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 0x300 || code > 0x36f;
+    })
+    .join('')
+    .trim()
+    .toLowerCase();
 }
 
 function isDirectory(path: string): boolean {

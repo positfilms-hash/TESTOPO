@@ -137,7 +137,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [store, currentUser, currentWorkspace, version]);
+    // No depende de `version`: ese contador lo dispara `refresh()` desde
+    // cualquier pantalla tras mutar el store (crear test, iniciar intento,
+    // etc.) y no implica un cambio de rol/matricula. Si dependiera de
+    // `version`, cada refresh() pondria accessReady en false y App.tsx
+    // desmontaria el arbol autenticado entero (LoadingState), perdiendo el
+    // estado local de la pantalla activa (BUG-002: "Empezar" no abria
+    // "Realizar test" porque TestsPage se remontaba con view inicial).
+  }, [store, currentUser, currentWorkspace]);
   const isWorkspaceManager =
     workspaceRole === 'owner' || workspaceRole === 'admin';
 

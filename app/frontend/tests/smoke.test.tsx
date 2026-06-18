@@ -67,34 +67,34 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     ).toBeInTheDocument();
   });
 
-  it('admin: Material usa un unico CTA "Subir material" (SPEC 022)', async () => {
+  it('admin: "Subir material" abre la carga masiva por categoria (SPEC 028)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
       within(screen.getByLabelText('Navegacion principal')).getByText('Material'),
     );
-    // Un unico boton principal; ya no hay "Subir PDF"/"Anadir material" sueltos.
-    expect(
+    // Un unico CTA principal "Subir material".
+    fireEvent.click(
       await screen.findByRole('button', { name: 'Subir material' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Anadir material' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Subir PDF' })).toBeNull();
-    // El flujo unico permite tanto subir PDF como pegar texto.
-    fireEvent.click(screen.getByRole('button', { name: 'Subir material' }));
+    );
+    // SPEC 028: solo dos categorias de cara al usuario.
+    expect(await screen.findByText('Que vas a subir?')).toBeInTheDocument();
+    expect(screen.getByText('Material de la oposicion')).toBeInTheDocument();
+    expect(screen.getByText('Tests antiguos')).toBeInTheDocument();
+    // Entradas de carga masiva: ZIP y varios PDFs (carpeta solo si el navegador
+    // la soporta; en jsdom no, asi que se recomienda comprimir en ZIP).
+    expect(screen.getByText('Subir ZIP')).toBeInTheDocument();
+    expect(screen.getByText('Subir PDFs')).toBeInTheDocument();
     expect(
-      await screen.findByRole('button', { name: 'Subir PDF' }),
+      screen.getByText('Tambien puedes comprimir la carpeta en ZIP y subirla aqui.'),
     ).toBeInTheDocument();
+    // Sigue disponible el alta manual por texto.
     expect(
       screen.getByRole('button', { name: 'Pegar texto' }),
     ).toBeInTheDocument();
-    // Y se puede completar una subida PDF desde ese flujo.
-    fireEvent.click(screen.getByRole('button', { name: 'Subir PDF' }));
-    expect(
-      await screen.findByText('Sube un temario, ley o examen en PDF.'),
-    ).toBeInTheDocument();
   });
 
-  it('admin: Temario unificado muestra material y acciones al elegir tema (SPEC 017)', async () => {
+  it('admin: Temario ya no sube material; redirige a la seccion Material (SPEC 028)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
@@ -105,8 +105,13 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: /Tema 1 - Constitucion/ }),
     );
-    expect(await screen.findByText('Subir material')).toBeInTheDocument();
-    expect(screen.getByText('Importar ZIP')).toBeInTheDocument();
+    // Ya no hay subida/importacion por-tema: se centraliza en "Material".
+    expect(
+      await screen.findByText(
+        'Para anadir material usa "Subir material" en la seccion Material.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Importar ZIP')).toBeNull();
   });
 
   it('admin: ve preguntas pendientes de revision', async () => {
@@ -148,6 +153,20 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     expect(
       await screen.findByText('Todavia no has creado ningun test.'),
     ).toBeInTheDocument();
+  });
+
+  it('estudiante: crear test y pulsar "Empezar" abre "Realizar test" (BUG-002)', async () => {
+    renderApp();
+    await enter('student');
+    fireEvent.click(
+      within(screen.getByLabelText('Navegacion principal')).getByText('Crear test'),
+    );
+    const main = document.querySelector('main.main') as HTMLElement;
+    fireEvent.click(
+      await within(main).findByRole('button', { name: 'Crear test' }),
+    );
+    fireEvent.click(await within(main).findByRole('button', { name: 'Empezar' }));
+    expect(await screen.findByText('Realizar test')).toBeInTheDocument();
   });
 
   it('estudiante: Mis resultados vacio al empezar', async () => {
