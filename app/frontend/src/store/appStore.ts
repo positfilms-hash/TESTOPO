@@ -11,12 +11,10 @@ import {
   InMemoryFileStorage,
   type TopicMaterialLinkRepository,
   TopicService,
-  InMemoryQuestionRepository,
   QuestionService,
   QuestionGenerationService,
   QuestionValidationService,
   QuestionReviewService,
-  InMemoryQuestionReviewFeedbackRepository,
   QuestionFeedbackService,
   InMemorySyllabusIndexRepository,
   SyllabusIndexService,
@@ -72,7 +70,6 @@ export interface AppStore {
 }
 
 export function createAppStore(seed = true): AppStore {
-  const questionRepo = new InMemoryQuestionRepository();
   const testRepo = new InMemoryTestRepository();
   const testQuestionRepo = new InMemoryTestQuestionRepository();
 
@@ -94,6 +91,8 @@ export function createAppStore(seed = true): AppStore {
   const materialRepo = core.materials;
   const topicRepo = core.topics;
   const topicMaterialLinkRepo = core.topicMaterialLinks;
+  const questionRepo = core.questions;
+  const feedbackRepo = core.questionFeedback;
 
   const users = new UserService(core.users);
   const workspaces = new WorkspaceService(core.workspaces, core.workspaceMembers);
@@ -143,8 +142,9 @@ export function createAppStore(seed = true): AppStore {
     questionService: questions,
     materialRepository: materialRepo,
     topicRepository: topicRepo,
+    // SPEC 023: los informes de validacion se persisten via el factory.
+    reportRepository: core.questionValidationReports,
   });
-  const feedbackRepo = new InMemoryQuestionReviewFeedbackRepository();
   const feedback = new QuestionFeedbackService({
     feedbackRepository: feedbackRepo,
     questionService: questions,
@@ -157,6 +157,8 @@ export function createAppStore(seed = true): AppStore {
     topicRepository: topicRepo,
     validationService: validation,
     feedbackService: feedback,
+    // SPEC 023: el historial de generacion se persiste via el factory.
+    runRepository: core.generationRuns,
   });
   const review = new QuestionReviewService({
     questionService: questions,
@@ -164,6 +166,8 @@ export function createAppStore(seed = true): AppStore {
     materialRepository: materialRepo,
     topicRepository: topicRepo,
     feedbackRepository: feedbackRepo,
+    // SPEC 023: el historial de revision se persiste via el factory.
+    reviewRepository: core.questionReviews,
   });
   // Indice de temario con IA (SPEC 019): proveedor mock en el navegador.
   const syllabus = new SyllabusIndexService({

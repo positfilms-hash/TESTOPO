@@ -3,13 +3,14 @@
 Guía para conectar TESTOPO con tu proyecto de Supabase (auth real + base de
 datos). **No incluyas claves reales en el repositorio.** Todo va en `.env`.
 
-> Estado actual (SPEC 022): Supabase persiste **autenticación**, cuenta/espacios
+> Estado actual (SPEC 023): Supabase persiste **autenticación**, cuenta/espacios
 > (`profiles`, `workspaces`, `workspace_members`), **oposiciones** (`oppositions`,
-> `opposition_access`) y el **temario/materiales** (`materials`, `topics`,
-> `material_topic_links`, `material_import_batches`, `material_import_items`). El
-> resto (preguntas, tests, intentos…) sigue **en memoria por sesión**; su
-> migración llegará en specs posteriores (023–024). Este estado híbrido es el
-> esperado — ver [`docs/architecture/persistence.md`](../architecture/persistence.md).
+> `opposition_access`), el **temario/materiales** (`materials`, `topics`,
+> `material_topic_links`, import batches/items) y el **banco de preguntas**
+> (`questions`, `question_options`, validación, reviews, feedback, generation
+> runs). El resto (`tests`, intentos, respuestas) sigue **en memoria por
+> sesión**; se migrará en la SPEC 024. Estado híbrido esperado — ver
+> [`docs/architecture/persistence.md`](../architecture/persistence.md).
 > Si no defines las variables, la app sigue funcionando en **modo demo** (todo en
 > memoria) y la auth muestra `SUPABASE_NOT_CONFIGURED`.
 
@@ -83,6 +84,11 @@ Aplica **en orden** los archivos de `supabase/migrations/` con una de estas vía
    `topics`, `material_topic_links`, `material_import_batches` y
    `material_import_items` con `updated_at`, índices y RLS básica (scope vía
    oposición). No migra preguntas ni tests.
+5. `023_questions_options.sql` (SPEC 023) — idempotente; crea el banco de
+   preguntas: `questions`, `question_options`, `question_validation_results`,
+   `question_reviews`, `question_review_feedback` y `question_generation_runs`,
+   con índices y RLS básica (alumno solo lee preguntas `validated`; tablas
+   internas solo para gestores). No migra tests ni intentos.
 
 Para aplicar/crear migraciones con la CLI (`supabase link` / `db push`),
 convenciones de nombres e idempotencia y la secuencia prevista 021–024, ver el

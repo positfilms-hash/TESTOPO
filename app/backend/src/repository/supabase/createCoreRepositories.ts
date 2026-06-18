@@ -16,6 +16,11 @@ import type {
   MaterialImportBatchRepository,
   MaterialImportItemRepository,
 } from '../materialImportRepository.js';
+import type { QuestionRepository } from '../questionRepository.js';
+import type { GenerationRunRepository } from '../generationRunRepository.js';
+import type { QuestionReviewRepository } from '../questionReviewRepository.js';
+import type { QuestionReviewFeedbackRepository } from '../questionReviewFeedbackRepository.js';
+import type { QuestionValidationReportRepository } from '../questionValidationReportRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -28,6 +33,11 @@ import {
   InMemoryMaterialImportBatchRepository,
   InMemoryMaterialImportItemRepository,
 } from '../inMemoryMaterialImportRepository.js';
+import { InMemoryQuestionRepository } from '../inMemoryQuestionRepository.js';
+import { InMemoryGenerationRunRepository } from '../inMemoryGenerationRunRepository.js';
+import { InMemoryQuestionReviewRepository } from '../inMemoryQuestionReviewRepository.js';
+import { InMemoryQuestionReviewFeedbackRepository } from '../inMemoryQuestionReviewFeedbackRepository.js';
+import { InMemoryQuestionValidationReportRepository } from '../inMemoryQuestionValidationReportRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -41,6 +51,13 @@ import {
   SupabaseMaterialImportBatchRepository,
   SupabaseMaterialImportItemRepository,
 } from './supabaseMaterialImportRepositories.js';
+import { SupabaseQuestionRepository } from './supabaseQuestionRepository.js';
+import {
+  SupabaseGenerationRunRepository,
+  SupabaseQuestionReviewRepository,
+  SupabaseQuestionReviewFeedbackRepository,
+  SupabaseQuestionValidationReportRepository,
+} from './supabaseQuestionBankRepositories.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -62,6 +79,13 @@ export interface CoreRepositories {
   topicMaterialLinks: TopicMaterialLinkRepository;
   importBatches: MaterialImportBatchRepository;
   importItems: MaterialImportItemRepository;
+  /** SPEC 023: banco de preguntas (questions+options), generacion, revision,
+   * feedback e informes de validacion. Tests/attempts siguen en memoria. */
+  questions: QuestionRepository;
+  generationRuns: GenerationRunRepository;
+  questionReviews: QuestionReviewRepository;
+  questionFeedback: QuestionReviewFeedbackRepository;
+  questionValidationReports: QuestionValidationReportRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -116,6 +140,11 @@ export function createCoreRepositories(
       topicMaterialLinks: new SupabaseTopicMaterialLinkRepository(port),
       importBatches: new SupabaseMaterialImportBatchRepository(port),
       importItems: new SupabaseMaterialImportItemRepository(port),
+      questions: new SupabaseQuestionRepository(port),
+      generationRuns: new SupabaseGenerationRunRepository(port),
+      questionReviews: new SupabaseQuestionReviewRepository(port),
+      questionFeedback: new SupabaseQuestionReviewFeedbackRepository(port),
+      questionValidationReports: new SupabaseQuestionValidationReportRepository(port),
       mode,
     };
   }
@@ -131,6 +160,11 @@ export function createCoreRepositories(
     topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
     importBatches: new InMemoryMaterialImportBatchRepository(),
     importItems: new InMemoryMaterialImportItemRepository(),
+    questions: new InMemoryQuestionRepository(),
+    generationRuns: new InMemoryGenerationRunRepository(),
+    questionReviews: new InMemoryQuestionReviewRepository(),
+    questionFeedback: new InMemoryQuestionReviewFeedbackRepository(),
+    questionValidationReports: new InMemoryQuestionValidationReportRepository(),
     mode,
   };
 }

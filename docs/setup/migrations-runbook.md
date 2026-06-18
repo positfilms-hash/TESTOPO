@@ -128,7 +128,7 @@ fila en `profiles` → crear workspace personal → aparece en `workspaces` y
 | 020 | `020_profiles_workspaces.sql` ✅ | updated_at + índices del bloque cuenta/espacios |
 | 021 | `021_oppositions_access.sql` ✅ | oppositions, opposition_access (+ pre-flight RLS de la 020) |
 | 022 | `022_materials_topics.sql` ✅ | materials, topics, material_topic_links, import batches/items |
-| 023 | `023_questions_options.sql` | questions, question_options |
+| 023 | `023_questions_options.sql` ✅ | questions, question_options, validación, reviews, feedback, generation runs |
 | 024 | `024_tests_attempts_answers.sql` | tests, test_questions, test_attempts, test_answers |
 | 025 | `025_rls_hardening.sql` | endurecimiento RLS de todo el dominio |
 | 026 | `026_account_deletion_fn.sql` | Edge Function + borrado real de Auth |

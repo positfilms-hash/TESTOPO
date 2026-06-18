@@ -157,6 +157,9 @@ export * from './repository/supabase/supabaseMaterialRepository.js';
 export * from './repository/supabase/supabaseTopicRepository.js';
 export * from './repository/supabase/supabaseTopicMaterialLinkRepository.js';
 export * from './repository/supabase/supabaseMaterialImportRepositories.js';
+// SPEC 023 - Supabase Repositories: Questions & Options
+export * from './repository/supabase/supabaseQuestionRepository.js';
+export * from './repository/supabase/supabaseQuestionBankRepositories.js';
 export * from './repository/supabase/createCoreRepositories.js';
 
 // SPEC 019 - AI Syllabus Index Builder
