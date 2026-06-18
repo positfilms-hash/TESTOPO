@@ -1,9 +1,9 @@
-# Persistencia: estado híbrido (SPEC 020 → 023)
+# Persistencia (SPEC 020 → 024: migración principal completa)
 
-TESTOPO migra su dominio a Supabase de forma **progresiva**, tabla por tabla,
-detrás de las interfaces async preparadas en la SPEC 018.3. Tras la SPEC 023 la
-app vive en un **estado híbrido** que es correcto y esperado: parte del dominio
-ya se persiste en Supabase y el resto sigue en memoria por sesión.
+TESTOPO migró su dominio a Supabase de forma **progresiva**, tabla por tabla,
+detrás de las interfaces async preparadas en la SPEC 018.3. Tras la SPEC 024 el
+**núcleo del MVP está persistido en Supabase**; el modo memoria (`memory`) sigue
+disponible para tests y demo.
 
 ## Qué está en Supabase y qué sigue en memoria
 
@@ -18,12 +18,15 @@ ya se persiste en Supabase y el resto sigue en memoria por sesión.
 | `material_import_batches`, `material_import_items` | **Supabase** (SPEC 022) |
 | `questions`, `question_options` | **Supabase** (SPEC 023) |
 | validación, reviews, feedback, generation runs | **Supabase** (SPEC 023) |
-| `tests`, `test_questions` | InMemory |
-| `test_attempts`, `test_answers` | InMemory |
+| `tests`, `test_questions` | **Supabase** (SPEC 024) |
+| `test_attempts`, `test_answers` | **Supabase** (SPEC 024) |
 | Propuestas de índice de temario IA (SPEC 019) | InMemory |
 
-> El resto del dominio se migrará en specs posteriores (ver más abajo). No se
-> intenta "terminar Supabase" en una sola spec.
+> Tras la SPEC 024 la **migración principal del MVP está completa**: el núcleo
+> funcional (cuenta, oposiciones, materiales/temario, banco de preguntas y
+> tests/resultados) corre con Supabase como persistencia real. Solo quedan en
+> memoria las propuestas de índice de temario IA (SPEC 019) y el modo demo
+> (`APP_PERSISTENCE_MODE=memory`). El InMemory se mantiene para tests y demo.
 
 ## Cómo se elige la persistencia
 
@@ -40,10 +43,10 @@ const core = createCoreRepositories({
 Reglas del factory:
 
 - `memory` (o sin valor) → repositorios InMemory.
-- `supabase` **y** puerto configurado → repositorios Supabase para
-  `profiles`/`workspaces`/`workspace_members`/`oppositions`/`opposition_access`/
-  `materials`/`topics`/`material_topic_links`/import batches/items + el banco de
-  preguntas (`questions`/`question_options`/validación/reviews/feedback/generation).
+- `supabase` **y** puerto configurado → repositorios Supabase para todo el núcleo
+  del MVP: cuenta/espacios, oposiciones/acceso, materiales/temario/importaciones,
+  banco de preguntas (questions/options/validación/reviews/feedback/generation) y
+  tests/preguntas de test/intentos/respuestas.
 - `supabase` **sin** puerto → cae a `memory` (fallback seguro; CI/tests pasan sin
   Supabase real).
 - Un valor desconocido → error `PERSISTENCE_MODE_INVALID`.
@@ -74,8 +77,8 @@ Requisitos del modo `supabase`:
 
 1. `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` configuradas.
 2. Migraciones aplicadas en orden: `0001_init.sql`, `020_profiles_workspaces.sql`,
-   `021_oppositions_access.sql`, `022_materials_topics.sql` y
-   `023_questions_options.sql`.
+   `021_oppositions_access.sql`, `022_materials_topics.sql`,
+   `023_questions_options.sql` y `024_tests_attempts_answers.sql`.
 
 Si falta la configuración, la app cae automáticamente a `memory` y siembra los
 datos demo en memoria.
@@ -85,8 +88,11 @@ datos demo en memoria.
 La RLS básica de `profiles`, `workspaces`, `workspace_members`, `oppositions` y
 `opposition_access` se crea en `0001_init.sql`; la de `materials`, `topics`,
 `material_topic_links` y las tablas de importación en `022_materials_topics.sql`;
-la del banco de preguntas en `023_questions_options.sql` (scope vía la oposición
-→ workspace con los helpers `opposition_workspace`/`question_opposition`). En el
+la del banco de preguntas en `023_questions_options.sql`; la de tests/intentos/
+respuestas en `024_tests_attempts_answers.sql` (helper `test_opposition`; el
+alumno solo ve **sus** intentos y respuestas: `user_id = auth.uid()`). Scope vía
+la oposición → workspace con los helpers `opposition_workspace`/`question_opposition`.
+En el
 banco de preguntas: los **gestores** ven/gestionan todo; un **alumno** miembro
 solo puede leer preguntas `validated` y no accede a las tablas internas
 (validación/reviews/feedback/generation). **Gap conocido (pendiente SPEC 025)**:
@@ -113,16 +119,18 @@ workspaces reales:
   cambio de `role` hecho por el rol `authenticated` (frontend); solo el backend
   con `service_role` puede cambiar el rol global.
 
-## Specs futuras de migración
+## Specs futuras
 
-El orden técnico recomendado (la numeración puede ajustarse):
+Migración de dominio **completada** (021–024). Lo que queda:
 
 - ~~**SPEC 021** — Oppositions & Access.~~ ✅ hecho.
 - ~~**SPEC 022** — Materials & Topics.~~ ✅ hecho.
 - ~~**SPEC 023** — Questions & Options.~~ ✅ hecho.
-- **SPEC 024** — Tests, Attempts & Answers.
-- **SPEC 025** — RLS Hardening.
+- ~~**SPEC 024** — Tests, Attempts & Answers.~~ ✅ hecho.
+- **SPEC 025** — RLS Hardening (cierra los gaps documentados: `is_correct` de
+  opciones y de respuestas pre-submit, filtrado fino student, etc.).
 - **SPEC 026** — Edge Functions para borrado de cuenta (`auth.users`).
+- **SPEC 027** — Beta Readiness.
 
 El proceso operativo de cada migración (aplicar, convenciones, idempotencia,
 verificación) está en el [runbook de migraciones](../setup/migrations-runbook.md).
