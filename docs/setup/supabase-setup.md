@@ -74,6 +74,10 @@ Aplica **en orden** los archivos de `supabase/migrations/` con una de estas vía
    `updated_at` (función + triggers) e índices útiles para los repositorios de
    `profiles`/`workspaces`/`workspace_members`. No migra el resto del dominio.
 
+Para aplicar/crear migraciones con la CLI (`supabase link` / `db push`),
+convenciones de nombres e idempotencia y la secuencia prevista 021–024, ver el
+[runbook de migraciones](./migrations-runbook.md).
+
 ## 5. Activar Auth email/contraseña
 
 En **Authentication → Providers → Email**: activa **Email** con contraseña.
