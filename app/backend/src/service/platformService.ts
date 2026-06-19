@@ -28,6 +28,11 @@ import {
 import type { MaterialSectionService } from './materialSectionService.js';
 import type { SourceReferenceService } from './sourceReferenceService.js';
 import type {
+  SyllabusIndexFromDocumentsService,
+  GroundedProposalDetail,
+  ApplyGroundedResult,
+} from './syllabusIndexFromDocumentsService.js';
+import type {
   MaterialSection,
   SectionClass,
 } from '../models/materialSection.js';
@@ -134,6 +139,8 @@ export interface PlatformServiceDeps {
   /** Secciones de material y referencias de fuente (SPEC 028-C). Opcional. */
   materialSections?: MaterialSectionService;
   sourceReferences?: SourceReferenceService;
+  /** Indice de temario anclado a documentos (SPEC 028-D). Opcional. */
+  syllabusFromDocuments?: SyllabusIndexFromDocumentsService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -622,6 +629,45 @@ export class PlatformService {
     return this.requireSyllabus().applyProposal(proposalId);
   }
 
+  // --- Indice anclado a documentos (SPEC 028-D). Solo gestion. -------------
+  // Reutiliza el ciclo de revision de SPEC 019 (editSyllabusNode/
+  // setSyllabusNodeStatus/approveSyllabusProposal/rejectSyllabusProposal), que
+  // operan sobre el mismo repositorio.
+
+  async proposeSyllabusIndexFromDocuments(
+    actor: User,
+    input: { opposition_id: string; material_ids?: string[] },
+  ): Promise<GroundedProposalDetail> {
+    await this.requireManageOpposition(actor, input.opposition_id);
+    const service = this.requireSyllabusFromDocuments();
+    const opposition = await this.deps.oppositionRepository.findById(
+      input.opposition_id,
+    );
+    return service.proposeFromDocuments({
+      opposition_id: input.opposition_id,
+      workspace_id: opposition?.workspace_id ?? null,
+      opposition_title: opposition?.title ?? null,
+      created_by: actor.id,
+      material_ids: input.material_ids,
+    });
+  }
+
+  async getSyllabusIndexProposalDetail(
+    actor: User,
+    proposalId: string,
+  ): Promise<GroundedProposalDetail> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabusFromDocuments().getProposalDetail(proposalId);
+  }
+
+  async applySyllabusIndexFromDocuments(
+    actor: User,
+    proposalId: string,
+  ): Promise<ApplyGroundedResult> {
+    await this.requireManageProposal(actor, proposalId);
+    return this.requireSyllabusFromDocuments().applyProposal(proposalId);
+  }
+
   // --- Estudio (miembro del workspace con acceso a la oposicion) -----------
 
   async createTest(
@@ -777,6 +823,15 @@ export class PlatformService {
       ]);
     }
     return this.deps.documentClassification;
+  }
+
+  private requireSyllabusFromDocuments(): SyllabusIndexFromDocumentsService {
+    if (!this.deps.syllabusFromDocuments) {
+      throw new SyllabusIndexError([
+        SyllabusIndexErrorCode.PROVIDER_NOT_CONFIGURED,
+      ]);
+    }
+    return this.deps.syllabusFromDocuments;
   }
 
   private requireMaterialSections(): MaterialSectionService {

@@ -20,7 +20,15 @@ disponible para tests y demo.
 | validación, reviews, feedback, generation runs | **Supabase** (SPEC 023) |
 | `tests`, `test_questions` | **Supabase** (SPEC 024) |
 | `test_attempts`, `test_answers` | **Supabase** (SPEC 024) |
-| Propuestas de índice de temario IA (SPEC 019) | InMemory |
+| Propuestas de índice de temario IA (SPEC 019 + 028-D: node sources, topic source refs) | InMemory |
+
+> **SPEC 028-D** (índice anclado a documentos) extiende el dominio del índice
+> (node sources + topic source references) **manteniéndolo InMemory** (paridad con
+> SPEC 019). El spec asumía tablas Supabase de SPEC 019 que no existen; por eso
+> 028-D **no añade migración SQL** y la migración Supabase del índice queda
+> **diferida a una spec futura propia**. El aislamiento del alumno lo garantizan
+> los guards del facade. Detalle en
+> [`ai-syllabus-index.md`](./ai-syllabus-index.md).
 
 > Tras la SPEC 024 la **migración principal del MVP está completa**: el núcleo
 > funcional (cuenta, oposiciones, materiales/temario, banco de preguntas y

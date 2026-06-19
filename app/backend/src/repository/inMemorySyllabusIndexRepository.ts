@@ -4,8 +4,10 @@ import type {
   ExamPatternSummary,
   MaterialTopicSuggestion,
   SyllabusIndexNodeProposal,
+  SyllabusIndexNodeSource,
   SyllabusIndexProposal,
   SyllabusIndexRun,
+  TopicSourceReference,
 } from '../models/syllabusIndex.js';
 import type { SyllabusIndexRepository } from './syllabusIndexRepository.js';
 
@@ -17,6 +19,8 @@ export class InMemorySyllabusIndexRepository
   private readonly nodes = new Map<string, SyllabusIndexNodeProposal>();
   private readonly suggestions = new Map<string, MaterialTopicSuggestion>();
   private readonly examPatterns = new Map<string, ExamPatternSummary>();
+  private readonly nodeSources = new Map<string, SyllabusIndexNodeSource>();
+  private readonly topicSourceRefs = new Map<string, TopicSourceReference>();
 
   async createRun(run: SyllabusIndexRun): Promise<SyllabusIndexRun> {
     this.runs.set(run.id, clone(run));
@@ -114,6 +118,48 @@ export class InMemorySyllabusIndexRepository
   ): Promise<ExamPatternSummary[]> {
     return [...this.examPatterns.values()]
       .filter((p) => p.run_id === runId)
+      .map(clone);
+  }
+
+  async createNodeSource(
+    source: SyllabusIndexNodeSource,
+  ): Promise<SyllabusIndexNodeSource> {
+    this.nodeSources.set(source.id, clone(source));
+    return clone(source);
+  }
+  async listNodeSourcesByProposal(
+    proposalId: string,
+  ): Promise<SyllabusIndexNodeSource[]> {
+    return [...this.nodeSources.values()]
+      .filter((s) => s.proposal_id === proposalId)
+      .map(clone);
+  }
+  async listNodeSourcesByNode(
+    nodeId: string,
+  ): Promise<SyllabusIndexNodeSource[]> {
+    return [...this.nodeSources.values()]
+      .filter((s) => s.node_id === nodeId)
+      .map(clone);
+  }
+
+  async createTopicSourceReference(
+    ref: TopicSourceReference,
+  ): Promise<TopicSourceReference> {
+    this.topicSourceRefs.set(ref.id, clone(ref));
+    return clone(ref);
+  }
+  async listTopicSourceReferencesByTopic(
+    topicId: string,
+  ): Promise<TopicSourceReference[]> {
+    return [...this.topicSourceRefs.values()]
+      .filter((r) => r.topic_id === topicId)
+      .map(clone);
+  }
+  async listTopicSourceReferencesByOpposition(
+    oppositionId: string,
+  ): Promise<TopicSourceReference[]> {
+    return [...this.topicSourceRefs.values()]
+      .filter((r) => r.opposition_id === oppositionId)
       .map(clone);
   }
 }
