@@ -62,11 +62,21 @@ archivo).
 1. Verás un **resumen**: cuántos archivos se importaron, cuántos tienen texto
    extraído y cuántos no (p. ej. un PDF escaneado no tiene texto seleccionable; se
    queda pendiente de revisión, sin OCR por ahora).
-2. Para *material de la oposición* puedes pulsar **Crear índice con IA**: la IA
-   propone un índice de temario **pendiente de tu revisión**. Lo revisas y lo
-   aplicas desde *Temario*.
-3. Para *tests antiguos* la IA analiza estilo, dificultad y cobertura y guarda un
-   resumen de patrones. No genera preguntas.
+2. **Revisar documentos** (SPEC 028-B): la app clasifica cada archivo y te muestra
+   un **inventario** agrupado: temario/material de estudio, tests antiguos/
+   exámenes, textos legales, apuntes, índices, y los que necesitan revisión
+   (dudosos o no analizables). Cada documento muestra su confianza y el motivo.
+   Si la clasificación se equivoca, **corrígela tú**: tu corrección manda sobre la
+   IA. Se activa por defecto con la casilla "Clasificar documentos después de
+   importar"; si la desmarcas, puedes pulsar **Revisar documentos** en el resumen.
+3. La clasificación **no genera índice ni preguntas todavía**. Solo identifica qué
+   es cada archivo, para que el índice de temario y las preguntas (más adelante)
+   partan de documentos bien entendidos y revisados. El **Crear índice con IA**
+   sigue disponible de forma manual en *Temario*.
+
+> Los **tests antiguos** y los documentos no aptos (dudosos, no analizables,
+> irrelevantes) son material **interno**: los alumnos nunca los ven en su lista de
+> material de estudio.
 
 ## Por qué las preguntas no se generan "validadas" automáticamente
 

@@ -92,6 +92,10 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     expect(
       screen.getByRole('button', { name: 'Pegar texto' }),
     ).toBeInTheDocument();
+    // SPEC 028-B: tras subir, el paso es clasificar documentos (no auto-indice).
+    expect(
+      screen.getByText('Clasificar documentos despues de importar'),
+    ).toBeInTheDocument();
   });
 
   it('admin: Temario ya no sube material; redirige a la seccion Material (SPEC 028)', async () => {
