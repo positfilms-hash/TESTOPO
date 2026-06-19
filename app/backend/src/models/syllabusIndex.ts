@@ -25,6 +25,8 @@ export interface SyllabusIndexRun {
   model: string | null;
   /** Materiales considerados para el analisis. */
   material_ids: string[];
+  /** Secciones consideradas (SPEC 028-D); vacio en runs de SPEC 019. */
+  section_ids?: string[];
   input_summary: string;
   total_materials: number;
   analyzed_materials: number;
@@ -132,6 +134,45 @@ export interface ExamPatternSummary {
   /** Notas de cobertura tematica aproximada del examen (SPEC 028). */
   coverage_notes: string | null;
   warnings: string[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+// --- Fuente concreta de un nodo de propuesta (SPEC 028-D) --------------------
+// Ancla un tema/subtema propuesto a su evidencia concreta: material clasificado,
+// seccion (SPEC 028-C) y, opcionalmente, referencia de fuente. Permite que cada
+// tema tenga trazabilidad antes de aplicarse. NO contiene contenido de temario.
+export interface SyllabusIndexNodeSource {
+  id: string;
+  proposal_id: string;
+  node_id: string;
+  material_id: string;
+  material_section_id: string | null;
+  source_reference_id: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  excerpt: string | null;
+  confidence: number | null;
+  /** Fuente primaria (temario/legal/apuntes/indice) vs contexto secundario (examen). */
+  is_primary: boolean;
+  workspace_id: string | null;
+  opposition_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// --- Referencia de fuente de un tema YA aplicado al Topic Map (SPEC 028-D) ----
+// Cuando una propuesta se aplica, cada tema creado/reutilizado guarda de que
+// material/seccion/fragmento salio, para trazabilidad y generacion futura.
+export interface TopicSourceReference {
+  id: string;
+  topic_id: string;
+  material_id: string;
+  material_section_id: string | null;
+  source_reference_id: string | null;
+  excerpt: string | null;
+  workspace_id: string | null;
+  opposition_id: string | null;
   created_at: Date;
   updated_at: Date;
 }

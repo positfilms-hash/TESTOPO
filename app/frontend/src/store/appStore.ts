@@ -22,6 +22,8 @@ import {
   createDocumentClassificationProvider,
   MaterialSectionService,
   SourceReferenceService,
+  SyllabusIndexFromDocumentsService,
+  createDocumentGroundedIndexProvider,
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
@@ -66,6 +68,8 @@ export interface AppStore {
   /** Secciones de material y referencias de fuente (SPEC 028-C). */
   materialSections: MaterialSectionService;
   sourceReferences: SourceReferenceService;
+  /** Indice de temario anclado a documentos (SPEC 028-D). */
+  syllabusFromDocuments: SyllabusIndexFromDocumentsService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -175,12 +179,14 @@ export function createAppStore(seed = true): AppStore {
     // SPEC 023: el historial de revision se persiste via el factory.
     reviewRepository: core.questionReviews,
   });
-  // Indice de temario con IA (SPEC 019): proveedor mock en el navegador.
+  // Indice de temario con IA (SPEC 019): proveedor mock en el navegador. El repo
+  // se comparte con el indice anclado a documentos (SPEC 028-D).
+  const syllabusRepo = new InMemorySyllabusIndexRepository();
   const syllabus = new SyllabusIndexService({
     materialRepository: materialRepo,
     topicService: topics,
     topicMaterialLinks: topicMaterialLinkRepo,
-    repository: new InMemorySyllabusIndexRepository(),
+    repository: syllabusRepo,
   });
   // Clasificacion documental e inventario (SPEC 028-B): proveedor heuristico en
   // el navegador (sin red); persistencia via el factory (core).
@@ -203,6 +209,17 @@ export function createAppStore(seed = true): AppStore {
   const sourceReferences = new SourceReferenceService({
     references: core.sourceReferences,
     sections: core.materialSections,
+  });
+  // Indice de temario anclado a documentos clasificados (SPEC 028-D): reutiliza
+  // el repo de SPEC 019 y conecta clasificacion + secciones + fuentes.
+  const syllabusFromDocuments = new SyllabusIndexFromDocumentsService({
+    materials: materialRepo,
+    documentClassification,
+    sections: core.materialSections,
+    sourceReferences: core.sourceReferences,
+    repository: syllabusRepo,
+    topics,
+    provider: createDocumentGroundedIndexProvider(),
   });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
@@ -236,6 +253,7 @@ export function createAppStore(seed = true): AppStore {
     documentClassification,
     materialSections,
     sourceReferences,
+    syllabusFromDocuments,
     testGenerator,
     attempts,
   });
@@ -258,6 +276,7 @@ export function createAppStore(seed = true): AppStore {
     documentClassification,
     materialSections,
     sourceReferences,
+    syllabusFromDocuments,
     testGenerator,
     attempts,
     platform,

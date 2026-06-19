@@ -205,3 +205,11 @@ export * from './generation/createSyllabusIndexProvider.js';
 export * from './repository/syllabusIndexRepository.js';
 export * from './repository/inMemorySyllabusIndexRepository.js';
 export * from './service/syllabusIndexService.js';
+
+// SPEC 028-D - AI Syllabus Index From Classified Documents
+export * from './generation/documentGroundedIndexTypes.js';
+export * from './generation/documentGroundedIndexConfig.js';
+export * from './generation/mockDocumentGroundedIndexProvider.js';
+export * from './generation/openAiDocumentGroundedIndexProvider.js';
+export * from './generation/createDocumentGroundedIndexProvider.js';
+export * from './service/syllabusIndexFromDocumentsService.js';

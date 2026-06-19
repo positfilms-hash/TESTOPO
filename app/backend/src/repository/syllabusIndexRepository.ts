@@ -5,8 +5,10 @@ import type {
   ExamPatternSummary,
   MaterialTopicSuggestion,
   SyllabusIndexNodeProposal,
+  SyllabusIndexNodeSource,
   SyllabusIndexProposal,
   SyllabusIndexRun,
+  TopicSourceReference,
 } from '../models/syllabusIndex.js';
 
 export interface SyllabusIndexRepository {
@@ -52,4 +54,14 @@ export interface SyllabusIndexRepository {
   // Exam pattern summaries
   createExamPattern(pattern: ExamPatternSummary): Promise<ExamPatternSummary>;
   listExamPatternsByRun(runId: string): Promise<ExamPatternSummary[]>;
+
+  // Node sources (SPEC 028-D): fuente concreta de cada nodo propuesto.
+  createNodeSource(source: SyllabusIndexNodeSource): Promise<SyllabusIndexNodeSource>;
+  listNodeSourcesByProposal(proposalId: string): Promise<SyllabusIndexNodeSource[]>;
+  listNodeSourcesByNode(nodeId: string): Promise<SyllabusIndexNodeSource[]>;
+
+  // Topic source references (SPEC 028-D): fuentes de temas ya aplicados.
+  createTopicSourceReference(ref: TopicSourceReference): Promise<TopicSourceReference>;
+  listTopicSourceReferencesByTopic(topicId: string): Promise<TopicSourceReference[]>;
+  listTopicSourceReferencesByOpposition(oppositionId: string): Promise<TopicSourceReference[]>;
 }

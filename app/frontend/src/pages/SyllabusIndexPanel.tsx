@@ -1,23 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type {
-  ProposalDetail,
+  GroundedProposalDetail,
   SyllabusIndexNodeProposal,
+  SyllabusIndexNodeSource,
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
-import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import { Badge, Button, EmptyState, PageHeader } from '../components/ui.js';
 
-// SPEC 019: flujo "Crear indice con IA". La IA SOLO propone; el admin revisa,
-// edita, aprueba y aplica al temario. Proveedor mock en el navegador.
+// SPEC 028-D: "Crear indice con IA" anclado a documentos clasificados (028-B) y
+// sus secciones (028-C). La IA SOLO organiza evidencia con FUENTES concretas; el
+// admin revisa, edita, aprueba y aplica al temario. Nada se aplica ni se publica
+// al alumno automaticamente. Proveedor mock en el navegador.
 export function SyllabusIndexPanel({ onClose }: { onClose: () => void }) {
   const { store, refresh, currentUser, currentOpposition } = useStore();
-  const [scope, setScope] = useState<'all' | 'unclassified'>('all');
-  const [detail, setDetail] = useState<ProposalDetail | null>(null);
+  const [detail, setDetail] = useState<GroundedProposalDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   const reload = async (proposalId: string) => {
     if (!currentUser) return;
-    const fresh = await store.platform.getSyllabusProposal(currentUser, proposalId);
+    const fresh = await store.platform.getSyllabusIndexProposalDetail(
+      currentUser,
+      proposalId,
+    );
     setDetail(fresh);
   };
 
@@ -26,20 +31,19 @@ export function SyllabusIndexPanel({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setNotice(null);
     try {
-      const result = await store.platform.proposeSyllabusIndex(currentUser, {
-        opposition_id: currentOpposition.id,
-        only_unclassified: scope === 'unclassified',
-      });
+      const result = await store.platform.proposeSyllabusIndexFromDocuments(
+        currentUser,
+        { opposition_id: currentOpposition.id },
+      );
       setDetail(result);
-      const topics = result.nodes.length;
       setNotice({
         type: 'success',
-        text: `La IA ha propuesto un indice con ${topics} tema(s), pendiente de revision.`,
+        text: `La IA ha propuesto un indice con ${result.nodes.length} tema(s) con fuente, pendiente de revision.`,
       });
     } catch {
       setNotice({
         type: 'error',
-        text: 'No se pudo generar el indice. Revisa que haya material con texto extraido.',
+        text: 'No se pudo generar el indice. Asegurate de tener documentos clasificados y seccionados (clasifica y crea secciones primero).',
       });
     } finally {
       setBusy(false);
@@ -48,10 +52,10 @@ export function SyllabusIndexPanel({ onClose }: { onClose: () => void }) {
 
   if (!detail) {
     return (
-      <div className="card" style={{ maxWidth: 560 }}>
+      <div className="card" style={{ maxWidth: 600 }}>
         <PageHeader
           title="Crear indice con IA"
-          subtitle="Analiza el material y propon un temario. La propuesta se revisa antes de aplicarse."
+          subtitle="Organiza tus documentos clasificados en un temario con fuentes. La propuesta se revisa antes de aplicarse."
           action={
             <Button variant="secondary" onClick={onClose}>
               Cerrar
@@ -59,14 +63,13 @@ export function SyllabusIndexPanel({ onClose }: { onClose: () => void }) {
           }
         />
         {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
-        <Field label="Material a analizar">
-          <select value={scope} onChange={(e) => setScope(e.target.value as 'all' | 'unclassified')}>
-            <option value="all">Todo el material activo</option>
-            <option value="unclassified">Solo material sin tema</option>
-          </select>
-        </Field>
+        <p className="muted small">
+          Usa los documentos de estudio ya clasificados (temario, leyes, apuntes,
+          indices) y sus secciones. Los tests antiguos solo aportan contexto. No se
+          generan preguntas ni se escribe el temario.
+        </p>
         <Button onClick={analyze} disabled={busy}>
-          {busy ? 'Analizando…' : 'Analizar material y proponer temario'}
+          {busy ? 'Analizando...' : 'Analizar documentos y proponer temario'}
         </Button>
       </div>
     );
@@ -110,7 +113,7 @@ function ProposalReview({
   notice,
   setNotice,
 }: {
-  detail: ProposalDetail;
+  detail: GroundedProposalDetail;
   onReload: (proposalId: string) => Promise<void>;
   onApplied: () => void;
   onClose: () => void;
@@ -120,8 +123,14 @@ function ProposalReview({
   const { store, currentUser } = useStore();
   const proposal = detail.proposal;
   const byId = new Map(detail.nodes.map((n) => [n.id, n]));
-  const unclassified = detail.suggestions.filter((s) => s.status === 'unclassified');
+  const sourcesByNode = new Map<string, SyllabusIndexNodeSource[]>();
+  for (const source of detail.node_sources) {
+    const list = sourcesByNode.get(source.node_id) ?? [];
+    list.push(source);
+    sourcesByNode.set(source.node_id, list);
+  }
   const isEditable = proposal.status === 'draft' || proposal.status === 'pending_review';
+  const runWarnings = detail.run?.warnings ?? [];
 
   const act = async (fn: () => Promise<unknown>, okText: string) => {
     if (!currentUser) return;
@@ -152,7 +161,7 @@ function ProposalReview({
     <div className="card">
       <PageHeader
         title={proposal.title}
-        subtitle={`Estado: ${proposal.status}. ${detail.nodes.length} tema(s) propuestos.`}
+        subtitle={`Estado: ${proposal.status}. ${detail.nodes.length} tema(s) con fuente.`}
         action={
           <Button variant="secondary" onClick={onClose}>
             Cerrar
@@ -160,72 +169,88 @@ function ProposalReview({
         }
       />
       {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
-
-      {detail.nodes.length === 0 ? (
-        <EmptyState message="La IA no ha propuesto temas con el material seleccionado." />
-      ) : (
-        detail.nodes.map((node) => (
-          <div
-            className="row spread"
-            key={node.id}
-            style={{ marginLeft: depthOf(node, byId) * 20, padding: '6px 0' }}
-          >
-            <div>
-              {node.code ? `${node.code} · ` : ''}
-              {node.title} <Badge status={node.status} />
-            </div>
-            {isEditable && (
-              <div className="row">
-                <Button variant="secondary" small onClick={() => editNode(node)}>
-                  Editar
-                </Button>
-                <Button
-                  small
-                  onClick={() =>
-                    currentUser &&
-                    act(
-                      () =>
-                        store.platform.setSyllabusNodeStatus(
-                          currentUser,
-                          proposal.id,
-                          node.id,
-                          'accepted',
-                        ),
-                      'Tema aceptado.',
-                    )
-                  }
-                >
-                  Aceptar
-                </Button>
-                <Button
-                  variant="danger"
-                  small
-                  onClick={() =>
-                    currentUser &&
-                    act(
-                      () =>
-                        store.platform.setSyllabusNodeStatus(
-                          currentUser,
-                          proposal.id,
-                          node.id,
-                          'rejected',
-                        ),
-                      'Tema rechazado.',
-                    )
-                  }
-                >
-                  Rechazar
-                </Button>
-              </div>
-            )}
-          </div>
-        ))
+      {runWarnings.length > 0 && (
+        <div className="notice error small">{runWarnings.join(' ')}</div>
       )}
 
-      {unclassified.length > 0 && (
-        <p className="muted small">
-          {unclassified.length} material(es) sin clasificar (no se asociaran a ningun tema).
-        </p>
+      {detail.nodes.length === 0 ? (
+        <EmptyState message="La IA no ha propuesto temas con fuente a partir del material seleccionado." />
+      ) : (
+        detail.nodes.map((node) => {
+          const sources = sourcesByNode.get(node.id) ?? [];
+          return (
+            <div
+              key={node.id}
+              style={{ marginLeft: depthOf(node, byId) * 20, padding: '6px 0' }}
+            >
+              <div className="row spread">
+                <div>
+                  {node.title} <Badge status={node.status} />
+                  {node.confidence != null && (
+                    <span className="muted small">
+                      {' '}
+                      confianza {(node.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                {isEditable && (
+                  <div className="row">
+                    <Button variant="secondary" small onClick={() => editNode(node)}>
+                      Editar
+                    </Button>
+                    <Button
+                      small
+                      onClick={() =>
+                        currentUser &&
+                        act(
+                          () =>
+                            store.platform.setSyllabusNodeStatus(
+                              currentUser,
+                              proposal.id,
+                              node.id,
+                              'accepted',
+                            ),
+                          'Tema aceptado.',
+                        )
+                      }
+                    >
+                      Aceptar
+                    </Button>
+                    <Button
+                      variant="danger"
+                      small
+                      onClick={() =>
+                        currentUser &&
+                        act(
+                          () =>
+                            store.platform.setSyllabusNodeStatus(
+                              currentUser,
+                              proposal.id,
+                              node.id,
+                              'rejected',
+                            ),
+                          'Tema rechazado.',
+                        )
+                      }
+                    >
+                      Rechazar
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {sources.length > 0 && (
+                <ul className="muted small" style={{ margin: '2px 0 0 0' }}>
+                  {sources.map((s) => (
+                    <li key={s.id}>
+                      Fuente{s.is_primary ? ' (primaria)' : ' (contexto)'}:{' '}
+                      {s.excerpt ? `"${s.excerpt}"` : s.material_section_id ?? s.material_id}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })
       )}
 
       <div className="row" style={{ marginTop: 12 }}>
@@ -248,13 +273,13 @@ function ProposalReview({
           onClick={async () => {
             if (!currentUser) return;
             try {
-              const result = await store.platform.applySyllabusProposal(
+              const result = await store.platform.applySyllabusIndexFromDocuments(
                 currentUser,
                 proposal.id,
               );
               setNotice({
                 type: 'success',
-                text: `Indice aplicado: ${result.created_topic_ids.length} tema(s) creados, ${result.reused_topic_ids.length} reutilizados.`,
+                text: `Indice aplicado: ${result.created_topic_ids.length} tema(s) creados, ${result.reused_topic_ids.length} reutilizados, ${result.topic_source_references} fuente(s) registradas.`,
               });
               onApplied();
             } catch {
