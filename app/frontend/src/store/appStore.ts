@@ -20,6 +20,8 @@ import {
   SyllabusIndexService,
   DocumentClassificationService,
   createDocumentClassificationProvider,
+  MaterialSectionService,
+  SourceReferenceService,
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
@@ -61,6 +63,9 @@ export interface AppStore {
   syllabus: SyllabusIndexService;
   /** Clasificacion documental e inventario (SPEC 028-B). */
   documentClassification: DocumentClassificationService;
+  /** Secciones de material y referencias de fuente (SPEC 028-C). */
+  materialSections: MaterialSectionService;
+  sourceReferences: SourceReferenceService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -187,6 +192,18 @@ export function createAppStore(seed = true): AppStore {
     classifications: core.documentClassifications,
     provider: createDocumentClassificationProvider(),
   });
+  // Secciones de material y referencias de fuente (SPEC 028-C).
+  const materialSections = new MaterialSectionService({
+    materials: materialRepo,
+    documentClassification,
+    sections: core.materialSections,
+    importBatches: core.importBatches,
+    importItems: core.importItems,
+  });
+  const sourceReferences = new SourceReferenceService({
+    references: core.sourceReferences,
+    sections: core.materialSections,
+  });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
     topicRepository: topicRepo,
@@ -217,6 +234,8 @@ export function createAppStore(seed = true): AppStore {
     feedback,
     syllabus,
     documentClassification,
+    materialSections,
+    sourceReferences,
     testGenerator,
     attempts,
   });
@@ -237,6 +256,8 @@ export function createAppStore(seed = true): AppStore {
     feedback,
     syllabus,
     documentClassification,
+    materialSections,
+    sourceReferences,
     testGenerator,
     attempts,
     platform,

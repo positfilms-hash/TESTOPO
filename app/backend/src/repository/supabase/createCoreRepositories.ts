@@ -29,6 +29,8 @@ import type {
   DocumentUnderstandingRunRepository,
   DocumentClassificationRepository,
 } from '../documentClassificationRepository.js';
+import type { MaterialSectionRepository } from '../materialSectionRepository.js';
+import type { SourceReferenceRepository } from '../sourceReferenceRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -54,6 +56,10 @@ import {
   InMemoryDocumentUnderstandingRunRepository,
   InMemoryDocumentClassificationRepository,
 } from '../inMemoryDocumentClassificationRepository.js';
+import {
+  InMemoryMaterialSectionRepository,
+  InMemorySourceReferenceRepository,
+} from '../inMemorySectionsRepositories.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -84,6 +90,10 @@ import {
   SupabaseDocumentUnderstandingRunRepository,
   SupabaseDocumentClassificationRepository,
 } from './supabaseDocumentClassificationRepositories.js';
+import {
+  SupabaseMaterialSectionRepository,
+  SupabaseSourceReferenceRepository,
+} from './supabaseSectionsRepositories.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -120,6 +130,9 @@ export interface CoreRepositories {
   /** SPEC 028-B: clasificacion documental e inventario de importacion. */
   documentRuns: DocumentUnderstandingRunRepository;
   documentClassifications: DocumentClassificationRepository;
+  /** SPEC 028-C: secciones de material y referencias de fuente. */
+  materialSections: MaterialSectionRepository;
+  sourceReferences: SourceReferenceRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -185,6 +198,8 @@ export function createCoreRepositories(
       testAnswers: new SupabaseTestAnswerRepository(port),
       documentRuns: new SupabaseDocumentUnderstandingRunRepository(port),
       documentClassifications: new SupabaseDocumentClassificationRepository(port),
+      materialSections: new SupabaseMaterialSectionRepository(port),
+      sourceReferences: new SupabaseSourceReferenceRepository(port),
       mode,
     };
   }
@@ -211,6 +226,8 @@ export function createCoreRepositories(
     testAnswers: new InMemoryTestAnswerRepository(),
     documentRuns: new InMemoryDocumentUnderstandingRunRepository(),
     documentClassifications: new InMemoryDocumentClassificationRepository(),
+    materialSections: new InMemoryMaterialSectionRepository(),
+    sourceReferences: new InMemorySourceReferenceRepository(),
     mode,
   };
 }

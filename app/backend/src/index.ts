@@ -147,6 +147,19 @@ export * from './repository/inMemoryDocumentClassificationRepository.js';
 export * from './repository/supabase/supabaseDocumentClassificationRepositories.js';
 export * from './service/documentClassificationService.js';
 
+// SPEC 028-C - Material Sections & Source References
+export * from './models/materialSection.js';
+export * from './models/sourceReference.js';
+export * from './sections/sectionErrors.js';
+export * from './sections/segmentConfig.js';
+export * from './sections/segmentText.js';
+export * from './repository/materialSectionRepository.js';
+export * from './repository/sourceReferenceRepository.js';
+export * from './repository/inMemorySectionsRepositories.js';
+export * from './repository/supabase/supabaseSectionsRepositories.js';
+export * from './service/materialSectionService.js';
+export * from './service/sourceReferenceService.js';
+
 // SPEC 018.4 - AI Question Generation & Review Feedback Loop
 export * from './models/questionReviewFeedback.js';
 export * from './repository/questionReviewFeedbackRepository.js';
