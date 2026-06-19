@@ -25,6 +25,17 @@ import {
   DocumentClassificationError,
   DocumentClassificationErrorCode,
 } from '../classification/documentClassificationErrors.js';
+import type { MaterialSectionService } from './materialSectionService.js';
+import type { SourceReferenceService } from './sourceReferenceService.js';
+import type {
+  MaterialSection,
+  SectionClass,
+} from '../models/materialSection.js';
+import type { SourceReference } from '../models/sourceReference.js';
+import {
+  MaterialSectionError,
+  MaterialSectionErrorCode,
+} from '../sections/sectionErrors.js';
 import type { Topic } from '../models/topic.js';
 import type { OppositionRepository } from '../repository/oppositionRepository.js';
 import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRepository.js';
@@ -120,6 +131,9 @@ export interface PlatformServiceDeps {
   syllabus?: SyllabusIndexService;
   /** Clasificacion documental e inventario (SPEC 028-B). Opcional. */
   documentClassification?: DocumentClassificationService;
+  /** Secciones de material y referencias de fuente (SPEC 028-C). Opcional. */
+  materialSections?: MaterialSectionService;
+  sourceReferences?: SourceReferenceService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -238,6 +252,84 @@ export class PlatformService {
       classification,
       corrected_by: actor.id,
     });
+  }
+
+  // --- Secciones de material y referencias de fuente (SPEC 028-C). Solo gestion. --
+
+  // Crea (o reprocesa) las secciones de un material util y prepara una referencia
+  // de fuente por seccion. Solo owner/admin de la oposicion del material.
+  async createMaterialSections(
+    actor: User,
+    materialId: string,
+  ): Promise<MaterialSection[]> {
+    const sectionsSvc = this.requireMaterialSections();
+    const material = await this.deps.materials.getMaterial(materialId);
+    if (!material) {
+      throw new MaterialSectionError([
+        MaterialSectionErrorCode.MATERIAL_NOT_FOUND,
+      ]);
+    }
+    await this.requireManageOpposition(actor, material.opposition_id);
+    const sections = await sectionsSvc.createSectionsForMaterial(materialId);
+    // Prepara una referencia `material_section` por seccion (SPEC 028-C, 11).
+    if (this.deps.sourceReferences) {
+      for (const section of sections) {
+        await this.deps.sourceReferences.createFromSection(section.id);
+      }
+    }
+    return sections;
+  }
+
+  async listMaterialSections(
+    actor: User,
+    materialId: string,
+  ): Promise<MaterialSection[]> {
+    const sectionsSvc = this.requireMaterialSections();
+    const material = await this.deps.materials.getMaterial(materialId);
+    if (!material) {
+      throw new MaterialSectionError([
+        MaterialSectionErrorCode.MATERIAL_NOT_FOUND,
+      ]);
+    }
+    await this.requireManageOpposition(actor, material.opposition_id);
+    return sectionsSvc.listByMaterial(materialId);
+  }
+
+  async reprocessMaterialSections(
+    actor: User,
+    materialId: string,
+  ): Promise<MaterialSection[]> {
+    return this.createMaterialSections(actor, materialId);
+  }
+
+  async searchMaterialSections(
+    actor: User,
+    input: {
+      opposition_id: string;
+      query: string;
+      classification?: SectionClass;
+      material_ids?: string[];
+      limit?: number;
+    },
+  ): Promise<MaterialSection[]> {
+    const sectionsSvc = this.requireMaterialSections();
+    await this.requireManageOpposition(actor, input.opposition_id);
+    return sectionsSvc.search(input);
+  }
+
+  async listSourceReferencesByMaterial(
+    actor: User,
+    materialId: string,
+  ): Promise<SourceReference[]> {
+    const refsSvc = this.requireSourceReferences();
+    const material = await this.deps.materials.getMaterial(materialId);
+    if (!material) {
+      throw new MaterialSectionError([
+        MaterialSectionErrorCode.MATERIAL_NOT_FOUND,
+      ]);
+    }
+    await this.requireManageOpposition(actor, material.opposition_id);
+    return refsSvc.listByMaterial(materialId);
   }
 
   // Listar materiales de una oposicion. Gestor: todos. Estudiante con acceso:
@@ -685,6 +777,24 @@ export class PlatformService {
       ]);
     }
     return this.deps.documentClassification;
+  }
+
+  private requireMaterialSections(): MaterialSectionService {
+    if (!this.deps.materialSections) {
+      throw new MaterialSectionError([
+        MaterialSectionErrorCode.CREATE_FAILED,
+      ]);
+    }
+    return this.deps.materialSections;
+  }
+
+  private requireSourceReferences(): SourceReferenceService {
+    if (!this.deps.sourceReferences) {
+      throw new MaterialSectionError([
+        MaterialSectionErrorCode.CREATE_FAILED,
+      ]);
+    }
+    return this.deps.sourceReferences;
   }
 
   // Resuelve la oposicion de una propuesta de indice y exige gestionarla.
