@@ -134,6 +134,19 @@ export * from './service/materialImportService.js';
 export * from './models/uploadCategory.js';
 export * from './import/smartUploadErrors.js';
 
+// SPEC 028-B - Document Classification & Import Inventory
+export * from './models/documentClassification.js';
+export * from './classification/documentClassificationErrors.js';
+export * from './classification/documentClassificationConfig.js';
+export * from './classification/documentClassificationTypes.js';
+export * from './classification/heuristicDocumentClassifier.js';
+export * from './classification/openAiDocumentClassifier.js';
+export * from './classification/createDocumentClassificationProvider.js';
+export * from './repository/documentClassificationRepository.js';
+export * from './repository/inMemoryDocumentClassificationRepository.js';
+export * from './repository/supabase/supabaseDocumentClassificationRepositories.js';
+export * from './service/documentClassificationService.js';
+
 // SPEC 018.4 - AI Question Generation & Review Feedback Loop
 export * from './models/questionReviewFeedback.js';
 export * from './repository/questionReviewFeedbackRepository.js';

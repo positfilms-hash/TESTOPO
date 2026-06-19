@@ -12,6 +12,19 @@
 
 import type { User } from '../models/user.js';
 import type { Material } from '../models/material.js';
+import {
+  STUDENT_HIDDEN_CLASSES,
+  type DocumentClass,
+} from '../models/documentClassification.js';
+import type {
+  DocumentClassificationService,
+  DocumentInventory,
+} from './documentClassificationService.js';
+import type { DocumentClassification } from '../models/documentClassification.js';
+import {
+  DocumentClassificationError,
+  DocumentClassificationErrorCode,
+} from '../classification/documentClassificationErrors.js';
 import type { Topic } from '../models/topic.js';
 import type { OppositionRepository } from '../repository/oppositionRepository.js';
 import type { WorkspaceMemberRepository } from '../repository/workspaceMemberRepository.js';
@@ -105,6 +118,8 @@ export interface PlatformServiceDeps {
   feedback?: QuestionFeedbackService;
   /** Constructor de indice de temario con IA (SPEC 019). Opcional. */
   syllabus?: SyllabusIndexService;
+  /** Clasificacion documental e inventario (SPEC 028-B). Opcional. */
+  documentClassification?: DocumentClassificationService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -175,6 +190,56 @@ export class PlatformService {
     return result;
   }
 
+  // --- Clasificacion documental e inventario (SPEC 028-B). Solo gestion. ----
+
+  // Clasifica los documentos de un lote y crea el inventario. Solo owner/admin.
+  async classifyImportBatch(
+    actor: User,
+    batchId: string,
+  ): Promise<DocumentInventory> {
+    const classifier = this.requireDocumentClassification();
+    const batch = await this.deps.materialImport.getBatch(batchId);
+    if (!batch) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
+    await this.requireManageOpposition(actor, batch.batch.opposition_id);
+    return classifier.classifyBatch({ batch_id: batchId, created_by: actor.id });
+  }
+
+  // Consulta el inventario (clasificaciones de la ultima ejecucion) de un lote.
+  async getDocumentInventory(
+    actor: User,
+    batchId: string,
+  ): Promise<DocumentInventory> {
+    const classifier = this.requireDocumentClassification();
+    const batch = await this.deps.materialImport.getBatch(batchId);
+    if (!batch) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
+    await this.requireManageOpposition(actor, batch.batch.opposition_id);
+    return classifier.getInventory(batchId);
+  }
+
+  // Corrige manualmente la clasificacion de un documento. La correccion humana
+  // prevalece sobre la IA (SPEC 028-B, 16). Solo owner/admin.
+  async correctDocumentClassification(
+    actor: User,
+    classificationId: string,
+    classification: DocumentClass,
+  ): Promise<DocumentClassification> {
+    const classifier = this.requireDocumentClassification();
+    const existing = await classifier.getClassificationById(classificationId);
+    if (!existing) {
+      throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
+    }
+    await this.requireManageOpposition(actor, existing.opposition_id ?? undefined);
+    return classifier.correctClassification({
+      classification_id: classificationId,
+      classification,
+      corrected_by: actor.id,
+    });
+  }
+
   // Listar materiales de una oposicion. Gestor: todos. Estudiante con acceso:
   // solo `active` y NO los tipos de fuente interna (SPEC 012/028).
   async listMaterials(actor: User, oppositionId: string): Promise<Material[]> {
@@ -186,11 +251,20 @@ export class PlatformService {
     if (await this.canManageOppositionWorkspace(actor, oppositionId)) {
       return all;
     }
-    return all.filter((material) => isStudentVisibleMaterial(material));
+    // Estudiante: filtro por tipo/estado (SPEC 028) + por clasificacion documental
+    // (SPEC 028-B, 17.1): oculta tests antiguos, irrelevantes, no analizables y
+    // dudosos aunque esten `active`.
+    const visible: Material[] = [];
+    for (const material of all) {
+      if (await this.isStudentVisibleMaterialDeep(material)) {
+        visible.push(material);
+      }
+    }
+    return visible;
   }
 
-  // Ver detalle/texto de un material. Estudiante solo si esta `active` y no es un
-  // tipo de fuente interna (tests antiguos/examenes; SPEC 028, 29).
+  // Ver detalle/texto de un material. Estudiante solo si es material de estudio
+  // `active` y su clasificacion no es interna (SPEC 028/028-B).
   async getMaterial(actor: User, materialId: string): Promise<Material> {
     const material = await this.deps.materials.getMaterial(materialId);
     if (!material) {
@@ -198,12 +272,36 @@ export class PlatformService {
     }
     await this.deps.oppositions.getOpposition(actor, material.opposition_id);
     if (
-      !isStudentVisibleMaterial(material) &&
+      !(await this.isStudentVisibleMaterialDeep(material)) &&
       !(await this.canManageOppositionWorkspace(actor, material.opposition_id))
     ) {
       throw new AccessError([AccessErrorCode.ACCESS_DENIED]);
     }
     return material;
+  }
+
+  // Visibilidad del alumno: filtro base por tipo/estado (SPEC 028) y, si la
+  // clasificacion documental esta cableada (SPEC 028-B), tambien oculta los
+  // materiales cuya clasificacion vigente es interna (old_exam_or_test,
+  // irrelevant, not_analyzable, ambiguous). Si no hay servicio de clasificacion,
+  // se queda en el filtro base (no rompe configuraciones previas).
+  private async isStudentVisibleMaterialDeep(
+    material: Material,
+  ): Promise<boolean> {
+    if (!isStudentVisibleMaterial(material)) {
+      return false;
+    }
+    const classifier = this.deps.documentClassification;
+    if (!classifier) {
+      return true;
+    }
+    const classification = await classifier.getClassificationForMaterial(
+      material.id,
+    );
+    if (classification && STUDENT_HIDDEN_CLASSES.has(classification.classification)) {
+      return false;
+    }
+    return true;
   }
 
   async editMaterial(
@@ -578,6 +676,15 @@ export class PlatformService {
       ]);
     }
     return this.deps.syllabus;
+  }
+
+  private requireDocumentClassification(): DocumentClassificationService {
+    if (!this.deps.documentClassification) {
+      throw new DocumentClassificationError([
+        DocumentClassificationErrorCode.PROVIDER_NOT_CONFIGURED,
+      ]);
+    }
+    return this.deps.documentClassification;
   }
 
   // Resuelve la oposicion de una propuesta de indice y exige gestionarla.

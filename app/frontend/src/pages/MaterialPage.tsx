@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MATERIAL_TYPES, type Material, type MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import { DocumentInventory } from './DocumentInventory.js';
 
 type View =
   | { kind: 'list' }
@@ -210,7 +211,8 @@ function MaterialForm({
 
 // SPEC 028 - Carga masiva inteligente: el usuario elige una categoria (material
 // de la oposicion / tests antiguos), sube ZIP / carpeta / varios PDFs, y la app
-// desglosa, extrae texto y, opcionalmente, lanza el indice IA (que solo propone).
+// desglosa y extrae texto. Tras subir, SPEC 028-B clasifica los documentos y
+// muestra un inventario revisable (no genera indice ni preguntas).
 type SmartSummary = {
   category: UploadCategory;
   batchId: string;
@@ -219,7 +221,6 @@ type SmartSummary = {
   skipped: number;
   failed: number;
   warnings: string[];
-  folderPaths: Record<string, string>;
 };
 
 // Soporte de subida de carpeta (`webkitdirectory`). En navegadores sin soporte
@@ -256,38 +257,23 @@ function SmartUploadForm({
 }) {
   const { store, currentUser, currentOpposition } = useStore();
   const [category, setCategory] = useState<UploadCategory>('opposition_material');
-  // SPEC 028, 31: activado por defecto en ambas categorias (indice IA para
-  // material; analisis de patrones para tests antiguos).
-  const [runAnalysis, setRunAnalysis] = useState(true);
+  // SPEC 028-B: clasificar documentos tras importar (activado por defecto).
+  const [runClassify, setRunClassify] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SmartSummary | null>(null);
-  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  // Lote en revision: cuando esta puesto, se muestra el inventario documental.
+  const [reviewBatchId, setReviewBatchId] = useState<string | null>(null);
 
-  const isOldTests = category === 'old_tests';
-
-  // Lanza el analisis IA del lote: para material propone indice de temario; para
-  // tests antiguos analiza estilo/cobertura (patrones). Ambos via SPEC 019; nada
-  // se aplica ni se valida sin revision humana.
-  const runAnalysisFor = async (s: SmartSummary): Promise<void> => {
+  // SPEC 028-B: clasifica los documentos del lote y abre el inventario. No genera
+  // indice ni preguntas; solo identifica que es cada archivo (revisable a mano).
+  const classifyAndReview = async (batchId: string): Promise<void> => {
     if (!currentUser) return;
     try {
-      await store.platform.proposeSyllabusIndex(currentUser, {
-        opposition_id: currentOpposition?.id ?? '',
-        folder_paths: s.folderPaths,
-        batch_id: s.batchId,
-      });
-      setAiNotice(
-        s.category === 'old_tests'
-          ? 'Se han analizado los tests antiguos como referencia de estilo y cobertura. No se han generado preguntas.'
-          : 'La IA ha propuesto un indice de temario pendiente de revision. Revisalo y aplicalo desde Temario.',
-      );
+      await store.platform.classifyImportBatch(currentUser, batchId);
+      setReviewBatchId(batchId);
     } catch {
-      setError(
-        s.category === 'old_tests'
-          ? 'No se ha podido analizar los tests antiguos. Intentalo de nuevo desde el resumen.'
-          : 'No se ha podido lanzar el indice con IA. Intentalo de nuevo desde Temario.',
-      );
+      setError('No se han podido clasificar los documentos. Intentalo de nuevo.');
     }
   };
 
@@ -300,18 +286,13 @@ function SmartUploadForm({
     if (!currentUser) return;
     setBusy(true);
     setError(null);
-    setAiNotice(null);
     try {
-      const { batch, items } = await store.platform.smartUpload(currentUser, {
+      const { batch } = await store.platform.smartUpload(currentUser, {
         opposition_id: currentOpposition?.id,
         upload_category: category,
         source_type: sourceType,
         ...payload,
       });
-      const folderPaths: Record<string, string> = {};
-      for (const item of items) {
-        if (item.material_id) folderPaths[item.material_id] = item.original_path;
-      }
       const s: SmartSummary = {
         category,
         batchId: batch.id,
@@ -320,12 +301,11 @@ function SmartUploadForm({
         skipped: batch.skipped_files,
         failed: batch.failed_files,
         warnings: batch.warnings,
-        folderPaths,
       };
       setSummary(s);
-      // Auto-ejecuta el analisis si el usuario lo dejo marcado (SPEC 028, 31).
-      if (runAnalysis && s.imported > 0) {
-        await runAnalysisFor(s);
+      // Auto-clasifica si el usuario lo dejo marcado (SPEC 028-B).
+      if (runClassify && s.imported > 0) {
+        await classifyAndReview(s.batchId);
       }
     } catch (err) {
       setError(smartUploadErrorMessage(err));
@@ -350,22 +330,22 @@ function SmartUploadForm({
     await runUpload('multi_file', { files: await toUploadFiles(fileList, false) });
   };
 
-  // Boton manual del resumen (si el auto-analisis estaba desmarcado o fallo).
-  const manualAnalysis = async () => {
+  // Boton manual del resumen (si la clasificacion automatica estaba desmarcada).
+  const reviewDocuments = async () => {
     if (!summary) return;
     setBusy(true);
     setError(null);
     try {
-      await runAnalysisFor(summary);
+      await classifyAndReview(summary.batchId);
     } finally {
       setBusy(false);
     }
   };
 
-  const analyzeLabel =
-    summary?.category === 'old_tests'
-      ? 'Analizar tests antiguos'
-      : 'Crear indice con IA';
+  // --- Inventario documental (SPEC 028-B) ---
+  if (reviewBatchId) {
+    return <DocumentInventory batchId={reviewBatchId} onDone={onDone} />;
+  }
 
   // --- Pantalla de resumen (SPEC 028, 26) ---
   if (summary) {
@@ -392,23 +372,16 @@ function SmartUploadForm({
               {summary.warnings.join(' ')}
             </div>
           )}
-          {summary.category === 'old_tests' ? (
-            <p className="muted small">
-              Los tests antiguos se analizan como referencia de estilo y
-              cobertura. No se generan preguntas validadas automaticamente.
-            </p>
-          ) : (
-            <p className="muted small">
-              Siguiente paso recomendado: deja que la IA proponga un indice de
-              temario. Solo es una propuesta; la revisas antes de aplicarla.
-            </p>
-          )}
-          {aiNotice && <div className="notice success">{aiNotice}</div>}
+          <p className="muted small">
+            Siguiente paso: revisa que es cada documento. La app los clasifica
+            (temario, tests antiguos, leyes, apuntes, dudosos...) y puedes
+            corregir antes de generar temario o preguntas mas adelante.
+          </p>
           {error && <div className="notice error">{error}</div>}
           <div className="row" style={{ marginTop: 12 }}>
-            {!aiNotice && summary.imported > 0 && (
-              <Button onClick={manualAnalysis} disabled={busy}>
-                {busy ? 'Analizando...' : analyzeLabel}
+            {summary.imported > 0 && (
+              <Button onClick={reviewDocuments} disabled={busy}>
+                {busy ? 'Clasificando...' : 'Revisar documentos'}
               </Button>
             )}
             <Button variant="secondary" onClick={onDone}>
@@ -435,10 +408,7 @@ function SmartUploadForm({
             type="radio"
             name="upload-category"
             checked={category === 'opposition_material'}
-            onChange={() => {
-              setCategory('opposition_material');
-              setRunAnalysis(true);
-            }}
+            onChange={() => setCategory('opposition_material')}
           />
           <span>
             <strong>Material de la oposicion</strong>
@@ -450,10 +420,7 @@ function SmartUploadForm({
             type="radio"
             name="upload-category"
             checked={category === 'old_tests'}
-            onChange={() => {
-              setCategory('old_tests');
-              setRunAnalysis(true);
-            }}
+            onChange={() => setCategory('old_tests')}
           />
           <span>
             <strong>Tests antiguos</strong>
@@ -464,14 +431,10 @@ function SmartUploadForm({
         <label className="row" style={{ gap: 8, marginTop: 12, cursor: 'pointer' }}>
           <input
             type="checkbox"
-            checked={runAnalysis}
-            onChange={(e) => setRunAnalysis(e.target.checked)}
+            checked={runClassify}
+            onChange={(e) => setRunClassify(e.target.checked)}
           />
-          <span className="small">
-            {isOldTests
-              ? 'Analizar tests antiguos (estilo y cobertura) despues de importar'
-              : 'Crear indice con IA despues de importar'}
-          </span>
+          <span className="small">Clasificar documentos despues de importar</span>
         </label>
 
         <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 16 }}>

@@ -25,6 +25,10 @@ import type { TestRepository } from '../testRepository.js';
 import type { TestQuestionRepository } from '../testQuestionRepository.js';
 import type { TestAttemptRepository } from '../testAttemptRepository.js';
 import type { TestAnswerRepository } from '../testAnswerRepository.js';
+import type {
+  DocumentUnderstandingRunRepository,
+  DocumentClassificationRepository,
+} from '../documentClassificationRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -46,6 +50,10 @@ import { InMemoryTestRepository } from '../inMemoryTestRepository.js';
 import { InMemoryTestQuestionRepository } from '../inMemoryTestQuestionRepository.js';
 import { InMemoryTestAttemptRepository } from '../inMemoryTestAttemptRepository.js';
 import { InMemoryTestAnswerRepository } from '../inMemoryTestAnswerRepository.js';
+import {
+  InMemoryDocumentUnderstandingRunRepository,
+  InMemoryDocumentClassificationRepository,
+} from '../inMemoryDocumentClassificationRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -72,6 +80,10 @@ import {
   SupabaseTestAttemptRepository,
   SupabaseTestAnswerRepository,
 } from './supabaseTestRepositories.js';
+import {
+  SupabaseDocumentUnderstandingRunRepository,
+  SupabaseDocumentClassificationRepository,
+} from './supabaseDocumentClassificationRepositories.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -105,6 +117,9 @@ export interface CoreRepositories {
   testQuestions: TestQuestionRepository;
   testAttempts: TestAttemptRepository;
   testAnswers: TestAnswerRepository;
+  /** SPEC 028-B: clasificacion documental e inventario de importacion. */
+  documentRuns: DocumentUnderstandingRunRepository;
+  documentClassifications: DocumentClassificationRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -168,6 +183,8 @@ export function createCoreRepositories(
       testQuestions: new SupabaseTestQuestionRepository(port),
       testAttempts: new SupabaseTestAttemptRepository(port),
       testAnswers: new SupabaseTestAnswerRepository(port),
+      documentRuns: new SupabaseDocumentUnderstandingRunRepository(port),
+      documentClassifications: new SupabaseDocumentClassificationRepository(port),
       mode,
     };
   }
@@ -192,6 +209,8 @@ export function createCoreRepositories(
     testQuestions: new InMemoryTestQuestionRepository(),
     testAttempts: new InMemoryTestAttemptRepository(),
     testAnswers: new InMemoryTestAnswerRepository(),
+    documentRuns: new InMemoryDocumentUnderstandingRunRepository(),
+    documentClassifications: new InMemoryDocumentClassificationRepository(),
     mode,
   };
 }

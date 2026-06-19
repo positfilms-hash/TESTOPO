@@ -18,6 +18,8 @@ import {
   QuestionFeedbackService,
   InMemorySyllabusIndexRepository,
   SyllabusIndexService,
+  DocumentClassificationService,
+  createDocumentClassificationProvider,
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
@@ -57,6 +59,8 @@ export interface AppStore {
   feedback: QuestionFeedbackService;
   /** Indice de temario con IA (SPEC 019). */
   syllabus: SyllabusIndexService;
+  /** Clasificacion documental e inventario (SPEC 028-B). */
+  documentClassification: DocumentClassificationService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -173,6 +177,16 @@ export function createAppStore(seed = true): AppStore {
     topicMaterialLinks: topicMaterialLinkRepo,
     repository: new InMemorySyllabusIndexRepository(),
   });
+  // Clasificacion documental e inventario (SPEC 028-B): proveedor heuristico en
+  // el navegador (sin red); persistencia via el factory (core).
+  const documentClassification = new DocumentClassificationService({
+    materials: materialRepo,
+    importBatches: core.importBatches,
+    importItems: core.importItems,
+    runs: core.documentRuns,
+    classifications: core.documentClassifications,
+    provider: createDocumentClassificationProvider(),
+  });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
     topicRepository: topicRepo,
@@ -202,6 +216,7 @@ export function createAppStore(seed = true): AppStore {
     review,
     feedback,
     syllabus,
+    documentClassification,
     testGenerator,
     attempts,
   });
@@ -221,6 +236,7 @@ export function createAppStore(seed = true): AppStore {
     review,
     feedback,
     syllabus,
+    documentClassification,
     testGenerator,
     attempts,
     platform,
