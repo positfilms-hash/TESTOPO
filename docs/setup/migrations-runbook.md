@@ -136,6 +136,7 @@ fila en `profiles` → crear workspace personal → aparece en `workspaces` y
 | 028-B | `028_b_document_classification_inventory.sql` ✅ | Document Classification: tablas `document_understanding_runs` + `document_classifications` con RLS de solo gestión (alumno sin acceso). Ver [document-classification.md](../architecture/document-classification.md) |
 | 028-C | `028_c_material_sections_source_references.sql` ✅ | Material Sections & Source References: tablas `material_sections` + `source_references` con RLS de solo gestión. Ver [material-sections.md](../architecture/material-sections.md) |
 | 028-D | (no es migración SQL) ✅ | AI Syllabus Index From Classified Documents: el dominio del índice sigue **InMemory** (paridad SPEC 019); la migración Supabase del índice queda diferida a una spec futura. Ver [ai-syllabus-index.md](../architecture/ai-syllabus-index.md) |
+| 028-E | `028_e_source_grounded_question_generation.sql` ✅ | Source-Grounded Question Generation: columnas de puntero de fuente en `questions` y de estrategia/fuentes en `question_generation_runs` (aditivo, idempotente, sin cambios de RLS). Ver [source-grounded-question-generation.md](../architecture/source-grounded-question-generation.md) |
 
 > Las migraciones 021+ las **define Codex en su spec**; este runbook solo fija la
 > convención y el proceso. La numeración puede ajustarse si cambia el orden.

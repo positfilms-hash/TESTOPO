@@ -38,6 +38,15 @@ export interface Question {
    * por el generador de borradores; las preguntas manuales lo dejan vacio.
    */
   generation_metadata?: GenerationMetadata | null;
+  /**
+   * Punteros de fuente concretos (SPEC 028-E). Presentes en preguntas generadas
+   * desde un tema con fuente trazable (seccion 028-C / referencia 028-C /
+   * referencia de fuente del tema aplicado 028-D). Aditivos: no sustituyen a
+   * `source`. Una pregunta generada por fuente conserva al menos uno.
+   */
+  material_section_id?: string | null;
+  source_reference_id?: string | null;
+  topic_source_reference_id?: string | null;
   created_at: Date;
   updated_at: Date;
 }

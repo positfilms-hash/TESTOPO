@@ -16,8 +16,8 @@ disponible para tests y demo.
 | `oppositions`, `opposition_access` | **Supabase** (SPEC 021) |
 | `materials`, `topics`, `material_topic_links` | **Supabase** (SPEC 022) |
 | `material_import_batches`, `material_import_items` | **Supabase** (SPEC 022) |
-| `questions`, `question_options` | **Supabase** (SPEC 023) |
-| validación, reviews, feedback, generation runs | **Supabase** (SPEC 023) |
+| `questions`, `question_options` | **Supabase** (SPEC 023; + 028-E: punteros de fuente) |
+| validación, reviews, feedback, generation runs | **Supabase** (SPEC 023; runs + 028-E: estrategia/fuentes) |
 | `tests`, `test_questions` | **Supabase** (SPEC 024) |
 | `test_attempts`, `test_answers` | **Supabase** (SPEC 024) |
 | Propuestas de índice de temario IA (SPEC 019 + 028-D: node sources, topic source refs) | InMemory |

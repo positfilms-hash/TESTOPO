@@ -24,7 +24,9 @@ import {
 type View =
   | { kind: 'list' }
   | { kind: 'review'; id: string }
-  | { kind: 'generate' };
+  | { kind: 'generate' }
+  // SPEC 028-E: generar candidatas desde un tema aplicado y sus fuentes.
+  | { kind: 'generate-grounded' };
 
 const PENDING = ['draft', 'pending_review', 'needs_fix'];
 
@@ -50,10 +52,14 @@ export function QuestionsPage() {
   if (view.kind === 'generate') {
     return <GenerateForm onBack={() => setView({ kind: 'list' })} />;
   }
+  if (view.kind === 'generate-grounded') {
+    return <GenerateFromTopicForm onBack={() => setView({ kind: 'list' })} />;
+  }
   return (
     <QuestionsList
       onReview={(id) => setView({ kind: 'review', id })}
       onGenerate={() => setView({ kind: 'generate' })}
+      onGenerateGrounded={() => setView({ kind: 'generate-grounded' })}
     />
   );
 }
@@ -61,9 +67,11 @@ export function QuestionsPage() {
 function QuestionsList({
   onReview,
   onGenerate,
+  onGenerateGrounded,
 }: {
   onReview: (id: string) => void;
   onGenerate: () => void;
+  onGenerateGrounded: () => void;
 }) {
   const { store, currentOpposition, version } = useStore();
   const [tab, setTab] = useState<'pending' | 'all'>('pending');
@@ -86,7 +94,14 @@ function QuestionsList({
       <PageHeader
         title="Preguntas"
         subtitle="Revisa y aprueba las preguntas del banco."
-        action={<Button onClick={onGenerate}>Generar borradores</Button>}
+        action={
+          <div className="row">
+            <Button onClick={onGenerateGrounded}>Generar desde tema</Button>
+            <Button variant="secondary" onClick={onGenerate}>
+              Generar borradores
+            </Button>
+          </div>
+        }
       />
       <div className="tabs">
         <button className={`tab ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')}>
@@ -518,6 +533,139 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
             <textarea value={fragment} onChange={(e) => setFragment(e.target.value)} placeholder="Pega un fragmento concreto…" />
           </Field>
           <Button onClick={generate}>Generar borradores</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// SPEC 028-E: generar candidatas desde un TEMA APLICADO y sus fuentes concretas.
+// Las candidatas conservan la fuente y van a revision (nunca validated).
+function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
+  const { store, refresh, currentUser, currentOpposition } = useStore();
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicId, setTopicId] = useState('');
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [count, setCount] = useState(5);
+  const [sourceCount, setSourceCount] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const t = (await store.topics.listTopics()).filter(
+        (x) => x.opposition_id === currentOpposition?.id && x.status !== 'obsolete',
+      );
+      if (!cancelled) {
+        setTopics(t);
+        setTopicId((prev) => prev || t[0]?.id || '');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition]);
+
+  // Vista previa de fuentes disponibles para el tema elegido.
+  useEffect(() => {
+    let cancelled = false;
+    setSourceCount(null);
+    if (!currentUser || !currentOpposition || !topicId) return;
+    void (async () => {
+      try {
+        const preview = await store.platform.previewTopicSources(currentUser, {
+          opposition_id: currentOpposition.id,
+          topic_id: topicId,
+        });
+        if (!cancelled) setSourceCount(preview.primary.length);
+      } catch {
+        if (!cancelled) setSourceCount(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentOpposition, topicId]);
+
+  const generate = async () => {
+    setNotice(null);
+    if (!currentUser || !currentOpposition) return;
+    setBusy(true);
+    try {
+      const result = await store.platform.generateQuestionsFromTopic(currentUser, {
+        opposition_id: currentOpposition.id,
+        topic_id: topicId,
+        difficulty,
+        count,
+      });
+      refresh();
+      setNotice({
+        type: 'success',
+        text: `Se han generado ${result.questions.length} preguntas con fuente, pendientes de revision.`,
+      });
+    } catch (error) {
+      const text =
+        error instanceof QuestionGenerationError
+          ? 'No se pudo generar: el tema necesita documentos de estudio clasificados y seccionados con fuente.'
+          : 'No se pudo generar.';
+      setNotice({ type: 'error', text });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Generar desde tema (con fuentes)"
+        subtitle="Crea preguntas trazables desde un tema aplicado y sus fragmentos de fuente. Quedan pendientes de revision."
+        action={
+          <Button variant="secondary" onClick={onBack}>
+            Volver
+          </Button>
+        }
+      />
+      {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+      {topics.length === 0 ? (
+        <EmptyState message="Necesitas temas aplicados. Crea y aplica un indice de temario primero." />
+      ) : (
+        <div className="card" style={{ maxWidth: 560 }}>
+          <Field label="Tema">
+            <select value={topicId} onChange={(e) => setTopicId(e.target.value)}>
+              {topics.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {sourceCount != null && (
+            <p className={`muted small`}>
+              {sourceCount > 0
+                ? `${sourceCount} fuente(s) disponible(s) para este tema.`
+                : 'Este tema no tiene fuentes elegibles todavia (clasifica y crea secciones del material).'}
+            </p>
+          )}
+          <Field label="Dificultad">
+            <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as Difficulty)}>
+              <option value="easy">Facil</option>
+              <option value="medium">Media</option>
+              <option value="hard">Dificil</option>
+            </select>
+          </Field>
+          <Field label="Numero de preguntas">
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+            />
+          </Field>
+          <Button onClick={generate} disabled={busy || sourceCount === 0}>
+            {busy ? 'Generando...' : 'Generar desde tema'}
+          </Button>
         </div>
       )}
     </div>

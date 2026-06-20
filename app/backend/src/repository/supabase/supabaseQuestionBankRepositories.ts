@@ -49,6 +49,9 @@ export class SupabaseGenerationRunRepository implements GenerationRunRepository 
       provider: run.provider,
       model: run.model,
       feedback_used: run.feedback_used,
+      source_strategy: run.source_strategy ?? null,
+      source_reference_ids: run.source_reference_ids ?? [],
+      material_section_ids: run.material_section_ids ?? [],
       created_at: iso(run.created_at),
     });
     return toRun(row);
@@ -82,6 +85,13 @@ function toRun(row: SupabaseRow): QuestionGenerationRun {
     provider: String(row.provider ?? ''),
     model: asNullableString(row.model),
     feedback_used: row.feedback_used === true,
+    source_strategy: asNullableString(row.source_strategy),
+    source_reference_ids: Array.isArray(row.source_reference_ids)
+      ? (row.source_reference_ids as string[])
+      : [],
+    material_section_ids: Array.isArray(row.material_section_ids)
+      ? (row.material_section_ids as string[])
+      : [],
     created_at: parseDate(row.created_at),
   };
 }

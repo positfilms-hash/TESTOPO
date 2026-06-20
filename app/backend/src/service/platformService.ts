@@ -33,6 +33,12 @@ import type {
   ApplyGroundedResult,
 } from './syllabusIndexFromDocumentsService.js';
 import type {
+  SourceGroundedQuestionGenerationService,
+  GenerateFromTopicInput,
+  SourceGroundedResult,
+} from './sourceGroundedQuestionGenerationService.js';
+import type { RetrievalResult } from './sourceRetrievalService.js';
+import type {
   MaterialSection,
   SectionClass,
 } from '../models/materialSection.js';
@@ -75,6 +81,8 @@ import type {
   QuestionService,
 } from './questionService.js';
 import type { QuestionGenerationService } from './questionGenerationService.js';
+import { QuestionGenerationError } from '../generation/questionGenerationError.js';
+import { QuestionGenerationErrorCode } from '../generation/generationErrors.js';
 import type {
   GenerationResult,
 } from './questionGenerationService.js';
@@ -141,6 +149,8 @@ export interface PlatformServiceDeps {
   sourceReferences?: SourceReferenceService;
   /** Indice de temario anclado a documentos (SPEC 028-D). Opcional. */
   syllabusFromDocuments?: SyllabusIndexFromDocumentsService;
+  /** Generacion de preguntas anclada a fuentes (SPEC 028-E). Opcional. */
+  sourceGroundedGeneration?: SourceGroundedQuestionGenerationService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -668,6 +678,40 @@ export class PlatformService {
     return this.requireSyllabusFromDocuments().applyProposal(proposalId);
   }
 
+  // --- Generacion de preguntas anclada a fuentes (SPEC 028-E). Solo gestion. --
+
+  // Vista previa de las fuentes disponibles para un tema aplicado.
+  async previewTopicSources(
+    actor: User,
+    input: { opposition_id: string; topic_id: string },
+  ): Promise<RetrievalResult> {
+    await this.requireManageOpposition(actor, input.opposition_id);
+    const opposition = await this.deps.oppositionRepository.findById(
+      input.opposition_id,
+    );
+    return this.requireSourceGrounded().previewSources({
+      opposition_id: input.opposition_id,
+      workspace_id: opposition?.workspace_id ?? null,
+      topic_id: input.topic_id,
+    });
+  }
+
+  // Genera preguntas candidatas desde un tema aplicado y sus fuentes concretas.
+  // Las candidatas quedan en pending_review/needs_fix; nunca validated.
+  async generateQuestionsFromTopic(
+    actor: User,
+    input: Omit<GenerateFromTopicInput, 'workspace_id'>,
+  ): Promise<SourceGroundedResult> {
+    await this.requireManageOpposition(actor, input.opposition_id);
+    const opposition = await this.deps.oppositionRepository.findById(
+      input.opposition_id,
+    );
+    return this.requireSourceGrounded().generateFromTopic({
+      ...input,
+      workspace_id: opposition?.workspace_id ?? null,
+    });
+  }
+
   // --- Estudio (miembro del workspace con acceso a la oposicion) -----------
 
   async createTest(
@@ -832,6 +876,15 @@ export class PlatformService {
       ]);
     }
     return this.deps.syllabusFromDocuments;
+  }
+
+  private requireSourceGrounded(): SourceGroundedQuestionGenerationService {
+    if (!this.deps.sourceGroundedGeneration) {
+      throw new QuestionGenerationError([
+        QuestionGenerationErrorCode.NO_SOURCES,
+      ]);
+    }
+    return this.deps.sourceGroundedGeneration;
   }
 
   private requireMaterialSections(): MaterialSectionService {
