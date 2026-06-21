@@ -98,7 +98,27 @@ export function buildGenerationUserPrompt(context: GenerationContext): string {
       );
     }
   }
-  parts.push('Material:');
+  // SPEC 028-F: bloques de contexto ADAPTATIVO separados y NO factuales.
+  const styleRules = context.style_rules ?? [];
+  if (styleRules.length > 0) {
+    parts.push(
+      'Reglas de ESTILO observadas en examenes oficiales (orientan formato/dificultad; NO son fuente de hechos, no las uses como contenido):',
+    );
+    for (const rule of styleRules) {
+      parts.push(`- ${rule}`);
+    }
+  }
+  const avoidRules = context.avoid_rules ?? [];
+  if (avoidRules.length > 0) {
+    parts.push(
+      'Errores a EVITAR (de revisiones previas; NO son fuente de hechos):',
+    );
+    for (const rule of avoidRules) {
+      parts.push(`- ${rule}`);
+    }
+  }
+  // Bloque FACTUAL: unica fuente de hechos.
+  parts.push('Material (UNICA fuente factual; toda afirmacion debe salir de aqui):');
   parts.push(context.text);
   return parts.join('\n');
 }

@@ -198,3 +198,14 @@ create policy aqqs_manage on public.ai_question_quality_scores
     public.can_manage_workspace(public.opposition_workspace(
       public.question_opposition(question_id)))
   );
+
+-- =====================================================================
+-- Metadatos de generacion adaptativa en question_generation_runs (SPEC 028-F):
+-- perfil de estilo aplicado y si se uso contexto adaptativo. Aditivo/idempotente.
+-- =====================================================================
+alter table public.question_generation_runs
+  add column if not exists style_profile_id uuid
+    references public.exam_pattern_profiles (id) on delete set null;
+alter table public.question_generation_runs
+  add column if not exists adaptive_context_used boolean not null default false;
+

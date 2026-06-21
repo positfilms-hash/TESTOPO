@@ -226,8 +226,10 @@ export * from './service/sourceGroundedQuestionGenerationService.js';
 
 // SPEC 028-F - AI Exam Pattern Learning & Adaptive Generation
 export * from './analysis/examPatternAnalyzer.js';
+export * from './analysis/examPatternMatching.js';
 export * from './models/examPatternLearning.js';
 export * from './repository/examPatternLearningRepository.js';
 export * from './repository/inMemoryExamPatternLearningRepository.js';
 export * from './repository/supabase/supabaseExamPatternLearningRepository.js';
 export * from './service/examPatternAnalysisService.js';
+export * from './service/aiErrorMemoryService.js';

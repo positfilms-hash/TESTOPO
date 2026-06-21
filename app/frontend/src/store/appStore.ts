@@ -25,6 +25,8 @@ import {
   createDocumentGroundedIndexProvider,
   SourceRetrievalService,
   SourceGroundedQuestionGenerationService,
+  ExamPatternAnalysisService,
+  AIErrorMemoryService,
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
@@ -78,6 +80,9 @@ export interface AppStore {
   syllabusFromDocuments: SyllabusIndexFromDocumentsService;
   /** Generacion de preguntas anclada a fuentes (SPEC 028-E). */
   sourceGroundedGeneration: SourceGroundedQuestionGenerationService;
+  /** SPEC 028-F: análisis de patrones de examen y memoria de errores IA. */
+  examPatternAnalysis: ExamPatternAnalysisService;
+  aiErrorMemory: AIErrorMemoryService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -244,6 +249,20 @@ export function createAppStore(seed = true): AppStore {
     documentClassification,
     topics,
   });
+  // SPEC 028-F: aprendizaje de patrones de examen (Fase 1) + memoria de errores
+  // (Fase 2). El generador 028-E usa el perfil de estilo activo + memoria como
+  // CONTEXTO adaptativo (no factual) y aplica anti-copia + quality scores.
+  const examPatternAnalysis = new ExamPatternAnalysisService({
+    materials: materialRepo,
+    sections: core.materialSections,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    repository: core.examPatternLearning,
+    documentClassification,
+  });
+  const aiErrorMemory = new AIErrorMemoryService({
+    repository: core.examPatternLearning,
+    feedback,
+  });
   const sourceGroundedGeneration = new SourceGroundedQuestionGenerationService({
     questionService: questions,
     materials: materialRepo,
@@ -251,6 +270,8 @@ export function createAppStore(seed = true): AppStore {
     retrieval: sourceRetrieval,
     validationService: validation,
     runRepository: core.generationRuns,
+    learning: core.examPatternLearning,
+    errorMemory: aiErrorMemory,
   });
   // SPEC 029: el flujo de ALUMNO (generar/responder) lee de una fuente SANEADA
   // (vistas sin solucion) en Supabase, para que el alumno no pueda leer
@@ -321,6 +342,8 @@ export function createAppStore(seed = true): AppStore {
     sourceReferences,
     syllabusFromDocuments,
     sourceGroundedGeneration,
+    examPatternAnalysis,
+    aiErrorMemory,
     testGenerator,
     attempts,
     platform,

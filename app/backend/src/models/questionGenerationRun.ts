@@ -35,5 +35,9 @@ export interface QuestionGenerationRun {
   source_reference_ids?: string[];
   /** Secciones de material concretas usadas (SPEC 028-E). */
   material_section_ids?: string[];
+  /** SPEC 028-F: perfil de estilo aplicado en la generacion adaptativa, si lo hubo. */
+  style_profile_id?: string | null;
+  /** SPEC 028-F: si se inyecto contexto adaptativo (estilo/memoria de errores). */
+  adaptive_context_used?: boolean;
   created_at: Date;
 }
