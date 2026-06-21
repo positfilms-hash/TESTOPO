@@ -112,19 +112,21 @@ export function OppositionAIPanel() {
                 </div>
               </div>
               <div className="row" style={{ gap: 8 }}>
+                {/* Ciclo: draft -> pending_review -> active (activación humana
+                    obligatoria; no se activa un draft directamente). */}
                 {p.status === 'draft' && (
                   <Button variant="secondary" small disabled={busy}
                     onClick={() => run(() => store.platform.submitStyleProfileForReview(currentUser!, p.id), 'Enviado a revisión.')}>
                     Enviar a revisión
                   </Button>
                 )}
-                {p.status !== 'active' && p.status !== 'rejected' && p.status !== 'superseded' && (
+                {p.status === 'pending_review' && (
                   <Button small disabled={busy}
                     onClick={() => run(() => store.platform.activateStyleProfile(currentUser!, p.id), 'Perfil activado.')}>
                     Activar
                   </Button>
                 )}
-                {p.status !== 'rejected' && p.status !== 'active' && (
+                {(p.status === 'draft' || p.status === 'pending_review') && (
                   <Button variant="secondary" small disabled={busy}
                     onClick={() => run(() => store.platform.rejectStyleProfile(currentUser!, p.id), 'Perfil rechazado.')}>
                     Rechazar

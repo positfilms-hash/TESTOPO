@@ -547,9 +547,14 @@ describe('SPEC 028-F - IA de la oposicion (facade)', () => {
     ).rejects.toBeInstanceOf(AccessError);
   });
 
-  it('activar un perfil lo pone active; el student no puede', async () => {
+  it('un perfil pasa por revision antes de activarse; el student no puede', async () => {
     const ctx = await orgSetup();
     await ctx.examPatternLearningRepo.createProfile(draftProfile(ctx));
+    // No se puede activar un draft directamente (activacion humana obligatoria).
+    await expect(
+      ctx.platform.activateStyleProfile(ctx.admin, 'prof-x'),
+    ).rejects.toThrow(/revisión|pending_review/i);
+    await ctx.platform.submitStyleProfileForReview(ctx.admin, 'prof-x');
     await expect(
       ctx.platform.activateStyleProfile(ctx.student, 'prof-x'),
     ).rejects.toBeInstanceOf(AccessError);

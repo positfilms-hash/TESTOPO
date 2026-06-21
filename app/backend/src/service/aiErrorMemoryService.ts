@@ -52,9 +52,18 @@ const AVOID_INSTRUCTION: Record<FeedbackType, string> = {
   other: 'Ten en cuenta el feedback humano previo de este contexto.',
 };
 
+export interface AIErrorMemoryRefreshOptions {
+  /** Temas a los que ademas acotar la memoria (adaptacion por tema). */
+  topics?: { id: string }[];
+  /** Workspace de la oposicion (trazabilidad); si falta, se intenta resolver. */
+  workspaceId?: string | null;
+}
+
 export interface AIErrorMemoryServiceDeps {
   repository: ExamPatternLearningRepository;
   feedback: QuestionFeedbackService;
+  /** Resuelve el workspace de una oposicion (trazabilidad de la memoria). */
+  resolveWorkspaceId?: (oppositionId: string) => Promise<string | null>;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -68,34 +77,71 @@ export class AIErrorMemoryService {
     this.now = deps.now ?? (() => new Date());
   }
 
-  // Reconstruye la memoria de una oposicion desde el feedback actual (se llama
-  // tras nuevo feedback humano). Borra y regenera para reflejar el estado real.
+  // Reconstruye la memoria de una oposicion desde el feedback ACTUAL (fuente de
+  // verdad). Borra y regenera para reflejar el estado real. Crea entradas a
+  // nivel de oposicion y, si se pasan temas, tambien acotadas por tema.
+  // SPEC 028-F: la generacion la invoca automaticamente (no depende del boton).
+  async refresh(
+    oppositionId: string,
+    options: AIErrorMemoryRefreshOptions = {},
+  ): Promise<AIErrorMemory[]> {
+    const workspaceId =
+      options.workspaceId ??
+      (this.deps.resolveWorkspaceId
+        ? await this.deps.resolveWorkspaceId(oppositionId)
+        : null);
+
+    await this.deps.repository.deleteErrorMemoriesByOpposition(oppositionId);
+    const created: AIErrorMemory[] = [];
+
+    // Nivel oposicion (general).
+    created.push(
+      ...(await this.deriveEntries(oppositionId, workspaceId, null)),
+    );
+    // Nivel tema (adaptacion por tema).
+    for (const topic of options.topics ?? []) {
+      created.push(
+        ...(await this.deriveEntries(oppositionId, workspaceId, topic.id)),
+      );
+    }
+    return created;
+  }
+
+  /** @deprecated usar `refresh`. Mantenido por compatibilidad. */
   async refreshForOpposition(oppositionId: string): Promise<AIErrorMemory[]> {
+    return this.refresh(oppositionId);
+  }
+
+  private async deriveEntries(
+    oppositionId: string,
+    workspaceId: string | null,
+    topicId: string | null,
+  ): Promise<AIErrorMemory[]> {
     const summaries = await this.deps.feedback.getFeedbackSummaryForGeneration({
       opposition_id: oppositionId,
+      topic_id: topicId,
     });
-    await this.deps.repository.deleteErrorMemoriesByOpposition(oppositionId);
-
     const timestamp = this.now();
     const created: AIErrorMemory[] = [];
     for (const summary of summaries) {
-      const entry = await this.deps.repository.createErrorMemory({
-        id: this.generateId(),
-        workspace_id: null,
-        opposition_id: oppositionId,
-        topic_id: null,
-        material_id: null,
-        type: summary.feedback_type,
-        severity: summary.severity,
-        summary: `${summary.feedback_type} observado ${summary.count} vez/veces (severidad ${summary.severity}).`,
-        avoid_instruction:
-          AVOID_INSTRUCTION[summary.feedback_type] ?? AVOID_INSTRUCTION.other,
-        source: 'review_feedback',
-        occurrences: summary.count,
-        created_at: timestamp,
-        updated_at: timestamp,
-      });
-      created.push(entry);
+      created.push(
+        await this.deps.repository.createErrorMemory({
+          id: this.generateId(),
+          workspace_id: workspaceId,
+          opposition_id: oppositionId,
+          topic_id: topicId,
+          material_id: null,
+          type: summary.feedback_type,
+          severity: summary.severity,
+          summary: `${summary.feedback_type} observado ${summary.count} vez/veces (severidad ${summary.severity}).`,
+          avoid_instruction:
+            AVOID_INSTRUCTION[summary.feedback_type] ?? AVOID_INSTRUCTION.other,
+          source: 'review_feedback',
+          occurrences: summary.count,
+          created_at: timestamp,
+          updated_at: timestamp,
+        }),
+      );
     }
     return created;
   }

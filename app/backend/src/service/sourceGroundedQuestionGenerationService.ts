@@ -194,12 +194,20 @@ export class SourceGroundedQuestionGenerationService {
         : null;
     const styleRules = profile ? formatStyleRules(profile.rules) : [];
     const fingerprints = profile?.fingerprints ?? [];
-    const avoidRules =
-      this.errorMemory && useMemory
-        ? await this.errorMemory.getAvoidInstructions(input.opposition_id, {
-            topic_id: input.topic_id,
-          })
-        : [];
+    let avoidRules: string[] = [];
+    if (this.errorMemory && useMemory) {
+      // SPEC 028-F (regla central): la memoria se reconstruye desde el feedback
+      // ACTUAL antes de generar, para que el aprendizaje sea automatico (no
+      // depende de un boton manual). Acotada a esta oposicion + tema.
+      await this.errorMemory.refresh(input.opposition_id, {
+        topics: [{ id: input.topic_id }],
+        workspaceId: input.workspace_id ?? null,
+      });
+      avoidRules = await this.errorMemory.getAvoidInstructions(
+        input.opposition_id,
+        { topic_id: input.topic_id },
+      );
+    }
     const adaptiveUsed = styleRules.length > 0 || avoidRules.length > 0;
     if (profile) {
       warnings.push(`Perfil de estilo v${profile.version} aplicado.`);
