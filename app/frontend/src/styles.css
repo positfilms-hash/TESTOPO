@@ -2,6 +2,11 @@
    negras finas. Titulos en Georgia; texto general en sans-serif del sistema.
    Solo estilos: no cambia funcionalidad, rutas ni textos funcionales. */
 :root {
+  /* SPEC 029: fondo de aplicacion azul marino; superficies (sidebar, tarjetas,
+     formularios) en blanco con texto oscuro legible. */
+  --app-bg: #071a33; /* azul marino del shell y fondo de pagina */
+  --on-navy: #eef4fb; /* texto suelto sobre navy */
+  --on-navy-muted: #aebfd6; /* texto secundario sobre navy */
   --bg: #f7fbff; /* fondo secundario suave */
   --surface: #ffffff; /* base blanca */
   --line: #111111; /* lineas negras finas (personalidad) */
@@ -29,8 +34,8 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--app-bg);
+  color: var(--on-navy);
   line-height: 1.55;
 }
 
@@ -53,6 +58,7 @@ h4 {
   width: 232px;
   flex-shrink: 0;
   background: var(--surface);
+  color: var(--text); /* superficie blanca: texto oscuro legible */
   border-right: 1px solid var(--line);
   padding: 24px 16px;
   position: sticky;
@@ -125,6 +131,7 @@ h4 {
   flex: 1;
   padding: 32px 40px;
   max-width: 1040px;
+  color: var(--on-navy); /* texto suelto sobre el fondo navy */
 }
 
 .page-header {
@@ -138,11 +145,12 @@ h4 {
 
 .page-header p {
   margin: 0;
-  color: var(--muted);
+  color: var(--on-navy-muted); /* sobre navy */
 }
 
 .card {
   background: var(--surface);
+  color: var(--text); /* superficie blanca: texto oscuro */
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -302,6 +310,16 @@ h4 {
 }
 
 .muted { color: var(--muted); }
+/* SPEC 029: texto secundario claro cuando va suelto sobre navy; oscuro dentro de
+   superficies blancas (tarjetas, sidebar, avisos, vacios, formularios). */
+.main .muted { color: var(--on-navy-muted); }
+.card .muted,
+.sidebar .muted,
+.empty-state .muted,
+.notice .muted,
+.field .muted,
+.tab .muted,
+.option .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 .empty-state, .error-state, .loading-state {
   text-align: center;

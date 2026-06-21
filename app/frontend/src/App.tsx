@@ -37,8 +37,6 @@ export function App() {
     zone,
     selectZone,
   } = useStore();
-  const [section, setSection] = useState<Section>('inicio');
-  const [showAccount, setShowAccount] = useState(false);
 
   // Restablecer contrasena: si venimos de un enlace de recuperacion, esta
   // pantalla tiene prioridad sobre todo lo demas.
@@ -74,42 +72,79 @@ export function App() {
   }
 
   const switchZone = () => {
+    // Cambiar de zona remonta el shell (key por zona): la seccion vuelve al
+    // destino por defecto de la nueva zona (admin -> material, alumno -> inicio).
     selectZone(effectiveZone === 'admin' ? 'student' : 'admin');
-    setSection('inicio');
   };
 
   if (!currentOpposition) {
     return <OppositionsGate zone={effectiveZone} />;
   }
 
-  const isAdminZone = effectiveZone === 'admin';
+  // El shell se remonta al cambiar de zona u oposicion (SPEC 029): asi la
+  // navegacion vuelve a su destino por defecto y recarga datos sin reload.
   return (
-    <AppLayout
+    <AppShell
+      key={`${effectiveZone}:${currentOpposition.id}`}
       zone={effectiveZone}
-      active={section}
-      onNavigate={(s) => {
-        setShowAccount(false);
-        setSection(s);
-      }}
       canSwitchZone={canManage && canStudy}
       onSwitchZone={switchZone}
+    />
+  );
+}
+
+// Shell de navegacion (SPEC 029). Mantiene la seccion activa y una "revision" de
+// navegacion: al pulsar una seccion (o un CTA que apunta a una seccion), aunque
+// ya este activa, se incrementa `navRev` y el contenido se remonta (key), de
+// modo que la seccion vuelve a su vista raiz y recarga sus datos. NO repite
+// mutaciones (eso son otros botones). El alumno conserva `Inicio`; el admin no
+// tiene `Resumen` y entra por `Material`.
+function AppShell({
+  zone,
+  canSwitchZone,
+  onSwitchZone,
+}: {
+  zone: Zone;
+  canSwitchZone: boolean;
+  onSwitchZone: () => void;
+}) {
+  const isAdminZone = zone === 'admin';
+  const [section, setSection] = useState<Section>(
+    isAdminZone ? 'material' : 'inicio',
+  );
+  const [navRev, setNavRev] = useState(0);
+  const [showAccount, setShowAccount] = useState(false);
+
+  const navigate = (s: Section) => {
+    setShowAccount(false);
+    setSection(s);
+    setNavRev((r) => r + 1); // siempre: re-entrar en la seccion activa la reinicia
+  };
+
+  return (
+    <AppLayout
+      zone={zone}
+      active={section}
+      onNavigate={navigate}
+      canSwitchZone={canSwitchZone}
+      onSwitchZone={onSwitchZone}
       onOpenAccount={() => setShowAccount(true)}
     >
       {showAccount ? (
         <AccountPage onBack={() => setShowAccount(false)} />
       ) : (
-        <>
-      {section === 'inicio' && (
-        <HomePage onNavigate={setSection} isAdmin={isAdminZone} />
-      )}
-      {section === 'material' && <MaterialPage isAdmin={isAdminZone} />}
-      {section === 'temario' && isAdminZone && <TopicPage />}
-      {section === 'preguntas' && isAdminZone && <QuestionsPage />}
-      {section === 'ia' && isAdminZone && <OppositionAIPanel />}
-      {section === 'alumnos' && isAdminZone && <AlumnosPage />}
-      {section === 'tests' && <TestsPage />}
-      {section === 'resultados' && !isAdminZone && <ResultadosPage />}
-        </>
+        <div key={`${section}-${navRev}`}>
+          {section === 'inicio' && !isAdminZone && (
+            <HomePage onNavigate={navigate} isAdmin={isAdminZone} />
+          )}
+          {section === 'material' && <MaterialPage isAdmin={isAdminZone} />}
+          {section === 'temario' && isAdminZone && <TopicPage />}
+          {section === 'preguntas' && isAdminZone && <QuestionsPage />}
+          {section === 'ia' && isAdminZone && <OppositionAIPanel />}
+          {section === 'alumnos' && isAdminZone && <AlumnosPage />}
+          {section === 'tests' && <TestsPage />}
+          {section === 'resultados' && !isAdminZone && <ResultadosPage />}
+        </div>
       )}
     </AppLayout>
   );
