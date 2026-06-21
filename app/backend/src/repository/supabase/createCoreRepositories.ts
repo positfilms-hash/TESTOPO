@@ -32,6 +32,7 @@ import type {
 import type { MaterialSectionRepository } from '../materialSectionRepository.js';
 import type { SourceReferenceRepository } from '../sourceReferenceRepository.js';
 import type { SyllabusIndexRepository } from '../syllabusIndexRepository.js';
+import type { ExamPatternLearningRepository } from '../examPatternLearningRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -62,6 +63,7 @@ import {
   InMemorySourceReferenceRepository,
 } from '../inMemorySectionsRepositories.js';
 import { InMemorySyllabusIndexRepository } from '../inMemorySyllabusIndexRepository.js';
+import { InMemoryExamPatternLearningRepository } from '../inMemoryExamPatternLearningRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -97,6 +99,7 @@ import {
   SupabaseSourceReferenceRepository,
 } from './supabaseSectionsRepositories.js';
 import { SupabaseSyllabusIndexRepository } from './supabaseSyllabusIndexRepository.js';
+import { SupabaseExamPatternLearningRepository } from './supabaseExamPatternLearningRepository.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -139,6 +142,9 @@ export interface CoreRepositories {
   /** SPEC 029-b: indice de temario IA (SPEC 019 + 028-D), ultimo dominio del MVP
    * que quedaba InMemory. Runs/propuestas/nodos/sugerencias/patrones/fuentes. */
   syllabusIndex: SyllabusIndexRepository;
+  /** SPEC 028-F: aprendizaje de patrones de examen (perfiles de estilo, runs de
+   * analisis, patrones por tema, memoria de errores IA y quality scores). */
+  examPatternLearning: ExamPatternLearningRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -207,6 +213,7 @@ export function createCoreRepositories(
       materialSections: new SupabaseMaterialSectionRepository(port),
       sourceReferences: new SupabaseSourceReferenceRepository(port),
       syllabusIndex: new SupabaseSyllabusIndexRepository(port),
+      examPatternLearning: new SupabaseExamPatternLearningRepository(port),
       mode,
     };
   }
@@ -236,6 +243,7 @@ export function createCoreRepositories(
     materialSections: new InMemoryMaterialSectionRepository(),
     sourceReferences: new InMemorySourceReferenceRepository(),
     syllabusIndex: new InMemorySyllabusIndexRepository(),
+    examPatternLearning: new InMemoryExamPatternLearningRepository(),
     mode,
   };
 }
