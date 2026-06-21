@@ -194,6 +194,8 @@ export * from './repository/supabase/supabaseQuestionRepository.js';
 export * from './repository/supabase/supabaseQuestionBankRepositories.js';
 // SPEC 029 - Lectura saneada del banco para el flujo de alumno (sin solucion).
 export * from './repository/supabase/supabaseSafeQuestionRepository.js';
+// Indice de temario IA (SPEC 019 + 028-D): persistencia Supabase.
+export * from './repository/supabase/supabaseSyllabusIndexRepository.js';
 // SPEC 024 - Supabase Repositories: Tests, Attempts & Answers
 export * from './repository/supabase/supabaseTestRepositories.js';
 export * from './repository/supabase/createCoreRepositories.js';

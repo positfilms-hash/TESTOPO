@@ -64,16 +64,18 @@ workspace personal. El alumno **no** ve runs/propuestas/nodos/fuentes/warnings n
 la UI de revisión. Guards `requireManageOpposition`/`requireManageProposal` en el
 facade. Aislamiento por workspace + oposición.
 
-## Persistencia: paridad InMemory (nota importante)
+## Persistencia: migrado a Supabase (migración 030)
 
-El dominio del índice (runs/propuestas/nodos/sugerencias/patrones, y ahora node
-sources + topic source references) **sigue InMemory**, como SPEC 019 — es el último
-resto del MVP sin migrar a Supabase (ver
-[persistence.md](./persistence.md)). El spec 028-D asumía que las tablas de SPEC
-019 ya existían en Supabase, pero **no existen**; por eso 028-D **no añade
-migración SQL** y la migración Supabase del índice queda **diferida a una spec
-futura propia** (como se migraron 020-024). El aislamiento del alumno lo garantizan
-hoy los guards del facade; la RLS se añadirá con esa migración futura.
+El dominio del índice (runs/propuestas/nodos/sugerencias/patrones + node sources
+y topic source references de 028-D) **ya persiste en Supabase** vía
+`SupabaseSyllabusIndexRepository`, seleccionado por el factory
+`createCoreRepositories` (`core.syllabusIndex`) según el modo, con fallback
+InMemory en modo `memory`/demo. Era el **último dominio del MVP que quedaba
+InMemory**; lo cierra la migración `030_syllabus_index.sql` (7 tablas, RLS de
+**solo gestión** — el alumno nunca ve el índice; scope derivado de la oposición
+del padre run/propuesta/tema). Verificación de RLS: manual en staging. Histórico:
+028-D mantuvo el índice InMemory porque las tablas de SPEC 019 no existían; esta
+migración las crea (como se migraron 020-024).
 
 ## Proveedor IA
 
@@ -88,7 +90,7 @@ hoy los guards del facade; la RLS se añadirá con esa migración futura.
 | Modelos | `app/backend/src/models/syllabusIndex.ts` (NodeSource, TopicSourceReference) |
 | Proveedor | `app/backend/src/generation/documentGroundedIndex*` + `prompts/syllabus-index-from-classified-documents.md` |
 | Servicio | `app/backend/src/service/syllabusIndexFromDocumentsService.ts` |
-| Repo | `app/backend/src/repository/inMemorySyllabusIndexRepository.ts` (InMemory) |
+| Repo | `inMemorySyllabusIndexRepository.ts` (InMemory) + `supabase/supabaseSyllabusIndexRepository.ts` (Supabase, migración 030) vía `createCoreRepositories` |
 | Facade | `platformService.ts` (`proposeSyllabusIndexFromDocuments`, `getSyllabusIndexProposalDetail`, `applySyllabusIndexFromDocuments`) |
 | UI | `app/frontend/src/pages/SyllabusIndexPanel.tsx` |
 | Tests | `app/backend/tests/syllabusIndexFromDocuments.test.ts` |

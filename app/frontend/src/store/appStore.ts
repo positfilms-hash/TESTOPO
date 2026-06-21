@@ -16,7 +16,6 @@ import {
   QuestionValidationService,
   QuestionReviewService,
   QuestionFeedbackService,
-  InMemorySyllabusIndexRepository,
   SyllabusIndexService,
   DocumentClassificationService,
   createDocumentClassificationProvider,
@@ -192,8 +191,9 @@ export function createAppStore(seed = true): AppStore {
     reviewRepository: core.questionReviews,
   });
   // Indice de temario con IA (SPEC 019): proveedor mock en el navegador. El repo
-  // se comparte con el indice anclado a documentos (SPEC 028-D).
-  const syllabusRepo = new InMemorySyllabusIndexRepository();
+  // se comparte con el indice anclado a documentos (SPEC 028-D) y, desde la
+  // migracion del indice, persiste en Supabase via el factory (o InMemory).
+  const syllabusRepo = core.syllabusIndex;
   const syllabus = new SyllabusIndexService({
     materialRepository: materialRepo,
     topicService: topics,
