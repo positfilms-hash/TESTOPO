@@ -566,6 +566,9 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [count, setCount] = useState(5);
   const [sourceCount, setSourceCount] = useState<number | null>(null);
+  // SPEC 028-F: interruptores de contexto adaptativo (defecto on).
+  const [useStyleProfile, setUseStyleProfile] = useState(true);
+  const [useErrorMemory, setUseErrorMemory] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
@@ -616,6 +619,8 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
         topic_id: topicId,
         difficulty,
         count,
+        use_style_profile: useStyleProfile,
+        use_error_memory: useErrorMemory,
       });
       refresh();
       setNotice({
@@ -681,6 +686,23 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
               onChange={(e) => setCount(Number(e.target.value))}
             />
           </Field>
+          {/* SPEC 028-F: contexto adaptativo (no factual). */}
+          <label className="small" style={{ display: 'block', marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={useStyleProfile}
+              onChange={(e) => setUseStyleProfile(e.target.checked)}
+            />{' '}
+            Usar estilo de exámenes (perfil activo)
+          </label>
+          <label className="small" style={{ display: 'block', marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={useErrorMemory}
+              onChange={(e) => setUseErrorMemory(e.target.checked)}
+            />{' '}
+            Usar memoria de errores (feedback)
+          </label>
           <Button onClick={generate} disabled={busy || sourceCount === 0}>
             {busy ? 'Generando...' : 'Generar desde tema'}
           </Button>

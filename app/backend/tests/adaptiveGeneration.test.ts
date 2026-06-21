@@ -144,6 +144,30 @@ describe('SourceGroundedQuestionGenerationService (028-F adaptativo)', () => {
     expect(score?.warnings.join(' ')).not.toMatch(/copying_risk/);
   });
 
+  it('la generación REFRESCA la memoria desde el feedback automáticamente (blocker)', async () => {
+    const repository = new InMemoryExamPatternLearningRepository();
+    await repository.createProfile(makeProfile(['otra cosa']));
+    const feedback = {
+      getFeedbackSummaryForGeneration: async () => [
+        { feedback_type: 'style_mismatch', count: 2, severity: 'low' },
+      ],
+    } as unknown as QuestionFeedbackService;
+    const errorMemory = new AIErrorMemoryService({ repository, feedback, now: () => now });
+    const { questions, retrieval, topics, provider } = fakeDeps(repository);
+    const service = new SourceGroundedQuestionGenerationService({
+      questionService: questions, materials: new InMemoryMaterialRepository(),
+      topics, retrieval, provider, learning: repository, errorMemory, now: () => now,
+    });
+    // Sin pulsar "Refrescar": la memoria está vacía antes de generar.
+    expect(await repository.listErrorMemoriesByOpposition('opp-1')).toHaveLength(0);
+    const result = await service.generateFromTopic({
+      opposition_id: 'opp-1', topic_id: 'topic-1', difficulty: 'medium', count: 1,
+    });
+    // Tras generar, la memoria refleja el feedback (derivada automáticamente).
+    expect((await repository.listErrorMemoriesByOpposition('opp-1')).length).toBeGreaterThan(0);
+    expect(result.run.feedback_used).toBe(true);
+  });
+
   it('toggle use_style_profile=false: no aplica perfil ni anti-copia', async () => {
     const repository = new InMemoryExamPatternLearningRepository();
     await repository.createProfile(makeProfile(['cual es el plazo del recurso de alzada']));

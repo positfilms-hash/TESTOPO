@@ -252,16 +252,20 @@ export function createAppStore(seed = true): AppStore {
   // SPEC 028-F: aprendizaje de patrones de examen (Fase 1) + memoria de errores
   // (Fase 2). El generador 028-E usa el perfil de estilo activo + memoria como
   // CONTEXTO adaptativo (no factual) y aplica anti-copia + quality scores.
+  const resolveWorkspaceId = async (oppositionId: string) =>
+    (await oppositionRepo.findById(oppositionId))?.workspace_id ?? null;
   const examPatternAnalysis = new ExamPatternAnalysisService({
     materials: materialRepo,
     sections: core.materialSections,
     topicMaterialLinks: topicMaterialLinkRepo,
     repository: core.examPatternLearning,
     documentClassification,
+    resolveWorkspaceId,
   });
   const aiErrorMemory = new AIErrorMemoryService({
     repository: core.examPatternLearning,
     feedback,
+    resolveWorkspaceId,
   });
   const sourceGroundedGeneration = new SourceGroundedQuestionGenerationService({
     questionService: questions,

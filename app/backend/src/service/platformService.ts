@@ -764,10 +764,19 @@ export class PlatformService {
     return this.requireExamPatterns().reject(profileId);
   }
 
-  // Memoria de errores IA (derivada del feedback humano). Solo gestion.
+  // Memoria de errores IA (derivada del feedback humano). Solo gestion. Refresca
+  // acotando por TODOS los temas de la oposicion (adaptacion por tema).
   async refreshErrorMemory(actor: User, oppositionId: string) {
     await this.requireManageOpposition(actor, oppositionId);
-    return this.requireErrorMemory().refreshForOpposition(oppositionId);
+    const opposition =
+      await this.deps.oppositionRepository.findById(oppositionId);
+    const topics = (await this.deps.topics.listTopics())
+      .filter((t) => t.opposition_id === oppositionId)
+      .map((t) => ({ id: t.id }));
+    return this.requireErrorMemory().refresh(oppositionId, {
+      topics,
+      workspaceId: opposition?.workspace_id ?? null,
+    });
   }
 
   async listErrorMemory(actor: User, oppositionId: string) {
@@ -790,11 +799,16 @@ export class PlatformService {
     const profile = await this.requireExamPatterns().getActiveProfile(
       oppositionId,
     );
-    const avoid = this.deps.aiErrorMemory
-      ? await this.deps.aiErrorMemory.getAvoidInstructions(oppositionId, {
-          topic_id: topicId ?? null,
-        })
-      : [];
+    // Refresca la memoria desde el feedback ACTUAL para que el preview sea fiel.
+    let avoid: string[] = [];
+    if (this.deps.aiErrorMemory) {
+      await this.deps.aiErrorMemory.refresh(oppositionId, {
+        topics: topicId ? [{ id: topicId }] : [],
+      });
+      avoid = await this.deps.aiErrorMemory.getAvoidInstructions(oppositionId, {
+        topic_id: topicId ?? null,
+      });
+    }
     return {
       profile_id: profile?.id ?? null,
       profile_version: profile?.version ?? null,

@@ -36,6 +36,8 @@ export interface ExamPatternAnalysisServiceDeps {
   repository: ExamPatternLearningRepository;
   /** Para filtrar a `old_exam_or_test`; si falta, se usa `material.type`. */
   documentClassification?: DocumentClassificationService;
+  /** Resuelve el workspace de la oposicion (trazabilidad). */
+  resolveWorkspaceId?: (oppositionId: string) => Promise<string | null>;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -107,12 +109,25 @@ export class ExamPatternAnalysisService {
     const analysis = analyzeExamText(blocks);
     warnings.push(...analysis.warnings);
 
+    const workspaceId = this.deps.resolveWorkspaceId
+      ? await this.deps.resolveWorkspaceId(oppositionId)
+      : null;
+    const timestamp = this.now();
+
+    // Cuenta los temas vinculados ANTES de crear run/perfil, para que los
+    // warnings (incluido "sin temas") queden completos en ambos (mínimo Codex).
+    const countByTopic = await this.countTopics(usable);
+    if (usable.length > 0 && countByTopic.size === 0) {
+      warnings.push(
+        'Los exámenes no están vinculados a temas; no se han creado patrones por tema.',
+      );
+    }
+
     const status: ExamPatternAnalysisRun['status'] =
       warnings.length > 0 ? 'completed_with_warnings' : 'completed';
-    const timestamp = this.now();
     const run = await this.deps.repository.createRun({
       id: this.generateId(),
-      workspace_id: null,
+      workspace_id: workspaceId,
       opposition_id: oppositionId,
       created_by: input.created_by ?? null,
       status,
@@ -137,7 +152,7 @@ export class ExamPatternAnalysisService {
         existing.reduce((max, p) => Math.max(max, p.version), 0) + 1;
       profile = await this.deps.repository.createProfile({
         id: this.generateId(),
-        workspace_id: null,
+        workspace_id: workspaceId,
         opposition_id: oppositionId,
         version: nextVersion,
         status: 'draft',
@@ -155,19 +170,16 @@ export class ExamPatternAnalysisService {
       });
     }
 
-    const topicPatterns = await this.buildTopicPatterns(
+    const topicPatterns = await this.createTopicPatterns(
       oppositionId,
-      usable,
+      workspaceId,
+      countByTopic,
+      usable.length || 1,
       profile,
       analysis.rules.common_question_types,
       analysis.rules.trap_patterns,
       timestamp,
     );
-    if (usable.length > 0 && topicPatterns.length === 0) {
-      warnings.push(
-        'Los exámenes no están vinculados a temas; no se han creado patrones por tema.',
-      );
-    }
 
     return { run, profile, topicPatterns, warnings };
   }
@@ -194,10 +206,17 @@ export class ExamPatternAnalysisService {
   }
 
   // Activa un perfil: supersede al activo previo (solo 1 activo por oposicion).
+  // Activacion humana obligatoria: el perfil debe haber pasado por revision
+  // (`pending_review`); no se puede activar un `draft` directamente (SPEC 028-F).
   async activate(profileId: string, approvedBy?: string | null) {
     const profile = await this.deps.repository.getProfile(profileId);
     if (!profile) {
       throw new Error('Perfil de estilo no encontrado.');
+    }
+    if (profile.status !== 'pending_review') {
+      throw new Error(
+        'Solo se puede activar un perfil en revisión (pending_review).',
+      );
     }
     const current = await this.deps.repository.getActiveProfile(
       profile.opposition_id,
@@ -248,14 +267,7 @@ export class ExamPatternAnalysisService {
     return material.type === 'old_test';
   }
 
-  private async buildTopicPatterns(
-    oppositionId: string,
-    usable: Material[],
-    profile: QuestionStyleProfile | null,
-    commonTypes: string[],
-    trapPatterns: string[],
-    timestamp: Date,
-  ): Promise<TopicExamPattern[]> {
+  private async countTopics(usable: Material[]): Promise<Map<string, number>> {
     const countByTopic = new Map<string, number>();
     for (const material of usable) {
       const links = await this.deps.topicMaterialLinks.findAll({
@@ -268,13 +280,25 @@ export class ExamPatternAnalysisService {
         );
       }
     }
-    const total = usable.length || 1;
+    return countByTopic;
+  }
+
+  private async createTopicPatterns(
+    oppositionId: string,
+    workspaceId: string | null,
+    countByTopic: Map<string, number>,
+    total: number,
+    profile: QuestionStyleProfile | null,
+    commonTypes: string[],
+    trapPatterns: string[],
+    timestamp: Date,
+  ): Promise<TopicExamPattern[]> {
     const created: TopicExamPattern[] = [];
     for (const [topicId, count] of countByTopic) {
       created.push(
         await this.deps.repository.createTopicPattern({
           id: this.generateId(),
-          workspace_id: null,
+          workspace_id: workspaceId,
           opposition_id: oppositionId,
           topic_id: topicId,
           style_profile_id: profile?.id ?? null,
