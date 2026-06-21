@@ -31,6 +31,7 @@ import type {
 } from '../documentClassificationRepository.js';
 import type { MaterialSectionRepository } from '../materialSectionRepository.js';
 import type { SourceReferenceRepository } from '../sourceReferenceRepository.js';
+import type { SyllabusIndexRepository } from '../syllabusIndexRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -60,6 +61,7 @@ import {
   InMemoryMaterialSectionRepository,
   InMemorySourceReferenceRepository,
 } from '../inMemorySectionsRepositories.js';
+import { InMemorySyllabusIndexRepository } from '../inMemorySyllabusIndexRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -94,6 +96,7 @@ import {
   SupabaseMaterialSectionRepository,
   SupabaseSourceReferenceRepository,
 } from './supabaseSectionsRepositories.js';
+import { SupabaseSyllabusIndexRepository } from './supabaseSyllabusIndexRepository.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -133,6 +136,9 @@ export interface CoreRepositories {
   /** SPEC 028-C: secciones de material y referencias de fuente. */
   materialSections: MaterialSectionRepository;
   sourceReferences: SourceReferenceRepository;
+  /** SPEC 029-b: indice de temario IA (SPEC 019 + 028-D), ultimo dominio del MVP
+   * que quedaba InMemory. Runs/propuestas/nodos/sugerencias/patrones/fuentes. */
+  syllabusIndex: SyllabusIndexRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -200,6 +206,7 @@ export function createCoreRepositories(
       documentClassifications: new SupabaseDocumentClassificationRepository(port),
       materialSections: new SupabaseMaterialSectionRepository(port),
       sourceReferences: new SupabaseSourceReferenceRepository(port),
+      syllabusIndex: new SupabaseSyllabusIndexRepository(port),
       mode,
     };
   }
@@ -228,6 +235,7 @@ export function createCoreRepositories(
     documentClassifications: new InMemoryDocumentClassificationRepository(),
     materialSections: new InMemoryMaterialSectionRepository(),
     sourceReferences: new InMemorySourceReferenceRepository(),
+    syllabusIndex: new InMemorySyllabusIndexRepository(),
     mode,
   };
 }
