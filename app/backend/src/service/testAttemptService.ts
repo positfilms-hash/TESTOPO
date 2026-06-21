@@ -24,6 +24,10 @@ import {
   TestGeneratorService,
   type StudentQuestionView,
 } from './testGeneratorService.js';
+import {
+  LocalStudentAttemptGateway,
+  type StudentAttemptGateway,
+} from './studentAttemptGateway.js';
 import { TestAttemptError } from '../attempt/testAttemptError.js';
 import { TestAttemptErrorCode } from '../attempt/attemptErrors.js';
 
@@ -79,6 +83,10 @@ export interface TestAttemptServiceOptions {
   testGenerator: TestGeneratorService;
   attemptRepository?: TestAttemptRepository;
   answerRepository?: TestAnswerRepository;
+  // Gateway del flujo de alumno (responder/corregir/revisar). Por defecto, en
+  // proceso (modo memory). En modo Supabase se inyecta el gateway por RPC
+  // (SECURITY DEFINER) para no exponer la solucion por API directa (BUG-001).
+  studentGateway?: StudentAttemptGateway;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -90,6 +98,7 @@ export class TestAttemptService {
   private readonly generator: TestGeneratorService;
   private readonly attempts: TestAttemptRepository;
   private readonly answers: TestAnswerRepository;
+  private readonly gateway: StudentAttemptGateway;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -104,6 +113,15 @@ export class TestAttemptService {
       options.answerRepository ?? new InMemoryTestAnswerRepository();
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
+    this.gateway =
+      options.studentGateway ??
+      new LocalStudentAttemptGateway({
+        testQuestions: this.testQuestions,
+        questions: this.questions,
+        attempts: this.attempts,
+        answers: this.answers,
+        now: this.now,
+      });
   }
 
   // 10.1 Iniciar intento. `userId` asocia el intento al estudiante (SPEC 010).
@@ -143,6 +161,8 @@ export class TestAttemptService {
   // 10.2 Consultar test para responder (sin soluciones).
   async getTestForTaking(attemptId: string): Promise<TakingView> {
     const attempt = await this.requireAttempt(attemptId);
+    // Vista de alumno sin soluciones. En Supabase, `this.generator` lee de la
+    // fuente segura (vistas sin secreto); en memory, del repo en memoria.
     const view = await this.generator.getTest(attempt.test_id);
     return {
       attempt_id: attempt.id,
@@ -164,6 +184,8 @@ export class TestAttemptService {
       input.test_question_id,
     );
 
+    // Valida contra las opciones de la pregunta. En Supabase, `this.questions`
+    // lee de la fuente segura (opciones sin `is_correct`); aqui solo se usan ids.
     const question = await this.questions.getQuestion(testQuestion.question_id);
     const optionIds = question?.options.map((option) => option.id) ?? [];
     if (!optionIds.includes(input.selected_option_id)) {
@@ -209,49 +231,12 @@ export class TestAttemptService {
     await this.answers.delete(input.attempt_id, input.test_question_id);
   }
 
-  // 10.5 Enviar test: corrige, calcula y finaliza.
+  // 10.5 Enviar test: corrige, calcula y finaliza. La correccion (lectura de la
+  // solucion) la hace el gateway: en proceso en memory; en servidor (RPC
+  // SECURITY DEFINER) en Supabase, para no exponer la solucion por API directa.
   async submitAttempt(attemptId: string): Promise<TestAttempt> {
     const attempt = await this.requireEditableAttempt(attemptId);
-
-    const testQuestions = await this.testQuestions.findByTest(attempt.test_id);
-    let correct = 0;
-    let incorrect = 0;
-    let unanswered = 0;
-
-    for (const testQuestion of testQuestions) {
-      const answer = await this.answers.find(attemptId, testQuestion.id);
-      if (!answer || !answer.selected_option_id) {
-        unanswered += 1;
-        continue;
-      }
-      const question = await this.questions.getQuestion(testQuestion.question_id);
-      const isCorrect =
-        question !== null &&
-        answer.selected_option_id === question.correct_answer;
-      await this.answers.save({
-        ...answer,
-        is_correct: isCorrect,
-        updated_at: this.now(),
-      });
-      if (isCorrect) {
-        correct += 1;
-      } else {
-        incorrect += 1;
-      }
-    }
-
-    const timestamp = this.now();
-    return this.attempts.save({
-      ...attempt,
-      status: 'submitted',
-      submitted_at: timestamp,
-      total_questions: testQuestions.length,
-      correct_count: correct,
-      incorrect_count: incorrect,
-      unanswered_count: unanswered,
-      score: correct,
-      updated_at: timestamp,
-    });
+    return this.gateway.submitAttempt(attempt);
   }
 
   // Devuelve el intento crudo (o null). Util para comprobar propiedad (SPEC 010,
@@ -294,36 +279,8 @@ export class TestAttemptService {
         TestAttemptErrorCode.REVIEW_NOT_AVAILABLE,
       ]);
     }
-
-    const questions: ReviewItemView[] = [];
-    const testQuestions = await this.testQuestions.findByTest(attempt.test_id);
-    for (const testQuestion of testQuestions) {
-      const question = await this.questions.getQuestion(testQuestion.question_id);
-      if (!question) {
-        continue;
-      }
-      const answer = await this.answers.find(attemptId, testQuestion.id);
-      const options: ReviewOptionView[] = [];
-      testQuestion.options_order.forEach((optionId, index) => {
-        const option = question.options.find((o) => o.id === optionId);
-        if (option) {
-          options.push({ id: option.id, text: option.text, order: index });
-        }
-      });
-      questions.push({
-        question_id: question.id,
-        order: testQuestion.order,
-        statement: question.statement,
-        options,
-        selected_option_id: answer?.selected_option_id ?? null,
-        correct_option_id: question.correct_answer,
-        is_correct: answer?.is_correct ?? null,
-        explanation: question.explanation,
-        topic: question.topic,
-        difficulty: question.difficulty,
-        source_reference: question.source?.reference ?? null,
-      });
-    }
+    // Solo tras enviar se revela la solucion + explicacion (gateway).
+    const questions = await this.gateway.getReviewItems(attempt);
     return { attempt_id: attempt.id, test_id: attempt.test_id, questions };
   }
 

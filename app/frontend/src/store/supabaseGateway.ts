@@ -60,6 +60,14 @@ export function createSupabasePort(client: SupabaseClient): SupabaseClientPort {
         },
       };
     },
+    async rpc(fn: string, args?: SupabaseRow) {
+      // SPEC 029: funciones SECURITY DEFINER (flujo de alumno sin solucion).
+      const { data, error } = await client.rpc(fn, args ?? {});
+      if (error) {
+        throw new Error(`Supabase rpc ${fn}: ${error.message}`);
+      }
+      return data;
+    },
   };
 }
 

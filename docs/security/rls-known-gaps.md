@@ -2,34 +2,34 @@
 
 No se ocultan limitaciones. Estado tras la SPEC 025.
 
-## 1. `is_correct` legible por el alumno (opciones y respuestas)
+## 1. `is_correct` legible por el alumno (opciones y respuestas) — CERRADO (SPEC 029)
 
-**Qué pasa.** La RLS no puede ocultar columnas concretas de una fila. El alumno
-puede leer:
+**Qué pasaba.** La RLS no puede ocultar columnas concretas de una fila, así que
+el alumno podía leer `questions.correct_answer` y `question_options.is_correct`
+de preguntas `validated` por API directa **antes** de enviar el test (la UI nunca
+lo mostraba, pero la lectura directa con la clave anónima + su JWT seguía
+abierta).
 
-- `question_options` de preguntas `validated` (incluye `is_correct`).
-- `test_answers` de **sus** intentos (incluye `is_correct`, que se calcula al
-  enviar).
+**Cómo se cierra (SPEC 029, migración `029_secure_test_question_access.sql`).**
 
-Por tanto, un alumno con conocimientos podría leer `is_correct` vía API directa
-**antes** de enviar el test.
+- El alumno **deja de poder leer** las tablas base `questions`/`question_options`
+  (sus políticas `*_select` pasan a **solo gestores**).
+- El flujo de alumno (generar/responder un test) lee de **vistas seguras**
+  `safe_questions` / `safe_question_options`, que solo exponen preguntas
+  `validated` accesibles y **NO** incluyen `correct_answer`/`explanation`/
+  `is_correct`. En la app lo sirve `SupabaseSafeQuestionRepository` (inyectado en
+  `TestGeneratorService`/`TestAttemptService` solo en modo Supabase).
+- **Corregir** y **revisar** (que sí necesitan la solución) se hacen con
+  funciones **`SECURITY DEFINER`** `submit_attempt` / `get_attempt_review`, que
+  validan que el intento es del `auth.uid()` y nunca devuelven la solución antes
+  de enviar. En la app las usa `SupabaseStudentAttemptGateway` (vía
+  `SupabaseClientPort.rpc`).
 
-**Por qué sigue abierto.** TESTOPO es hoy una app **cliente-only** (el navegador
-habla con Supabase con la clave anónima y la sesión del usuario; no hay
-servidor). El alumno necesita leer las opciones para responder, así que no se
-puede bloquear la tabla sin romper el flujo.
-
-**Mitigación actual.** La capa de servicio/UI nunca muestra `is_correct` ni la
-explicación antes de `submit`; el resultado (correcto/incorrecto, explicación,
-fuente) solo se revela tras enviar. Es un riesgo de **lectura directa por API**,
-no de la UI.
-
-**Plan de cierre.** Servir al alumno las preguntas del test mediante una
-**vista/RPC `SECURITY DEFINER`** que devuelva opciones **sin** `is_correct` (y sin
-explicación antes de submit), y restringir `SELECT` directo de `question_options`
-a gestores. Requiere enrutar la lectura del flujo student por esa RPC (cambio en
-la capa de acceso a datos). Se aborda en **beta readiness (SPEC 027)** o en una
-spec dedicada, porque toca la arquitectura cliente-only.
+`test_answers.is_correct` es `null` hasta enviar (se calcula en `submit_attempt`),
+y el alumno solo lee las de sus intentos (SPEC 024). En modo `memory`/demo no hay
+RLS: la corrección la hace el gateway local en proceso (sin cambio de
+comportamiento). La verificación de RLS/RPC es manual en staging
+(ver [`rls-test-plan.md`](./rls-test-plan.md)).
 
 ## 2. Lectura agregada de resultados por admin
 
