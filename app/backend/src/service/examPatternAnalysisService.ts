@@ -172,6 +172,71 @@ export class ExamPatternAnalysisService {
     return { run, profile, topicPatterns, warnings };
   }
 
+  // --- Ciclo de vida del perfil de estilo (revision/activacion humana) ---
+  async listProfiles(oppositionId: string) {
+    return this.deps.repository.listProfilesByOpposition(oppositionId);
+  }
+
+  async getProfile(profileId: string) {
+    return this.deps.repository.getProfile(profileId);
+  }
+
+  async getActiveProfile(oppositionId: string) {
+    return this.deps.repository.getActiveProfile(oppositionId);
+  }
+
+  async submitForReview(profileId: string) {
+    return this.setStatus(profileId, 'pending_review');
+  }
+
+  async reject(profileId: string) {
+    return this.setStatus(profileId, 'rejected');
+  }
+
+  // Activa un perfil: supersede al activo previo (solo 1 activo por oposicion).
+  async activate(profileId: string, approvedBy?: string | null) {
+    const profile = await this.deps.repository.getProfile(profileId);
+    if (!profile) {
+      throw new Error('Perfil de estilo no encontrado.');
+    }
+    const current = await this.deps.repository.getActiveProfile(
+      profile.opposition_id,
+    );
+    if (current && current.id !== profile.id) {
+      await this.deps.repository.updateProfile({
+        ...current,
+        status: 'superseded',
+        updated_at: this.now(),
+      });
+    }
+    return this.deps.repository.updateProfile({
+      ...profile,
+      status: 'active',
+      approved_by: approvedBy ?? profile.approved_by ?? null,
+      approved_at: this.now(),
+      updated_at: this.now(),
+    });
+  }
+
+  async getQualityScoreForQuestion(questionId: string) {
+    return this.deps.repository.getQualityScoreByQuestion(questionId);
+  }
+
+  private async setStatus(
+    profileId: string,
+    status: 'pending_review' | 'rejected',
+  ) {
+    const profile = await this.deps.repository.getProfile(profileId);
+    if (!profile) {
+      throw new Error('Perfil de estilo no encontrado.');
+    }
+    return this.deps.repository.updateProfile({
+      ...profile,
+      status,
+      updated_at: this.now(),
+    });
+  }
+
   private async isUsableOldExam(material: Material): Promise<boolean> {
     if (this.deps.documentClassification) {
       const classification =

@@ -8,6 +8,7 @@ import { HomePage } from './pages/HomePage.js';
 import { MaterialPage } from './pages/MaterialPage.js';
 import { TopicPage } from './pages/TopicPage.js';
 import { QuestionsPage } from './pages/QuestionsPage.js';
+import { OppositionAIPanel } from './pages/OppositionAIPanel.js';
 import { TestsPage } from './pages/TestsPage.js';
 import { AlumnosPage } from './pages/AlumnosPage.js';
 import { ResultadosPage } from './pages/ResultadosPage.js';
@@ -104,6 +105,7 @@ export function App() {
       {section === 'material' && <MaterialPage isAdmin={isAdminZone} />}
       {section === 'temario' && isAdminZone && <TopicPage />}
       {section === 'preguntas' && isAdminZone && <QuestionsPage />}
+      {section === 'ia' && isAdminZone && <OppositionAIPanel />}
       {section === 'alumnos' && isAdminZone && <AlumnosPage />}
       {section === 'tests' && <TestsPage />}
       {section === 'resultados' && !isAdminZone && <ResultadosPage />}

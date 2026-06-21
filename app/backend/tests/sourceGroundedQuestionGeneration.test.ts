@@ -31,6 +31,8 @@ import {
   InMemoryOppositionAccessRepository,
   OppositionService,
   InMemoryMaterialRepository,
+  InMemoryExamPatternLearningRepository,
+  ExamPatternAnalysisService,
   MaterialService,
   PdfMaterialService,
   MaterialImportService,
@@ -214,6 +216,14 @@ async function makeSetup() {
     questionService: questions,
     testGenerator,
   });
+  const examPatternLearningRepo = new InMemoryExamPatternLearningRepository();
+  const examPatternAnalysis = new ExamPatternAnalysisService({
+    materials: materialRepo,
+    sections: sectionRepo,
+    topicMaterialLinks: linkRepo,
+    repository: examPatternLearningRepo,
+    documentClassification,
+  });
   const platform = new PlatformService({
     oppositionRepository: oppositionRepo,
     workspaceMembers: memberRepo,
@@ -231,10 +241,19 @@ async function makeSetup() {
     syllabus,
     syllabusFromDocuments,
     sourceGroundedGeneration,
+    examPatternAnalysis,
     testGenerator,
     attempts,
   });
-  return { users, workspaces, oppositions, questions, topics, platform };
+  return {
+    users,
+    workspaces,
+    oppositions,
+    questions,
+    topics,
+    platform,
+    examPatternLearningRepo,
+  };
 }
 
 async function orgSetup() {
@@ -485,5 +504,66 @@ describe('SPEC 028-E - repositorios Supabase (mapeo)', () => {
     expect(readRun?.source_strategy).toBe('material_sections');
     expect(readRun?.source_reference_ids).toEqual(['ref-1']);
     expect(readRun?.material_section_ids).toEqual(['sec-1']);
+  });
+});
+
+describe('SPEC 028-F - IA de la oposicion (facade)', () => {
+  const now = new Date('2026-01-01T00:00:00Z');
+  function draftProfile(ctx: Awaited<ReturnType<typeof orgSetup>>) {
+    return {
+      id: 'prof-x',
+      workspace_id: ctx.ws.id,
+      opposition_id: ctx.opp.id,
+      version: 1,
+      status: 'draft' as const,
+      selected_summary_ids: [],
+      rules: {
+        option_count_distribution: {},
+        difficulty_distribution: {},
+        common_question_types: [],
+        trap_patterns: [],
+        legal_vs_conceptual: { legal: 0, conceptual: 0 },
+        statement_length: null,
+        style_notes: null,
+      },
+      fingerprints: [],
+      coverage_notes: null,
+      confidence: null,
+      warnings: [],
+      created_by: ctx.admin.id,
+      approved_by: null,
+      approved_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+  }
+
+  it('admin analiza patrones; el student no puede', async () => {
+    const ctx = await orgSetup();
+    const result = await ctx.platform.analyzeExamPatterns(ctx.admin, ctx.opp.id);
+    expect(result.run.opposition_id).toBe(ctx.opp.id);
+    await expect(
+      ctx.platform.analyzeExamPatterns(ctx.student, ctx.opp.id),
+    ).rejects.toBeInstanceOf(AccessError);
+  });
+
+  it('activar un perfil lo pone active; el student no puede', async () => {
+    const ctx = await orgSetup();
+    await ctx.examPatternLearningRepo.createProfile(draftProfile(ctx));
+    await expect(
+      ctx.platform.activateStyleProfile(ctx.student, 'prof-x'),
+    ).rejects.toBeInstanceOf(AccessError);
+    const activated = await ctx.platform.activateStyleProfile(ctx.admin, 'prof-x');
+    expect(activated.status).toBe('active');
+    expect(await ctx.platform.getGenerationContextPreview(ctx.admin, ctx.opp.id)).toMatchObject({
+      profile_id: 'prof-x',
+    });
+  });
+
+  it('el student no puede listar perfiles ni el inventario de IA', async () => {
+    const ctx = await orgSetup();
+    await expect(
+      ctx.platform.listStyleProfiles(ctx.student, ctx.opp.id),
+    ).rejects.toBeInstanceOf(AccessError);
   });
 });

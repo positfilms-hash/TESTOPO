@@ -318,6 +318,8 @@ export function createAppStore(seed = true): AppStore {
     sourceReferences,
     syllabusFromDocuments,
     sourceGroundedGeneration,
+    examPatternAnalysis,
+    aiErrorMemory,
     testGenerator,
     attempts,
   });
