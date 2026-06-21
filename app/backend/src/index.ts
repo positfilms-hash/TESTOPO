@@ -213,3 +213,7 @@ export * from './generation/mockDocumentGroundedIndexProvider.js';
 export * from './generation/openAiDocumentGroundedIndexProvider.js';
 export * from './generation/createDocumentGroundedIndexProvider.js';
 export * from './service/syllabusIndexFromDocumentsService.js';
+
+// SPEC 028-E - Source-Grounded Question Generation
+export * from './service/sourceRetrievalService.js';
+export * from './service/sourceGroundedQuestionGenerationService.js';

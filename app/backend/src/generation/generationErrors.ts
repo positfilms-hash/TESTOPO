@@ -17,6 +17,12 @@ export enum QuestionGenerationErrorCode {
   DUPLICATE_STATEMENT = 'QUESTION_GENERATION_DUPLICATE_STATEMENT',
   SOURCE_REQUIRED = 'QUESTION_GENERATION_SOURCE_REQUIRED',
   EXPLANATION_REQUIRED = 'QUESTION_GENERATION_EXPLANATION_REQUIRED',
+  // SPEC 028-E: no hay ninguna fuente primaria elegible para el tema.
+  NO_SOURCES = 'QUESTION_GENERATION_NO_SOURCES',
+  // SPEC 028-E: el tema es obligatorio para la generacion anclada a fuentes.
+  TOPIC_REQUIRED = 'QUESTION_GENERATION_TOPIC_REQUIRED',
+  // SPEC 028-E: una candidata referencia una fuente ajena/inexistente.
+  FOREIGN_SOURCE = 'QUESTION_GENERATION_FOREIGN_SOURCE',
 }
 
 // Limites de numero de preguntas por solicitud (SPEC 004, 7 y 9.7).

@@ -44,6 +44,10 @@ export interface CreateQuestionInput {
   topic_id?: string | null;
   difficulty?: Difficulty | null;
   generation_metadata?: GenerationMetadata | null;
+  // Punteros de fuente concretos (SPEC 028-E). Aditivos.
+  material_section_id?: string | null;
+  source_reference_id?: string | null;
+  topic_source_reference_id?: string | null;
 }
 
 export interface EditQuestionInput {
@@ -146,6 +150,9 @@ export class QuestionService {
       topic_id: input.topic_id ?? null,
       difficulty: input.difficulty ?? null,
       generation_metadata: input.generation_metadata ?? null,
+      material_section_id: input.material_section_id ?? null,
+      source_reference_id: input.source_reference_id ?? null,
+      topic_source_reference_id: input.topic_source_reference_id ?? null,
       status: 'draft',
       created_at: timestamp,
       updated_at: timestamp,

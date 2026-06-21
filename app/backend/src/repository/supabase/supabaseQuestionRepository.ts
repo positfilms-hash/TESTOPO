@@ -96,6 +96,9 @@ function toRow(q: Question): SupabaseRow {
     difficulty: q.difficulty,
     status: q.status,
     generation_metadata: q.generation_metadata ?? null,
+    material_section_id: q.material_section_id ?? null,
+    source_reference_id: q.source_reference_id ?? null,
+    topic_source_reference_id: q.topic_source_reference_id ?? null,
     created_at: iso(q.created_at),
     updated_at: iso(q.updated_at),
   };
@@ -126,6 +129,9 @@ function toQuestion(row: SupabaseRow, optionRows: SupabaseRow[]): Question {
     difficulty: (row.difficulty as Difficulty | null) ?? null,
     status: row.status as QuestionStatus,
     generation_metadata: (row.generation_metadata as GenerationMetadata | null) ?? null,
+    material_section_id: asNullableString(row.material_section_id),
+    source_reference_id: asNullableString(row.source_reference_id),
+    topic_source_reference_id: asNullableString(row.topic_source_reference_id),
     created_at: parseDate(row.created_at),
     updated_at: parseDate(row.updated_at),
   };

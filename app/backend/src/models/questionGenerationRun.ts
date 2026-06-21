@@ -25,5 +25,15 @@ export interface QuestionGenerationRun {
   model: string | null;
   /** Si la generacion uso feedback de revisiones anteriores. */
   feedback_used: boolean;
+  /**
+   * Estrategia de fuente usada (SPEC 028-E): de donde salieron las fuentes del
+   * tema (`topic_source_references`/`linked_references`/`material_sections`/
+   * `text_match`). Vacio en la generacion clasica de SPEC 004/018.4.
+   */
+  source_strategy?: string | null;
+  /** Referencias de fuente concretas usadas (SPEC 028-E). */
+  source_reference_ids?: string[];
+  /** Secciones de material concretas usadas (SPEC 028-E). */
+  material_section_ids?: string[];
   created_at: Date;
 }

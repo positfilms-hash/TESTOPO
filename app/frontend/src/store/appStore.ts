@@ -24,6 +24,8 @@ import {
   SourceReferenceService,
   SyllabusIndexFromDocumentsService,
   createDocumentGroundedIndexProvider,
+  SourceRetrievalService,
+  SourceGroundedQuestionGenerationService,
   createCoreRepositories,
   type SupabaseClientPort,
   type PersistenceMode,
@@ -70,6 +72,8 @@ export interface AppStore {
   sourceReferences: SourceReferenceService;
   /** Indice de temario anclado a documentos (SPEC 028-D). */
   syllabusFromDocuments: SyllabusIndexFromDocumentsService;
+  /** Generacion de preguntas anclada a fuentes (SPEC 028-E). */
+  sourceGroundedGeneration: SourceGroundedQuestionGenerationService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
   /** Facade de acceso: la UI usa esto para operaciones sensibles (SPEC 011). */
@@ -221,6 +225,25 @@ export function createAppStore(seed = true): AppStore {
     topics,
     provider: createDocumentGroundedIndexProvider(),
   });
+  // Generacion de preguntas anclada a fuentes (SPEC 028-E): recupera fuentes del
+  // tema (028-C/D) y reutiliza el generador + validacion existentes.
+  const sourceRetrieval = new SourceRetrievalService({
+    materials: materialRepo,
+    sections: core.materialSections,
+    sourceReferences: core.sourceReferences,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    syllabusRepository: syllabusRepo,
+    documentClassification,
+    topics,
+  });
+  const sourceGroundedGeneration = new SourceGroundedQuestionGenerationService({
+    questionService: questions,
+    materials: materialRepo,
+    topics,
+    retrieval: sourceRetrieval,
+    validationService: validation,
+    runRepository: core.generationRuns,
+  });
   const testGenerator = new TestGeneratorService({
     questionService: questions,
     topicRepository: topicRepo,
@@ -254,6 +277,7 @@ export function createAppStore(seed = true): AppStore {
     materialSections,
     sourceReferences,
     syllabusFromDocuments,
+    sourceGroundedGeneration,
     testGenerator,
     attempts,
   });
@@ -277,6 +301,7 @@ export function createAppStore(seed = true): AppStore {
     materialSections,
     sourceReferences,
     syllabusFromDocuments,
+    sourceGroundedGeneration,
     testGenerator,
     attempts,
     platform,
