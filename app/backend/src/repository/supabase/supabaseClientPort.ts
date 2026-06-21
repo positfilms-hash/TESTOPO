@@ -22,4 +22,10 @@ export interface SupabaseTablePort {
 
 export interface SupabaseClientPort {
   table(name: string): SupabaseTablePort;
+  /**
+   * Llama una funcion RPC de Postgres (SPEC 029: funciones SECURITY DEFINER que
+   * sirven el flujo de alumno sin exponer la solucion). Solo se usa en modo
+   * Supabase real; el puerto en memoria no lo soporta.
+   */
+  rpc(fn: string, args?: SupabaseRow): Promise<unknown>;
 }

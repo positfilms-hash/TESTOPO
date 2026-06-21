@@ -58,4 +58,10 @@ export class InMemorySupabasePort implements SupabaseClientPort {
     }
     return table;
   }
+
+  // Las RPC SECURITY DEFINER (SPEC 029) solo existen en Supabase real. En modo
+  // memory el flujo de alumno usa el gateway local (en proceso), no el puerto.
+  async rpc(fn: string): Promise<unknown> {
+    throw new Error(`RPC no soportada por el puerto en memoria: ${fn}`);
+  }
 }

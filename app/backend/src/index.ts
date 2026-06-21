@@ -86,6 +86,7 @@ export * from './repository/inMemoryTestAttemptRepository.js';
 export * from './repository/testAnswerRepository.js';
 export * from './repository/inMemoryTestAnswerRepository.js';
 export * from './service/testAttemptService.js';
+export * from './service/studentAttemptGateway.js';
 
 // SPEC 010 - Oppositions, Users & Access
 export * from './models/user.js';
@@ -191,6 +192,8 @@ export * from './repository/supabase/supabaseMaterialImportRepositories.js';
 // SPEC 023 - Supabase Repositories: Questions & Options
 export * from './repository/supabase/supabaseQuestionRepository.js';
 export * from './repository/supabase/supabaseQuestionBankRepositories.js';
+// SPEC 029 - Lectura saneada del banco para el flujo de alumno (sin solucion).
+export * from './repository/supabase/supabaseSafeQuestionRepository.js';
 // SPEC 024 - Supabase Repositories: Tests, Attempts & Answers
 export * from './repository/supabase/supabaseTestRepositories.js';
 export * from './repository/supabase/createCoreRepositories.js';

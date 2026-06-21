@@ -31,6 +31,8 @@ import {
   type PersistenceMode,
   TestGeneratorService,
   TestAttemptService,
+  SupabaseStudentAttemptGateway,
+  SupabaseSafeQuestionRepository,
   UserService,
   OppositionService,
   WorkspaceService,
@@ -250,8 +252,16 @@ export function createAppStore(seed = true): AppStore {
     validationService: validation,
     runRepository: core.generationRuns,
   });
+  // SPEC 029: el flujo de ALUMNO (generar/responder) lee de una fuente SANEADA
+  // (vistas sin solucion) en Supabase, para que el alumno no pueda leer
+  // `correct_answer`/`is_correct` por API directa (BUG-001). En memory usa el
+  // banco completo en memoria (sin RLS). La correccion/revision (que si leen el
+  // secreto) van por RPC SECURITY DEFINER via el gateway.
+  const studentQuestions = supabasePort
+    ? new QuestionService(new SupabaseSafeQuestionRepository(supabasePort))
+    : questions;
   const testGenerator = new TestGeneratorService({
-    questionService: questions,
+    questionService: studentQuestions,
     topicRepository: topicRepo,
     materialRepository: materialRepo,
     testRepository: testRepo,
@@ -260,11 +270,14 @@ export function createAppStore(seed = true): AppStore {
   const attempts = new TestAttemptService({
     testRepository: testRepo,
     testQuestionRepository: testQuestionRepo,
-    questionService: questions,
+    questionService: studentQuestions,
     testGenerator,
     // SPEC 024: intentos y respuestas se persisten via el factory.
     attemptRepository: core.testAttempts,
     answerRepository: core.testAnswers,
+    studentGateway: supabasePort
+      ? new SupabaseStudentAttemptGateway(supabasePort)
+      : undefined,
   });
   const platform = new PlatformService({
     oppositionRepository: oppositionRepo,
