@@ -52,6 +52,10 @@ manual_source_selection? })`:
 - Crea la pregunta con `source` + `material_section_id`/`source_reference_id`/
   `topic_source_reference_id` + metadata IA. Corre la **validación automática**:
   pasa → `pending_review`; falla crítico → `needs_fix`. **Nunca `validated`.**
+- **Trazabilidad del excerpt** (`groundedExcerpt`): el `source.excerpt` guardado
+  solo conserva la cita de la IA si está **contenida** (módulo espacios/
+  mayúsculas) en el fragmento recuperado; si la IA inventa una cita, se guarda el
+  fragmento recuperado. Nunca se persiste una cita fabricada como fuente.
 - El run guarda `source_strategy` + `source_reference_ids` + `material_section_ids`.
 
 `prompts/source-grounded-question-generator.md` exige salida estructurada con
