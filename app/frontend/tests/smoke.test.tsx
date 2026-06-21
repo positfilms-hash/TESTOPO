@@ -42,18 +42,15 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     renderApp();
     await enter('admin');
     const sidebar = screen.getByLabelText('Navegacion principal');
-    for (const label of [
-      'Resumen',
-      'Material',
-      'Temario',
-      'Preguntas',
-      'Tests',
-      'Alumnos',
-    ]) {
+    for (const label of ['Material', 'Temario', 'Preguntas', 'Tests', 'Alumnos']) {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     }
+    // SPEC 029: el admin no tiene `Resumen` y entra por `Material`.
+    expect(within(sidebar).queryByText('Resumen')).toBeNull();
     expect(within(sidebar).getByText('Administracion')).toBeInTheDocument();
-    expect(await screen.findByText('Prepara tus oposiciones')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Tema 1 - Constitucion (ficticio)'),
+    ).toBeInTheDocument();
   });
 
   it('admin: ve la lista de materiales (seed) de la oposicion', async () => {
@@ -186,5 +183,30 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
         "Todavia no has enviado ningun test. Crea uno en 'Crear test'.",
       ),
     ).toBeInTheDocument();
+  });
+
+  // --- SPEC 029: navegacion y destino por defecto ---
+
+  it('estudiante: conserva "Inicio" en la navegacion (SPEC 029)', async () => {
+    renderApp();
+    await enter('student');
+    const sidebar = screen.getByLabelText('Navegacion principal');
+    expect(within(sidebar).getByText('Inicio')).toBeInTheDocument();
+  });
+
+  it('navegacion: re-entrar en la seccion activa la reinicia a su vista raiz (SPEC 029)', async () => {
+    renderApp();
+    await enter('admin');
+    const sidebar = screen.getByLabelText('Navegacion principal');
+    fireEvent.click(within(sidebar).getByText('Preguntas'));
+    expect(await screen.findByText('Pendientes de revision')).toBeInTheDocument();
+    // Entra en una subvista (formulario de generacion desde fragmento).
+    fireEvent.click(await screen.findByText('Generar desde fragmento'));
+    expect(
+      await screen.findByText('Generar desde un fragmento'),
+    ).toBeInTheDocument();
+    // Re-pulsar la seccion ya activa vuelve a la lista (remonta, no reload).
+    fireEvent.click(within(sidebar).getByText('Preguntas'));
+    expect(await screen.findByText('Pendientes de revision')).toBeInTheDocument();
   });
 });

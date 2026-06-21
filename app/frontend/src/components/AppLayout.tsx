@@ -11,9 +11,9 @@ export type Section =
   | 'alumnos'
   | 'resultados';
 
-// Zona admin (SPEC 014, 7): navegacion orientada a gestion.
+// Zona admin (SPEC 014, 7): navegacion orientada a gestion. SPEC 029: sin
+// `Resumen`; el admin entra por `Material`.
 const ADMIN_NAV: { id: Section; label: string }[] = [
-  { id: 'inicio', label: 'Resumen' },
   { id: 'material', label: 'Material' },
   { id: 'temario', label: 'Temario' },
   { id: 'preguntas', label: 'Preguntas' },
