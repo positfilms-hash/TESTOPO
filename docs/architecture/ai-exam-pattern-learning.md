@@ -45,11 +45,26 @@ nacen `validated`; solo la revisión humana valida.
   `style_mismatch`, `difficulty_mismatch`, `coverage_mismatch`, `source_mismatch`,
   `copying_risk` (`needs_legal_precision` ya cubría la precisión legal).
 
-## Fase 2 — Memoria de errores + generación adaptativa + anti-copia + calidad (pendiente)
-`AIErrorMemoryService`; bloques de contexto separados (evidencia factual / reglas
-de patrón-perfil / reglas de feedback) en `SourceGroundedQuestionGenerationService`
-+ `prompts/adaptive-source-grounded-question-generator.md`; anti-copia por
-fingerprints (`copying_risk` → `needs_fix`); `AIQuestionQualityScore` por candidata.
+## Fase 2 — Memoria de errores + generación adaptativa + anti-copia + calidad (entregada)
+
+- **`AIErrorMemoryService`** (`service/aiErrorMemoryService.ts`): deriva de
+  `QuestionFeedbackService` entradas `AIErrorMemory` auditables (tipo, severidad,
+  resumen, `avoid_instruction`) y las **refresca** (borra+regenera) por oposición;
+  `getAvoidInstructions` devuelve las reglas de "evitar" (más graves primero).
+- **Bloques de contexto separados** en el prompt (`generation/aiGenerationShared.ts`
+  + `GenerationContext.style_rules`/`avoid_rules`): (1) MATERIAL = única fuente
+  factual; (2) reglas de estilo agregadas (NO factual); (3) errores a evitar (NO
+  factual). Prompt `prompts/adaptive-source-grounded-question-generator.md`.
+- **`SourceGroundedQuestionGenerationService`** extendido (no nuevo generador):
+  usa el perfil activo + memoria con toggles `use_style_profile`/`use_error_memory`
+  (defecto on); **anti-copia** por `fingerprints` (`assessCopyRisk` → `needs_fix`
+  con `copying_risk`, nunca `pending_review` en silencio); **`AIQuestionQualityScore`**
+  por candidata (`scoreCandidateQuality`, componentes `[0,1]`); score bajo →
+  `needs_fix`; registra `style_profile_id`/`adaptive_context_used`/`feedback_used`
+  en el run. **Sin `learning` configurado, el comportamiento es idéntico a 028-E.**
+- Migración 028_f: ALTER aditivo a `question_generation_runs`
+  (`style_profile_id`, `adaptive_context_used`). Re-ejecutar 028_f (idempotente).
+- Helpers puros en `analysis/examPatternMatching.ts` (anti-copia/calidad/estilo).
 
 ## Fase 3 — Facade + UI admin "IA de la oposición" + docs (pendiente)
 Revisión/activación de perfil, visibilidad del contexto de generación, warnings de

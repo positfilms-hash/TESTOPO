@@ -36,6 +36,16 @@ export interface GenerationContext {
    * No es entrenamiento: es mejora por contexto y reglas.
    */
   previous_feedback?: QuestionGenerationFeedbackSummary[];
+  /**
+   * SPEC 028-F: reglas AGREGADAS de estilo/formato observadas en examenes
+   * oficiales. Orientan formato/dificultad; NO son fuente de hechos.
+   */
+  style_rules?: string[];
+  /**
+   * SPEC 028-F: instrucciones de "evitar" derivadas del feedback/memoria de
+   * errores. Orientan la redaccion; NO son fuente de hechos.
+   */
+  avoid_rules?: string[];
 }
 
 export interface GeneratedOption {

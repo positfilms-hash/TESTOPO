@@ -52,6 +52,8 @@ export class SupabaseGenerationRunRepository implements GenerationRunRepository 
       source_strategy: run.source_strategy ?? null,
       source_reference_ids: run.source_reference_ids ?? [],
       material_section_ids: run.material_section_ids ?? [],
+      style_profile_id: run.style_profile_id ?? null,
+      adaptive_context_used: run.adaptive_context_used ?? false,
       created_at: iso(run.created_at),
     });
     return toRun(row);
@@ -92,6 +94,8 @@ function toRun(row: SupabaseRow): QuestionGenerationRun {
     material_section_ids: Array.isArray(row.material_section_ids)
       ? (row.material_section_ids as string[])
       : [],
+    style_profile_id: asNullableString(row.style_profile_id),
+    adaptive_context_used: row.adaptive_context_used === true,
     created_at: parseDate(row.created_at),
   };
 }

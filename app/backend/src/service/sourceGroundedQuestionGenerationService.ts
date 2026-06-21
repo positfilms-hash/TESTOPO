@@ -32,10 +32,24 @@ import {
   SourceRetrievalService,
   type GroundedSource,
 } from './sourceRetrievalService.js';
+import type { ExamPatternLearningRepository } from '../repository/examPatternLearningRepository.js';
+import type { AIErrorMemoryService } from './aiErrorMemoryService.js';
+import type {
+  AIQuestionQualityScore,
+  QuestionStyleProfile,
+} from '../models/examPatternLearning.js';
+import {
+  assessCopyRisk,
+  scoreCandidateQuality,
+  formatStyleRules,
+} from '../analysis/examPatternMatching.js';
 
 // Limites de la generacion anclada (SPEC 028-E).
 export const MAX_QUESTION_SOURCE_CHARS = 20000;
 export const MAX_QUESTION_SOURCE_REFERENCES = 20;
+// SPEC 028-F: umbrales de anti-copia y calidad (configurables).
+export const COPY_RISK_THRESHOLD = 0.85;
+export const LOW_QUALITY_THRESHOLD = 0.5;
 
 export interface SourceGroundedGenerationDeps {
   questionService: QuestionService;
@@ -45,6 +59,12 @@ export interface SourceGroundedGenerationDeps {
   provider?: QuestionGenerationProvider;
   validationService?: QuestionValidationService;
   runRepository?: GenerationRunRepository;
+  // SPEC 028-F: aprendizaje adaptativo (perfil de estilo + memoria de errores +
+  // anti-copia + quality scores). Opcionales: sin ellos, se comporta como 028-E.
+  learning?: ExamPatternLearningRepository;
+  errorMemory?: AIErrorMemoryService;
+  copyRiskThreshold?: number;
+  lowQualityThreshold?: number;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -59,6 +79,10 @@ export interface GenerateFromTopicInput {
     material_section_ids?: string[];
     source_reference_ids?: string[];
   };
+  /** SPEC 028-F: usar el perfil de estilo activo (defecto true). */
+  use_style_profile?: boolean;
+  /** SPEC 028-F: usar la memoria de errores (defecto true). */
+  use_error_memory?: boolean;
 }
 
 export interface SourceGroundedResult {
@@ -75,6 +99,10 @@ export class SourceGroundedQuestionGenerationService {
   private readonly provider: QuestionGenerationProvider;
   private readonly validation?: QuestionValidationService;
   private readonly runs: GenerationRunRepository;
+  private readonly learning?: ExamPatternLearningRepository;
+  private readonly errorMemory?: AIErrorMemoryService;
+  private readonly copyRiskThreshold: number;
+  private readonly lowQualityThreshold: number;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -86,6 +114,10 @@ export class SourceGroundedQuestionGenerationService {
     this.provider = deps.provider ?? new MockQuestionGenerationProvider();
     this.validation = deps.validationService;
     this.runs = deps.runRepository ?? new InMemoryGenerationRunRepository();
+    this.learning = deps.learning;
+    this.errorMemory = deps.errorMemory;
+    this.copyRiskThreshold = deps.copyRiskThreshold ?? COPY_RISK_THRESHOLD;
+    this.lowQualityThreshold = deps.lowQualityThreshold ?? LOW_QUALITY_THRESHOLD;
     this.generateId = deps.generateId ?? (() => randomUUID());
     this.now = deps.now ?? (() => new Date());
   }
@@ -152,6 +184,28 @@ export class SourceGroundedQuestionGenerationService {
         ? `Estilo/cobertura de referencia: ${retrieval.secondary.length} test(s) antiguo(s).`
         : null;
 
+    // SPEC 028-F: contexto ADAPTATIVO (perfil de estilo activo + memoria de
+    // errores). NO es fuente factual; orienta formato/redaccion. Toggles Yes/No.
+    const useStyle = input.use_style_profile !== false;
+    const useMemory = input.use_error_memory !== false;
+    const profile: QuestionStyleProfile | null =
+      this.learning && useStyle
+        ? await this.learning.getActiveProfile(input.opposition_id)
+        : null;
+    const styleRules = profile ? formatStyleRules(profile.rules) : [];
+    const fingerprints = profile?.fingerprints ?? [];
+    const avoidRules =
+      this.errorMemory && useMemory
+        ? await this.errorMemory.getAvoidInstructions(input.opposition_id, {
+            topic_id: input.topic_id,
+          })
+        : [];
+    const adaptiveUsed = styleRules.length > 0 || avoidRules.length > 0;
+    if (profile) {
+      warnings.push(`Perfil de estilo v${profile.version} aplicado.`);
+    }
+    const pendingScores: AIQuestionQualityScore[] = [];
+
     const existingStatements = new Set(
       (await this.questions.listQuestions()).map((q) =>
         normalizeOptionText(q.statement),
@@ -187,6 +241,8 @@ export class SourceGroundedQuestionGenerationService {
         count: want,
         topic_title: topic.title,
         previous_feedback: [],
+        style_rules: styleRules,
+        avoid_rules: avoidRules,
       });
 
       for (const candidate of candidates) {
@@ -244,8 +300,66 @@ export class SourceGroundedQuestionGenerationService {
           topic_source_reference_id: source.topic_source_reference_id,
         });
 
-        const question = await this.finalizeStatus(draft);
+        // SPEC 028-F: anti-copia + calidad SOLO en modo adaptativo (con
+        // `learning`). Sin el, comportamiento 028-E identico (finalizeStatus).
+        let question: Question;
+        if (this.learning) {
+          const copy = assessCopyRisk(
+            candidate.statement,
+            fingerprints,
+            this.copyRiskThreshold,
+          );
+          const quality = scoreCandidateQuality({
+            grounded: isNonEmptyString(builtSource.excerpt),
+            option_count: candidate.options.length,
+            statement_length: candidate.statement.length,
+            single_correct:
+              candidate.options.filter((o) => o.is_correct).length === 1,
+            requested_difficulty: input.difficulty,
+            candidate_difficulty: candidate.difficulty ?? null,
+            rules: profile?.rules ?? null,
+          });
+          const qualityWarnings = [...quality.warnings];
+          if (copy.risk) {
+            qualityWarnings.push(
+              `copying_risk: parecido alto a un examen antiguo (${copy.score}).`,
+            );
+          }
+          // Riesgo de copia o calidad baja: NUNCA pending_review en silencio.
+          if (copy.risk) {
+            question = await this.questions.changeStatus(draft.id, 'needs_fix');
+            warnings.push(
+              'Una candidata se marcó needs_fix por posible copia de un examen antiguo (copying_risk).',
+            );
+          } else if (quality.overall < this.lowQualityThreshold) {
+            question = await this.questions.changeStatus(draft.id, 'needs_fix');
+            warnings.push(
+              'Una candidata se marcó needs_fix por baja puntuación de calidad.',
+            );
+          } else {
+            question = await this.finalizeStatus(draft);
+          }
+          pendingScores.push({
+            id: this.generateId(),
+            question_id: question.id,
+            run_id: null,
+            workspace_id: input.workspace_id ?? null,
+            opposition_id: input.opposition_id,
+            source_grounding: quality.source_grounding,
+            exam_style_similarity: quality.exam_style_similarity,
+            clarity: quality.clarity,
+            single_answer_confidence: quality.single_answer_confidence,
+            difficulty_fit: quality.difficulty_fit,
+            overall: quality.overall,
+            warnings: qualityWarnings,
+            created_at: this.now(),
+            updated_at: this.now(),
+          });
+        } else {
+          question = await this.finalizeStatus(draft);
+        }
         created.push(question);
+
         if (source.material_section_id) usedSectionIds.add(source.material_section_id);
         if (source.source_reference_id) usedReferenceIds.add(source.source_reference_id);
       }
@@ -262,12 +376,22 @@ export class SourceGroundedQuestionGenerationService {
       errors,
       provider: this.provider.name,
       model: this.provider.model,
-      feedback_used: false,
+      // SPEC 028-F: registra el uso de contexto adaptativo y el perfil aplicado.
+      feedback_used: avoidRules.length > 0,
       source_strategy: retrieval.strategy,
       source_reference_ids: [...usedReferenceIds],
       material_section_ids: [...usedSectionIds],
+      style_profile_id: profile?.id ?? null,
+      adaptive_context_used: adaptiveUsed,
       created_at: this.now(),
     });
+
+    // Persiste las quality scores con el run ya creado (SPEC 028-F).
+    if (this.learning) {
+      for (const score of pendingScores) {
+        await this.learning.createQualityScore({ ...score, run_id: run.id });
+      }
+    }
 
     return { run, questions: created, warnings };
   }
