@@ -132,15 +132,8 @@ export class PdfMaterialService {
       throw new PdfUploadError([PdfErrorCode.STORAGE_FAILED]);
     }
 
-    // --- Extraccion basica de texto (sin OCR) ---
-    const extraction = this.deps.extractor.extract(validFile.bytes);
-    const extractionError =
-      extraction.status === 'failed'
-        ? 'No se pudo procesar el PDF.'
-        : extraction.status === 'not_supported'
-          ? 'El PDF no contiene texto seleccionable (posible PDF escaneado).'
-          : null;
-
+    // --- Extraccion de texto (PDF.js, sin OCR) ---
+    const extraction = await this.deps.extractor.extract(validFile.bytes);
     const timestamp = this.now();
     const material: Material = {
       id: this.generateId(),
@@ -148,7 +141,9 @@ export class PdfMaterialService {
       title: input.title as string,
       description: input.description ?? null,
       type: input.type as MaterialType,
-      status: 'active',
+      // Una extraccion no completada deja el material en revision para que no
+      // contamine el pipeline (clasificacion/secciones/indice/generacion).
+      status: extraction.status === 'completed' ? 'active' : 'needs_review',
       original_filename: validFile.original_filename,
       mime_type: validFile.mime_type ?? 'application/pdf',
       size_bytes: validFile.bytes.length,
@@ -157,7 +152,8 @@ export class PdfMaterialService {
       reference: input.reference ?? null,
       file_extension: 'pdf',
       extraction_status: extraction.status,
-      extraction_error: extractionError,
+      extraction_error:
+        extraction.status === 'completed' ? null : extraction.message,
       page_count: extraction.page_count,
       uploaded_by: input.uploaded_by ?? null,
       created_at: timestamp,
@@ -177,6 +173,39 @@ export class PdfMaterialService {
     }
 
     return created;
+  }
+
+  // Reprocesa la extraccion de un material PDF ya subido (p. ej. tras corregir
+  // el extractor o para recuperar materiales que quedaron `needs_review`).
+  // Relee los bytes del almacen y reescribe content_text/estado/extraccion.
+  async reextractMaterial(materialId: string): Promise<Material> {
+    const material = await this.deps.materials.findById(materialId);
+    if (!material) {
+      throw new PdfUploadError([PdfErrorCode.FILE_REQUIRED]);
+    }
+    if (
+      material.file_extension !== 'pdf' ||
+      !isNonEmptyString(material.storage_path)
+    ) {
+      throw new PdfUploadError([PdfErrorCode.INVALID_FILE_TYPE]);
+    }
+    const bytes = this.deps.storage.read(material.storage_path);
+    if (!bytes) {
+      throw new PdfUploadError([PdfErrorCode.STORAGE_FAILED]);
+    }
+
+    const extraction = await this.deps.extractor.extract(bytes);
+    const updated: Material = {
+      ...material,
+      status: extraction.status === 'completed' ? 'active' : 'needs_review',
+      content_text: extraction.status === 'completed' ? extraction.text : null,
+      extraction_status: extraction.status,
+      extraction_error:
+        extraction.status === 'completed' ? null : extraction.message,
+      page_count: extraction.page_count,
+      updated_at: this.now(),
+    };
+    return this.deps.materials.save(updated);
   }
 }
 

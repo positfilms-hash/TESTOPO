@@ -174,6 +174,16 @@ export class PlatformService {
     });
   }
 
+  // Reprocesa la extraccion de texto de un PDF ya subido (p. ej. un material que
+  // quedo `needs_review` por una extraccion fallida). Solo owner/admin.
+  async reextractMaterial(actor: User, materialId: string): Promise<Material> {
+    const material = await this.deps.materials.getMaterial(materialId);
+    if (material) {
+      await this.requireManageOpposition(actor, material.opposition_id);
+    }
+    return this.deps.pdfMaterials.reextractMaterial(materialId);
+  }
+
   // Importar varios archivos a un tema (SPEC 017). Solo owner/admin.
   async importFilesToTopic(
     actor: User,

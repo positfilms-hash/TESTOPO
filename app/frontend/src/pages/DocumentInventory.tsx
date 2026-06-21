@@ -49,6 +49,8 @@ export function DocumentInventory({
   // SPEC 028-C: secciones cargadas por material (bajo demanda).
   const [sections, setSections] = useState<Record<string, MaterialSection[]>>({});
   const [sectionBusy, setSectionBusy] = useState<string | null>(null);
+  const [extractBusy, setExtractBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = async () => {
     if (!currentUser) return;
@@ -106,6 +108,31 @@ export function DocumentInventory({
     }
   };
 
+  // Reprocesa la extraccion de texto del PDF (recupera materiales cuyo texto
+  // salio ilegible/escaneado y reclasifica el lote).
+  const reextract = async (materialId: string) => {
+    if (!currentUser) return;
+    setExtractBusy(materialId);
+    setError(null);
+    setNotice(null);
+    try {
+      const material = await store.platform.reextractMaterial(
+        currentUser,
+        materialId,
+      );
+      setNotice(
+        material.extraction_status === 'completed'
+          ? 'Texto reextraido correctamente.'
+          : 'El PDF sigue sin texto legible (posible escaneado). No se admite OCR.',
+      );
+      await load();
+    } catch {
+      setError('No se ha podido reprocesar la extraccion del documento.');
+    } finally {
+      setExtractBusy(null);
+    }
+  };
+
   if (loading) {
     return (
       <div>
@@ -129,6 +156,7 @@ export function DocumentInventory({
         }`}
       />
       {error && <div className="notice error">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
       {items.length === 0 ? (
         <EmptyState message="Todavia no hay documentos clasificados en este lote." />
       ) : (
@@ -181,6 +209,23 @@ export function DocumentInventory({
                     </select>
                   </label>
                 </div>
+
+                {/* Reprocesar la extraccion de texto del PDF (recupera
+                    materiales que salieron ilegibles/escaneados). */}
+                {item.material_id && (
+                  <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                    <Button
+                      variant="secondary"
+                      small
+                      disabled={extractBusy === item.material_id}
+                      onClick={() => reextract(item.material_id as string)}
+                    >
+                      {extractBusy === item.material_id
+                        ? 'Reprocesando...'
+                        : 'Reprocesar extraccion'}
+                    </Button>
+                  </div>
+                )}
 
                 {/* SPEC 028-C: secciones del documento (solo clases utiles). */}
                 {item.material_id && SECTIONABLE_CLASSES.has(item.classification) && (
