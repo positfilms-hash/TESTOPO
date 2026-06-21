@@ -164,8 +164,9 @@ describe('PlatformService - Premium personal', () => {
       type: 'notes',
       content_text: 'Texto ficticio de apuntes propios.',
     });
-    const result = await platform.generateFromMaterial(premium, {
+    const result = await platform.generateFromExcerpt(premium, {
       material_id: material.id,
+      excerpt: 'Fragmento concreto de apuntes para generar preguntas.',
       difficulty: 'easy',
       question_count: 2,
     });

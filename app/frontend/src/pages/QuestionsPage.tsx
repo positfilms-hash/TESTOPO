@@ -98,7 +98,7 @@ function QuestionsList({
           <div className="row">
             <Button onClick={onGenerateGrounded}>Generar desde tema</Button>
             <Button variant="secondary" onClick={onGenerate}>
-              Generar borradores
+              Generar desde fragmento
             </Button>
           </div>
         }
@@ -453,6 +453,17 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
   const generate = async () => {
     setNotice(null);
     if (!currentUser) return;
+    // SPEC 028-E: fuente concreta obligatoria. No se genera desde el material
+    // completo: hay que pegar un fragmento concreto (o usar "Generar desde
+    // tema (con fuentes)"). Asi cada candidata queda anclada y trazable.
+    const excerpt = fragment.trim();
+    if (!excerpt) {
+      setNotice({
+        type: 'error',
+        text: 'Pega un fragmento concreto del material para generar con fuente. Para anclar a un tema y sus fuentes, usa "Generar desde tema (con fuentes)".',
+      });
+      return;
+    }
     try {
       const base = {
         material_id: materialId,
@@ -460,9 +471,10 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
         difficulty,
         question_count: count,
       };
-      const result = fragment.trim()
-        ? await store.platform.generateFromExcerpt(currentUser, { ...base, excerpt: fragment.trim() })
-        : await store.platform.generateFromMaterial(currentUser, base);
+      const result = await store.platform.generateFromExcerpt(currentUser, {
+        ...base,
+        excerpt,
+      });
       refresh();
       setNotice({
         type: 'success',
@@ -480,8 +492,8 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader
-        title="Generar borradores"
-        subtitle="Crea preguntas desde tu material. Quedaran pendientes de revision."
+        title="Generar desde un fragmento"
+        subtitle="Pega un fragmento concreto del material: la fuente queda anclada y trazable. Las preguntas quedaran pendientes de revision."
         action={
           <Button variant="secondary" onClick={onBack}>
             Volver
@@ -529,10 +541,16 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
               onChange={(e) => setCount(Number(e.target.value))}
             />
           </Field>
-          <Field label="Fragmento (opcional)">
-            <textarea value={fragment} onChange={(e) => setFragment(e.target.value)} placeholder="Pega un fragmento concreto…" />
+          <Field label="Fragmento del material (obligatorio)">
+            <textarea
+              value={fragment}
+              onChange={(e) => setFragment(e.target.value)}
+              placeholder="Pega aqui el fragmento concreto del material sobre el que generar…"
+            />
           </Field>
-          <Button onClick={generate}>Generar borradores</Button>
+          <Button onClick={generate} disabled={!fragment.trim()}>
+            Generar borradores
+          </Button>
         </div>
       )}
     </div>

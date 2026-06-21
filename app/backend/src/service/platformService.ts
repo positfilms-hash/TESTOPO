@@ -460,15 +460,12 @@ export class PlatformService {
     return this.deps.topics.markObsolete(topicId);
   }
 
-  async generateFromMaterial(
-    actor: User,
-    input: Parameters<QuestionGenerationService['generateFromMaterial']>[0],
-  ): Promise<GenerationResult> {
-    const material = await this.deps.materials.getMaterial(input.material_id);
-    await this.requireManageOpposition(actor, material?.opposition_id);
-    return this.deps.generation.generateFromMaterial(input);
-  }
-
+  // SPEC 028-E (cierre de elusion): NO se expone la generacion desde el texto
+  // completo del material (sin fuente concreta). Toda generacion debe partir de
+  // una fuente concreta y trazable: un fragmento pegado (`generateFromExcerpt`)
+  // o un tema aplicado con sus fuentes (`generateQuestionsFromTopic`). El metodo
+  // base `QuestionGenerationService.generateFromMaterial` sigue existiendo como
+  // motor interno, pero el facade no lo ofrece a la UI/API.
   async generateFromExcerpt(
     actor: User,
     input: Parameters<QuestionGenerationService['generateFromExcerpt']>[0],

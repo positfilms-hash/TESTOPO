@@ -284,8 +284,9 @@ describe('SPEC 013 - el estudiante no puede administrar', () => {
 
   it('no puede generar preguntas', async () => {
     const { platform, student, activeMaterial } = await makeSetup();
-    await expect(platform.generateFromMaterial(student, {
+    await expect(platform.generateFromExcerpt(student, {
         material_id: activeMaterial.id,
+        excerpt: 'Fragmento concreto de prueba.',
         difficulty: 'easy',
         question_count: 2,
       }),

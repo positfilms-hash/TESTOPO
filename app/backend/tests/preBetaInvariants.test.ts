@@ -206,18 +206,40 @@ describe('SPEC 027 - release gate pre-beta', () => {
   it('BLOCKER: el student no puede generar preguntas (solo gestor)', async () => {
     const { platform, studentA, material } = await makeWorld();
     await expect(
-      platform.generateFromMaterial(studentA, {
-        material_id: material.id, difficulty: 'easy', question_count: 2,
+      platform.generateFromExcerpt(studentA, {
+        material_id: material.id, excerpt: 'Fragmento concreto de prueba.',
+        difficulty: 'easy', question_count: 2,
       }),
     ).rejects.toThrow(AccessError);
   });
 
   it('BLOCKER: la IA nunca crea preguntas validated', async () => {
     const { platform, admin, material } = await makeWorld();
-    const result = await platform.generateFromMaterial(admin, {
-      material_id: material.id, difficulty: 'easy', question_count: 3,
+    const result = await platform.generateFromExcerpt(admin, {
+      material_id: material.id, excerpt: 'Fragmento concreto de prueba para generar.',
+      difficulty: 'easy', question_count: 3,
     });
     expect(result.questions.length).toBeGreaterThan(0);
     expect(result.questions.every((q) => q.status !== 'validated')).toBe(true);
+  });
+
+  it('BLOCKER (028-E): el facade no expone generacion desde el material completo', async () => {
+    const { platform } = await makeWorld();
+    // La generacion sin fuente concreta (texto completo del material) se cerro:
+    // toda generacion debe partir de un fragmento (generateFromExcerpt) o de un
+    // tema con fuentes (generateQuestionsFromTopic).
+    expect(
+      (platform as unknown as Record<string, unknown>).generateFromMaterial,
+    ).toBeUndefined();
+  });
+
+  it('BLOCKER (028-E): generar desde fragmento exige una fuente concreta no vacia', async () => {
+    const { platform, admin, material } = await makeWorld();
+    await expect(
+      platform.generateFromExcerpt(admin, {
+        material_id: material.id, excerpt: '   ',
+        difficulty: 'easy', question_count: 2,
+      }),
+    ).rejects.toThrow();
   });
 });
