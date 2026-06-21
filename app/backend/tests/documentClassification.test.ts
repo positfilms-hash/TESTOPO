@@ -27,7 +27,7 @@ import {
   FflateZipReader,
   InMemoryMaterialImportBatchRepository,
   InMemoryMaterialImportItemRepository,
-  NaivePdfTextExtractor,
+  StubPdfTextExtractor,
   InMemoryFileStorage,
   InMemoryTopicRepository,
   InMemoryTopicMaterialLinkRepository,
@@ -196,7 +196,7 @@ async function makeSetup() {
   const topicRepo = new InMemoryTopicRepository();
   const linkRepo = new InMemoryTopicMaterialLinkRepository();
   const storage = new InMemoryFileStorage();
-  const extractor = new NaivePdfTextExtractor();
+  const extractor = new StubPdfTextExtractor();
   const materials = new MaterialService(materialRepo);
   const pdfMaterials = new PdfMaterialService({
     materials: materialRepo,

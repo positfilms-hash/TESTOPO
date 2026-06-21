@@ -19,7 +19,7 @@ import {
   FflateZipReader,
   InMemoryMaterialImportBatchRepository,
   InMemoryMaterialImportItemRepository,
-  NaivePdfTextExtractor,
+  StubPdfTextExtractor,
   InMemoryFileStorage,
   InMemoryTopicRepository,
   InMemoryTopicMaterialLinkRepository,
@@ -60,7 +60,7 @@ async function makeSetup() {
     topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
     oppositions: oppositionRepo,
     storage: new InMemoryFileStorage(),
-    extractor: new NaivePdfTextExtractor(),
+    extractor: new StubPdfTextExtractor(),
   });
   const topics = new TopicService(topicRepo, { materialRepository: materialRepo });
   const materialImport = new MaterialImportService({
@@ -69,7 +69,7 @@ async function makeSetup() {
     topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
     oppositions: oppositionRepo,
     storage: new InMemoryFileStorage(),
-    extractor: new NaivePdfTextExtractor(),
+    extractor: new StubPdfTextExtractor(),
     zipReader: new FflateZipReader(),
     batches: new InMemoryMaterialImportBatchRepository(),
     items: new InMemoryMaterialImportItemRepository(),

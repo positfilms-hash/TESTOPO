@@ -13,7 +13,7 @@ import {
   InMemoryOppositionRepository,
   InMemoryOppositionAccessRepository,
   InMemoryFileStorage,
-  NaivePdfTextExtractor,
+  StubPdfTextExtractor,
   PdfMaterialService,
   PdfUploadError,
   PdfErrorCode,
@@ -127,7 +127,7 @@ async function makeServiceSetup() {
     topicMaterialLinks: linkRepo,
     oppositions: oppositionRepo,
     storage,
-    extractor: new NaivePdfTextExtractor(),
+    extractor: new StubPdfTextExtractor(),
     generateId: () => `gen-${++counter}`,
     now: () => new Date('2026-01-02T00:00:00Z'),
   });
@@ -395,7 +395,7 @@ async function makePlatformSetup() {
     topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
     oppositions: oppositionRepo,
     storage: new InMemoryFileStorage(),
-    extractor: new NaivePdfTextExtractor(),
+    extractor: new StubPdfTextExtractor(),
   });
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -406,7 +406,7 @@ async function makePlatformSetup() {
     topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
     oppositions: oppositionRepo,
     storage: new InMemoryFileStorage(),
-    extractor: new NaivePdfTextExtractor(),
+    extractor: new StubPdfTextExtractor(),
     zipReader: new FflateZipReader(),
     batches: new InMemoryMaterialImportBatchRepository(),
     items: new InMemoryMaterialImportItemRepository(),
@@ -572,5 +572,21 @@ describe('PlatformService - PDF (permisos y visibilidad)', () => {
     const material = await platform.uploadPdf(admin, uploadInput(opp.id));
     const obsolete = await platform.markMaterialObsolete(admin, material.id);
     expect(obsolete.status).toBe('obsolete');
+  });
+
+  it('un owner/admin puede reprocesar la extraccion de un PDF', async () => {
+    const { platform, admin, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
+    const reprocessed = await platform.reextractMaterial(admin, material.id);
+    expect(reprocessed.id).toBe(material.id);
+    expect(reprocessed.extraction_status).toBe('completed');
+  });
+
+  it('un student no puede reprocesar la extraccion', async () => {
+    const { platform, admin, student, opp } = await makePlatformSetup();
+    const material = await platform.uploadPdf(admin, uploadInput(opp.id));
+    await expect(
+      platform.reextractMaterial(student, material.id),
+    ).rejects.toThrow(AccessError);
   });
 });

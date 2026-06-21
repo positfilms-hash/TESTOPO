@@ -447,7 +447,7 @@ export class MaterialImportService {
     }
 
     const { contentText, extractionStatus, extractionError, pageCount } =
-      this.extractContent(ext, args.bytes);
+      await this.extractContent(ext, args.bytes);
 
     // SPEC 028, 30: en la carga masiva, un PDF sin texto o un archivo de
     // categoria ambigua nace `needs_review`. En la importacion clasica
@@ -498,24 +498,21 @@ export class MaterialImportService {
     return this.recordItem(args, created.id, args.topicId, 'imported', null);
   }
 
-  private extractContent(
+  private async extractContent(
     ext: AllowedImportExtension,
     bytes: Uint8Array,
-  ): {
+  ): Promise<{
     contentText: string | null;
     extractionStatus: Material['extraction_status'];
     extractionError: string | null;
     pageCount: number | null;
-  } {
+  }> {
     if (ext === 'pdf') {
-      const result = this.deps.extractor.extract(bytes);
+      const result = await this.deps.extractor.extract(bytes);
       return {
         contentText: result.status === 'completed' ? result.text : null,
         extractionStatus: result.status,
-        extractionError:
-          result.status === 'completed'
-            ? null
-            : 'No se pudo extraer texto del PDF (posible PDF escaneado).',
+        extractionError: result.status === 'completed' ? null : result.message,
         pageCount: result.page_count,
       };
     }

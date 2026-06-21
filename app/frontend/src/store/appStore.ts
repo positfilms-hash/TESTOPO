@@ -7,7 +7,7 @@ import {
   PdfMaterialService,
   MaterialImportService,
   FflateZipReader,
-  NaivePdfTextExtractor,
+  PdfJsTextExtractor,
   InMemoryFileStorage,
   type TopicMaterialLinkRepository,
   TopicService,
@@ -39,6 +39,9 @@ import {
 } from '@backend';
 import { isSupabaseConfigured, getSupabase } from '../auth/supabaseClient.js';
 import { createSupabasePort, requestedPersistenceMode } from './supabaseGateway.js';
+// URL del worker de PDF.js resuelta por Vite (el extractor real corre en el
+// navegador con su propio worker; en Node/tests pdfjs usa el fake worker).
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 // Credenciales sembradas para entrar rapido en la demo (ficticias).
 export const SEED_ADMIN = { email: 'admin@testopo.dev', password: 'admin1234' };
@@ -119,7 +122,10 @@ export function createAppStore(seed = true): AppStore {
   // Almacenamiento y extractor compartidos para que PDFs subidos e importados
   // vivan en el mismo sitio (SPEC 012/017).
   const fileStorage = new InMemoryFileStorage();
-  const pdfExtractor = new NaivePdfTextExtractor();
+  // Extractor real (PDF.js): resuelve streams comprimidos, fuentes embebidas y
+  // ToUnicode. En el navegador necesita la URL del worker de pdfjs (la resuelve
+  // Vite con `?url`).
+  const pdfExtractor = new PdfJsTextExtractor({ workerSrc: pdfWorkerUrl });
   const pdfMaterials = new PdfMaterialService({
     materials: materialRepo,
     topics: topicRepo,

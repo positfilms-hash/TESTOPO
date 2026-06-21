@@ -71,9 +71,27 @@ en `item.original_path` y alimenta las *sugerencias* del índice IA (paso 6).
 
 ### 5. Extracción de texto
 
-`PdfTextExtractor` (SPEC 012) por PDF; TXT/MD se decodifican directos. Estados:
-`not_started` · `processing` · `completed` · `failed` · `not_supported`. Un PDF
-escaneado sin capa de texto queda `not_supported` (**sin OCR** en esta spec).
+`PdfTextExtractor` (interfaz **asíncrona**) por PDF; TXT/MD se decodifican
+directos. El extractor de producción es **`PdfJsTextExtractor`** (PDF.js /
+`pdfjs-dist`): resuelve streams comprimidos (FlateDecode), fuentes embebidas y
+mapas **ToUnicode**, y extrae **página a página** (conserva saltos de línea para
+las secciones de 028-C). En Node usa el *fake worker*; en el navegador, el worker
+de pdfjs vía Vite (`?url`). El antiguo extractor naive (Latin-1 + literales
+`BT…ET`) producía texto corrupto en PDFs reales y queda solo como
+`StubPdfTextExtractor` para tests/dev (**no se usa en producción**).
+
+**Validación de calidad** (`assessTextQuality`): si el texto extraído es
+ilegible (exceso de caracteres de control/reemplazo o muy poca proporción
+legible) o el PDF no tiene capa de texto, la extracción **no** queda `completed`:
+pasa a `not_supported`/`failed` y el material a `needs_review`. Así el texto
+corrupto **nunca** llega a clasificación, secciones, índice ni generación de
+preguntas. Estados: `not_started` · `processing` · `completed` · `failed` ·
+`not_supported`. **Sin OCR**: un escaneado sigue sin ser analizable.
+
+**Reprocesar:** `platform.reextractMaterial(actor, materialId)` (owner/admin)
+relee los bytes guardados y reescribe la extracción —ruta para recuperar
+materiales que quedaron `needs_review`—. La UI lo expone como
+*"Reprocesar extracción"* en el inventario de documentos.
 
 ### 6. Índice de temario con IA (SPEC 019)
 

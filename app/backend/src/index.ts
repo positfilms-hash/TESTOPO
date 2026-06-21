@@ -118,6 +118,7 @@ export * from './service/platformService.js';
 // SPEC 012 - PDF Material Upload & Basic Text Extraction
 export * from './pdf/pdfErrors.js';
 export * from './pdf/pdfTextExtractor.js';
+export * from './pdf/pdfQuality.js';
 export * from './storage/fileStorage.js';
 export * from './service/pdfMaterialService.js';
 
