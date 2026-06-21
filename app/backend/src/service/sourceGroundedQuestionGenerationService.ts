@@ -297,13 +297,36 @@ export class SourceGroundedQuestionGenerationService {
       reference:
         (isNonEmptyString(candidate.source_reference) ? candidate.source_reference : null) ??
         topicTitle,
-      excerpt:
-        (isNonEmptyString(candidate.source_excerpt) ? candidate.source_excerpt : null) ??
-        source.excerpt ??
-        null,
+      // Trazabilidad fiable: solo se conserva el excerpt de la IA si esta
+      // CONTENIDO en el fragmento recuperado (la IA genera a partir de ese
+      // texto). Si la IA devuelve una cita inventada, se guarda el fragmento
+      // recuperado en su lugar (SPEC 028-E, recomendacion de la review).
+      excerpt: groundedExcerpt(candidate.source_excerpt, source.excerpt),
       status: material?.status ?? 'active',
     };
   }
+}
+
+// Devuelve el excerpt de la IA solo si esta contenido (modulo
+// espacios/mayusculas) en el texto recuperado; si no, devuelve el recuperado.
+// Exportado para test directo (es la garantia de trazabilidad: nunca se guarda
+// una cita inventada por la IA).
+export function groundedExcerpt(
+  aiExcerpt: string | null | undefined,
+  retrieved: string | null | undefined,
+): string | null {
+  const retrievedText = isNonEmptyString(retrieved) ? retrieved.trim() : null;
+  if (isNonEmptyString(aiExcerpt) && retrievedText) {
+    const needle = normalizeForMatch(aiExcerpt);
+    if (needle.length > 0 && normalizeForMatch(retrievedText).includes(needle)) {
+      return aiExcerpt.trim();
+    }
+  }
+  return retrievedText;
+}
+
+function normalizeForMatch(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 // Reparte `total` candidatas entre `n` fuentes lo mas uniformemente posible.
