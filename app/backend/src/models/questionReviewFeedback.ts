@@ -22,6 +22,12 @@ export const FEEDBACK_TYPES = [
   'bad_options',
   'unclear_wording',
   'needs_legal_precision',
+  // SPEC 028-F: motivos para el aprendizaje adaptativo (estilo/cobertura/copia).
+  'style_mismatch',
+  'difficulty_mismatch',
+  'coverage_mismatch',
+  'source_mismatch',
+  'copying_risk',
   'other',
 ] as const;
 export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
@@ -56,6 +62,11 @@ export const DEFAULT_FEEDBACK_SEVERITY: Record<FeedbackType, FeedbackSeverity> =
   bad_options: 'high',
   unclear_wording: 'medium',
   needs_legal_precision: 'high',
+  style_mismatch: 'low',
+  difficulty_mismatch: 'low',
+  coverage_mismatch: 'medium',
+  source_mismatch: 'critical',
+  copying_risk: 'critical',
   other: 'low',
 };
 
