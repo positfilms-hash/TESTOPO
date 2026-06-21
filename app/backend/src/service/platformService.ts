@@ -38,6 +38,9 @@ import type {
   SourceGroundedResult,
 } from './sourceGroundedQuestionGenerationService.js';
 import type { RetrievalResult } from './sourceRetrievalService.js';
+import type { ExamPatternAnalysisService } from './examPatternAnalysisService.js';
+import type { AIErrorMemoryService } from './aiErrorMemoryService.js';
+import { formatStyleRules } from '../analysis/examPatternMatching.js';
 import type {
   MaterialSection,
   SectionClass,
@@ -151,6 +154,9 @@ export interface PlatformServiceDeps {
   syllabusFromDocuments?: SyllabusIndexFromDocumentsService;
   /** Generacion de preguntas anclada a fuentes (SPEC 028-E). Opcional. */
   sourceGroundedGeneration?: SourceGroundedQuestionGenerationService;
+  /** Aprendizaje de patrones de examen (SPEC 028-F). Opcional. */
+  examPatternAnalysis?: ExamPatternAnalysisService;
+  aiErrorMemory?: AIErrorMemoryService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -719,6 +725,90 @@ export class PlatformService {
     });
   }
 
+  // --- IA de la oposicion: aprendizaje de patrones (SPEC 028-F). Solo gestion. ---
+
+  // Analiza los examenes antiguos usables y crea un perfil de estilo en draft.
+  async analyzeExamPatterns(actor: User, oppositionId: string) {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireExamPatterns().analyze({
+      opposition_id: oppositionId,
+      created_by: actor.id,
+    });
+  }
+
+  async listStyleProfiles(actor: User, oppositionId: string) {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireExamPatterns().listProfiles(oppositionId);
+  }
+
+  async getStyleProfile(actor: User, profileId: string) {
+    const profile = await this.requireExamPatterns().getProfile(profileId);
+    if (profile) {
+      await this.requireManageOpposition(actor, profile.opposition_id);
+    }
+    return profile;
+  }
+
+  async submitStyleProfileForReview(actor: User, profileId: string) {
+    await this.requireManageOfProfile(actor, profileId);
+    return this.requireExamPatterns().submitForReview(profileId);
+  }
+
+  async activateStyleProfile(actor: User, profileId: string) {
+    await this.requireManageOfProfile(actor, profileId);
+    return this.requireExamPatterns().activate(profileId, actor.id);
+  }
+
+  async rejectStyleProfile(actor: User, profileId: string) {
+    await this.requireManageOfProfile(actor, profileId);
+    return this.requireExamPatterns().reject(profileId);
+  }
+
+  // Memoria de errores IA (derivada del feedback humano). Solo gestion.
+  async refreshErrorMemory(actor: User, oppositionId: string) {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireErrorMemory().refreshForOpposition(oppositionId);
+  }
+
+  async listErrorMemory(actor: User, oppositionId: string) {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireErrorMemory().list(oppositionId);
+  }
+
+  // Visibilidad del contexto que usaria la generacion adaptativa (perfil + memoria).
+  async getGenerationContextPreview(
+    actor: User,
+    oppositionId: string,
+    topicId?: string,
+  ): Promise<{
+    profile_id: string | null;
+    profile_version: number | null;
+    style_rules: string[];
+    avoid_instructions: string[];
+  }> {
+    await this.requireManageOpposition(actor, oppositionId);
+    const profile = await this.requireExamPatterns().getActiveProfile(
+      oppositionId,
+    );
+    const avoid = this.deps.aiErrorMemory
+      ? await this.deps.aiErrorMemory.getAvoidInstructions(oppositionId, {
+          topic_id: topicId ?? null,
+        })
+      : [];
+    return {
+      profile_id: profile?.id ?? null,
+      profile_version: profile?.version ?? null,
+      style_rules: profile ? formatStyleRules(profile.rules) : [],
+      avoid_instructions: avoid,
+    };
+  }
+
+  // Quality score de una pregunta generada (para mostrar warnings en la revision).
+  async getQuestionQualityScore(actor: User, questionId: string) {
+    await this.requireManageQuestion(actor, questionId);
+    return this.requireExamPatterns().getQualityScoreForQuestion(questionId);
+  }
+
   // --- Estudio (miembro del workspace con acceso a la oposicion) -----------
 
   async createTest(
@@ -892,6 +982,32 @@ export class PlatformService {
       ]);
     }
     return this.deps.sourceGroundedGeneration;
+  }
+
+  private requireExamPatterns(): ExamPatternAnalysisService {
+    if (!this.deps.examPatternAnalysis) {
+      throw new Error('Aprendizaje de patrones de examen no configurado.');
+    }
+    return this.deps.examPatternAnalysis;
+  }
+
+  private requireErrorMemory(): AIErrorMemoryService {
+    if (!this.deps.aiErrorMemory) {
+      throw new Error('Memoria de errores IA no configurada.');
+    }
+    return this.deps.aiErrorMemory;
+  }
+
+  // Guard de gestion derivado del perfil (via su oposicion).
+  private async requireManageOfProfile(
+    actor: User,
+    profileId: string,
+  ): Promise<void> {
+    const profile = await this.requireExamPatterns().getProfile(profileId);
+    if (!profile) {
+      throw new Error('Perfil de estilo no encontrado.');
+    }
+    await this.requireManageOpposition(actor, profile.opposition_id);
   }
 
   private requireMaterialSections(): MaterialSectionService {

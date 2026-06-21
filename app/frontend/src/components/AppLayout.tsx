@@ -6,6 +6,7 @@ export type Section =
   | 'material'
   | 'temario'
   | 'preguntas'
+  | 'ia'
   | 'tests'
   | 'alumnos'
   | 'resultados';
@@ -16,6 +17,7 @@ const ADMIN_NAV: { id: Section; label: string }[] = [
   { id: 'material', label: 'Material' },
   { id: 'temario', label: 'Temario' },
   { id: 'preguntas', label: 'Preguntas' },
+  { id: 'ia', label: 'IA de la oposición' },
   { id: 'tests', label: 'Tests' },
   { id: 'alumnos', label: 'Alumnos' },
 ];

@@ -66,6 +66,19 @@ nacen `validated`; solo la revisión humana valida.
   (`style_profile_id`, `adaptive_context_used`). Re-ejecutar 028_f (idempotente).
 - Helpers puros en `analysis/examPatternMatching.ts` (anti-copia/calidad/estilo).
 
-## Fase 3 — Facade + UI admin "IA de la oposición" + docs (pendiente)
-Revisión/activación de perfil, visibilidad del contexto de generación, warnings de
-calidad en la revisión; guías de usuario y plan de QA.
+## Fase 3 — Facade + UI admin "IA de la oposición" + docs (entregada)
+
+- **Facade** (`PlatformService`, solo gestión vía `requireManageOpposition`):
+  `analyzeExamPatterns`, `listStyleProfiles`/`getStyleProfile`,
+  `submitStyleProfileForReview`/`activateStyleProfile`/`rejectStyleProfile`
+  (activar supersede al activo previo), `refreshErrorMemory`/`listErrorMemory`,
+  `getGenerationContextPreview` (visibilidad del contexto) y
+  `getQuestionQualityScore`. El alumno recibe `AccessError`.
+- **Ciclo de vida del perfil** en `ExamPatternAnalysisService`
+  (`activate`/`reject`/`submitForReview`/`getActiveProfile`).
+- **UI** `app/frontend/src/pages/OppositionAIPanel.tsx` (sección admin "IA de la
+  oposición"): analizar exámenes, revisar/activar/rechazar perfiles, ver el
+  contexto de generación (estilo + errores a evitar) y la memoria de errores. No
+  expone exámenes antiguos como banco copiable. Pulido visual a cargo de Codex.
+- **Docs**: `docs/user-guides/ai-question-generation.md`,
+  `docs/qa/ai-exam-pattern-learning-test-plan.md`.
