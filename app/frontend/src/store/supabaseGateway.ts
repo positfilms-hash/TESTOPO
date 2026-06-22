@@ -68,6 +68,45 @@ export function createSupabasePort(client: SupabaseClient): SupabaseClientPort {
       }
       return data;
     },
+    storage(bucket: string) {
+      // SPEC 029: bucket privado de materiales. La URL firmada respeta las
+      // politicas del bucket (sesion del gestor); nunca service-role.
+      const api = client.storage.from(bucket);
+      return {
+        async upload(path: string, bytes: Uint8Array, contentType?: string) {
+          const blob = new Blob([bytes.slice()], {
+            type: contentType ?? 'application/octet-stream',
+          });
+          const { error } = await api.upload(path, blob, {
+            upsert: true,
+            contentType: contentType ?? undefined,
+          });
+          if (error) {
+            throw new Error(`Supabase storage upload ${path}: ${error.message}`);
+          }
+        },
+        async download(path: string) {
+          const { data, error } = await api.download(path);
+          if (error || !data) {
+            return null;
+          }
+          return new Uint8Array(await data.arrayBuffer());
+        },
+        async createSignedUrl(path: string, expiresInSeconds: number) {
+          const { data, error } = await api.createSignedUrl(
+            path,
+            expiresInSeconds,
+          );
+          if (error || !data) {
+            return null;
+          }
+          return data.signedUrl;
+        },
+        async remove(path: string) {
+          await api.remove([path]);
+        },
+      };
+    },
   };
 }
 

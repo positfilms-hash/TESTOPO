@@ -44,6 +44,10 @@ export class InMemoryMaterialRepository implements MaterialRepository {
     this.materials.set(material.id, clone(material));
     return clone(material);
   }
+
+  async delete(id: string): Promise<void> {
+    this.materials.delete(id);
+  }
 }
 
 function clone(material: Material): Material {

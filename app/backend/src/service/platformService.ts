@@ -39,6 +39,7 @@ import type {
 } from './sourceGroundedQuestionGenerationService.js';
 import type { RetrievalResult } from './sourceRetrievalService.js';
 import type { ExamPatternAnalysisService } from './examPatternAnalysisService.js';
+import type { MaterialLibraryService } from './materialLibraryService.js';
 import type { AIErrorMemoryService } from './aiErrorMemoryService.js';
 import { formatStyleRules } from '../analysis/examPatternMatching.js';
 import type {
@@ -157,6 +158,8 @@ export interface PlatformServiceDeps {
   /** Aprendizaje de patrones de examen (SPEC 028-F). Opcional. */
   examPatternAnalysis?: ExamPatternAnalysisService;
   aiErrorMemory?: AIErrorMemoryService;
+  /** Biblioteca de material (SPEC 029): abrir/borrar seguro. Opcional. */
+  materialLibrary?: MaterialLibraryService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -443,6 +446,22 @@ export class PlatformService {
     const material = await this.deps.materials.getMaterial(materialId);
     await this.requireManageOpposition(actor, material?.opposition_id);
     return this.deps.materials.markObsolete(materialId);
+  }
+
+  // SPEC 029: abrir el original del PDF de forma segura (URL firmada/bytes), sin
+  // exponer la ruta interna. Solo gestion.
+  async getMaterialFile(actor: User, materialId: string) {
+    const material = await this.deps.materials.getMaterial(materialId);
+    await this.requireManageOpposition(actor, material?.opposition_id);
+    return this.requireMaterialLibrary().getFile(materialId);
+  }
+
+  // SPEC 029: borrado SEGURO. Bloquea si el material esta referenciado (temas,
+  // preguntas, referencias de fuente); en ese caso, archivar (markMaterialObsolete).
+  async deleteMaterial(actor: User, materialId: string): Promise<void> {
+    const material = await this.deps.materials.getMaterial(materialId);
+    await this.requireManageOpposition(actor, material?.opposition_id);
+    await this.requireMaterialLibrary().deleteMaterial(materialId);
   }
 
   async createTopic(actor: User, input: CreateTopicInput): Promise<Topic> {
@@ -1010,6 +1029,13 @@ export class PlatformService {
       throw new Error('Memoria de errores IA no configurada.');
     }
     return this.deps.aiErrorMemory;
+  }
+
+  private requireMaterialLibrary(): MaterialLibraryService {
+    if (!this.deps.materialLibrary) {
+      throw new Error('Biblioteca de material no configurada.');
+    }
+    return this.deps.materialLibrary;
   }
 
   // Guard de gestion derivado del perfil (via su oposicion).

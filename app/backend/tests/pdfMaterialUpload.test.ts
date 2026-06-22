@@ -186,8 +186,8 @@ describe('PdfMaterialService - subida y validaciones', () => {
   it('guarda los bytes fuera del repo (FileStorage), no en el material', async () => {
     const { service, storage, opposition } = await makeServiceSetup();
     const material = await service.uploadPdf(validInput(opposition.id));
-    expect(storage.exists(material.storage_path as string)).toBe(true);
-    expect(storage.read(material.storage_path as string)).not.toBeNull();
+    expect(await storage.exists(material.storage_path as string)).toBe(true);
+    expect(await storage.read(material.storage_path as string)).not.toBeNull();
   });
 
   it('extrae texto cuando el PDF tiene texto seleccionable', async () => {

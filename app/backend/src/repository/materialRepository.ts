@@ -17,5 +17,7 @@ export interface MaterialRepository {
   findAll(filter?: MaterialFilter): Promise<Material[]>;
   findById(id: string): Promise<Material | null>;
   save(material: Material): Promise<Material>;
+  /** Borra el registro (SPEC 029, borrado seguro de material no referenciado). */
+  delete(id: string): Promise<void>;
 }
 

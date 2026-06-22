@@ -127,7 +127,7 @@ export class PdfMaterialService {
     // --- Guardado fisico (capa separada, fuera del repo) ---
     const storagePath = `uploads/materials/${this.generateId()}.pdf`;
     try {
-      this.deps.storage.save(storagePath, validFile.bytes);
+      await this.deps.storage.save(storagePath, validFile.bytes);
     } catch {
       throw new PdfUploadError([PdfErrorCode.STORAGE_FAILED]);
     }
@@ -189,7 +189,7 @@ export class PdfMaterialService {
     ) {
       throw new PdfUploadError([PdfErrorCode.INVALID_FILE_TYPE]);
     }
-    const bytes = this.deps.storage.read(material.storage_path);
+    const bytes = await this.deps.storage.read(material.storage_path);
     if (!bytes) {
       throw new PdfUploadError([PdfErrorCode.STORAGE_FAILED]);
     }

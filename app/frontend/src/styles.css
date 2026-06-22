@@ -2,16 +2,19 @@
    negras finas. Titulos en Georgia; texto general en sans-serif del sistema.
    Solo estilos: no cambia funcionalidad, rutas ni textos funcionales. */
 :root {
-  /* SPEC 029: fondo de aplicacion azul marino; superficies (sidebar, tarjetas,
-     formularios) en blanco con texto oscuro legible. */
-  --app-bg: #071a33; /* azul marino del shell y fondo de pagina */
-  --on-navy: #eef4fb; /* texto suelto sobre navy */
-  --on-navy-muted: #aebfd6; /* texto secundario sobre navy */
+  /* SPEC 029 (revisada): fondo de pagina azul MUY CLARO; tarjetas, filas, paneles
+     y sidebar en azul-marino MEDIO con texto blanco; inputs blancos con texto
+     oscuro. Titulos serif con jerarquia clara. */
+  --app-bg: #eaf4ff; /* fondo de pagina azul muy claro */
+  --panel: #163f66; /* azul-marino medio: tarjetas/paneles/filas/sidebar */
+  --panel-line: #2b5a87; /* borde/divisor sobre navy */
+  --on-panel: #f4f8fd; /* texto sobre navy */
+  --on-panel-muted: #b9c9dd; /* texto secundario sobre navy */
   --bg: #f7fbff; /* fondo secundario suave */
-  --surface: #ffffff; /* base blanca */
+  --surface: #ffffff; /* base blanca (inputs) */
   --line: #111111; /* lineas negras finas (personalidad) */
-  --border: #d1d5db; /* bordes suaves (divisores, inputs) */
-  --text: #111111;
+  --border: #d1d5db; /* bordes suaves (inputs) */
+  --text: #102a43; /* texto oscuro sobre fondo claro / inputs */
   --muted: #4b5563;
   --accent: #bfddf7; /* azul pastel principal */
   --accent-soft: #eaf5ff; /* azul pastel suave */
@@ -23,8 +26,8 @@
   --warning: #d97706;
   --warning-soft: #fbeed6;
   --radius: 10px;
-  --shadow: 0 1px 2px rgba(17, 17, 17, 0.05);
-  --heading-font: Georgia, 'Times New Roman', serif;
+  --shadow: 0 2px 8px rgba(16, 42, 67, 0.12);
+  --heading-font: Georgia, ui-serif, 'Times New Roman', serif;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
@@ -35,7 +38,7 @@
 body {
   margin: 0;
   background: var(--app-bg);
-  color: var(--on-navy);
+  color: var(--text);
   line-height: 1.55;
 }
 
@@ -57,9 +60,9 @@ h4 {
 .sidebar {
   width: 232px;
   flex-shrink: 0;
-  background: var(--surface);
-  color: var(--text); /* superficie blanca: texto oscuro legible */
-  border-right: 1px solid var(--line);
+  background: var(--panel); /* panel navy */
+  color: var(--on-panel);
+  border-right: 1px solid var(--panel-line);
   padding: 24px 16px;
   position: sticky;
   top: 0;
@@ -69,9 +72,9 @@ h4 {
 .sidebar .brand {
   font-family: var(--heading-font);
   font-weight: 700;
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   letter-spacing: 0.5px;
-  color: var(--text);
+  color: var(--on-panel);
   padding: 0 12px 4px;
 }
 
@@ -108,7 +111,7 @@ h4 {
   text-align: left;
   border: none;
   background: transparent;
-  color: var(--text);
+  color: var(--on-panel); /* texto blanco sobre navy */
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 0.97rem;
@@ -117,21 +120,21 @@ h4 {
 }
 
 .nav-item:hover {
-  background: var(--accent-soft);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .nav-item.active {
-  background: var(--accent-soft);
-  color: var(--text);
+  background: rgba(191, 221, 247, 0.18);
+  color: #ffffff;
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--accent-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .main {
   flex: 1;
   padding: 32px 40px;
   max-width: 1040px;
-  color: var(--on-navy); /* texto suelto sobre el fondo navy */
+  color: var(--text); /* texto suelto sobre fondo claro */
 }
 
 .page-header {
@@ -139,23 +142,40 @@ h4 {
 }
 
 .page-header h1 {
-  margin: 0 0 4px;
-  font-size: 1.7rem;
+  margin: 0 0 6px;
+  font-size: 2rem; /* titulo de pagina grande (jerarquia serif) */
+  letter-spacing: 0.2px;
 }
 
 .page-header p {
   margin: 0;
-  color: var(--on-navy-muted); /* sobre navy */
+  color: var(--muted); /* sobre fondo claro */
 }
 
+/* SPEC 029: tarjetas/paneles/filas en navy con texto blanco. */
 .card {
-  background: var(--surface);
-  color: var(--text); /* superficie blanca: texto oscuro */
-  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--on-panel);
+  border: 1px solid var(--panel-line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px;
   margin-bottom: 16px;
+}
+
+.card strong,
+.card h1,
+.card h2,
+.card h3,
+.card h4 {
+  color: var(--on-panel);
+}
+
+/* Encabezado compacto de panel (jerarquia: titulos de panel mas pequenos). */
+.card > strong:first-child {
+  font-family: var(--heading-font);
+  font-size: 1.05rem;
+  letter-spacing: 0.2px;
 }
 
 .card-grid {
@@ -281,7 +301,7 @@ h4 {
 .field label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--on-panel-muted); /* etiquetas claras sobre panel navy */
 }
 
 .field input,
@@ -310,26 +330,30 @@ h4 {
 }
 
 .muted { color: var(--muted); }
-/* SPEC 029: texto secundario claro cuando va suelto sobre navy; oscuro dentro de
-   superficies blancas (tarjetas, sidebar, avisos, vacios, formularios). */
-.main .muted { color: var(--on-navy-muted); }
+/* SPEC 029: texto secundario claro dentro de paneles navy; oscuro sobre fondo
+   claro o avisos (cajas claras). */
 .card .muted,
 .sidebar .muted,
 .empty-state .muted,
-.notice .muted,
-.field .muted,
-.tab .muted,
-.option .muted { color: var(--muted); }
+.loading-state .muted { color: var(--on-panel-muted); }
+.notice .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
-.empty-state, .error-state, .loading-state {
+.empty-state, .loading-state {
   text-align: center;
-  color: var(--muted);
+  color: var(--on-panel-muted);
   padding: 40px 20px;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--panel-line);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--panel);
 }
-.error-state { color: var(--danger); border-color: var(--danger); }
+.error-state {
+  text-align: center;
+  color: var(--danger);
+  padding: 40px 20px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+}
 
 .notice {
   padding: 12px 16px;
@@ -350,28 +374,32 @@ h4 {
   border-color: #9bd3ad;
 }
 
+/* Opciones: por defecto sobre panel navy (texto claro); los estados usan cajas
+   claras (texto oscuro) para mantener el contraste. */
 .option {
   display: flex;
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-line);
   border-radius: 8px;
   margin-bottom: 8px;
   cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-panel);
 }
-.option.selected { border-color: var(--accent-hover); background: var(--accent-soft); }
-.option.correct { border-color: var(--success); background: var(--success-soft); }
-.option.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.option.selected { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--text); }
+.option.correct { border-color: var(--success); background: var(--success-soft); color: var(--text); }
+.option.wrong { border-color: var(--danger); background: var(--danger-soft); color: var(--text); }
 
 .tree-item { padding: 4px 0; }
-.tree-children { margin-left: 20px; border-left: 1px solid var(--border); padding-left: 14px; }
+.tree-children { margin-left: 20px; border-left: 1px solid var(--panel-line); padding-left: 14px; }
 
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.tab { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-family: inherit; color: var(--text); }
-.tab.active { background: var(--accent); color: var(--text); border-color: var(--line); font-weight: 600; }
+.tab { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-family: inherit; color: var(--text); }
+.tab.active { background: var(--accent); color: var(--text); border-color: var(--accent-hover); font-weight: 600; }
 
-.stat { font-family: var(--heading-font); font-size: 1.9rem; font-weight: 700; color: var(--text); }
+.stat { font-family: var(--heading-font); font-size: 1.95rem; font-weight: 700; color: var(--on-panel); }
 
 /* Movil: la barra lateral pasa arriba a ancho completo (no fuerza el layout). */
 @media (max-width: 640px) {

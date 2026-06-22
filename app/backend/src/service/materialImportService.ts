@@ -441,7 +441,7 @@ export class MaterialImportService {
 
     const storagePath = `uploads/materials/${this.generateId()}.${ext}`;
     try {
-      this.deps.storage.save(storagePath, args.bytes);
+      await this.deps.storage.save(storagePath, args.bytes);
     } catch {
       return this.recordItem(args, null, args.topicId, 'failed', ImportErrorCode.STORAGE_FAILED);
     }

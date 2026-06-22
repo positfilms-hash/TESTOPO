@@ -4,6 +4,7 @@
 import type {
   SupabaseClientPort,
   SupabaseRow,
+  SupabaseStoragePort,
   SupabaseTablePort,
 } from './supabaseClientPort.js';
 
@@ -63,5 +64,34 @@ export class InMemorySupabasePort implements SupabaseClientPort {
   // memory el flujo de alumno usa el gateway local (en proceso), no el puerto.
   async rpc(fn: string): Promise<unknown> {
     throw new Error(`RPC no soportada por el puerto en memoria: ${fn}`);
+  }
+
+  private readonly buckets = new Map<string, Map<string, Uint8Array>>();
+
+  // Storage en memoria (SPEC 029): round-trip de bytes; "firma" deterministica.
+  storage(bucket: string): SupabaseStoragePort {
+    let store = this.buckets.get(bucket);
+    if (!store) {
+      store = new Map<string, Uint8Array>();
+      this.buckets.set(bucket, store);
+    }
+    const objects = store;
+    return {
+      async upload(path, bytes) {
+        objects.set(path, bytes.slice());
+      },
+      async download(path) {
+        const bytes = objects.get(path);
+        return bytes ? bytes.slice() : null;
+      },
+      async createSignedUrl(path, expiresInSeconds) {
+        return objects.has(path)
+          ? `memory://${bucket}/${path}?exp=${expiresInSeconds}`
+          : null;
+      },
+      async remove(path) {
+        objects.delete(path);
+      },
+    };
   }
 }
