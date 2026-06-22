@@ -123,6 +123,20 @@ export * from './pdf/pdfQuality.js';
 export * from './storage/fileStorage.js';
 export * from './storage/supabaseFileStorage.js';
 export * from './service/materialLibraryService.js';
+
+// SPEC 030 - OCR & Vision para PDFs escaneados
+export * from './models/materialOcr.js';
+export * from './ocr/ocrConfig.js';
+export * from './ocr/ocrErrors.js';
+export * from './ocr/ocrProvider.js';
+export * from './ocr/mockOcrProvider.js';
+export * from './ocr/createOcrProvider.js';
+export * from './ocr/pdfPageRenderService.js';
+export * from './repository/materialOcrRepository.js';
+export * from './repository/inMemoryMaterialOcrRepository.js';
+export * from './repository/supabase/supabaseMaterialOcrRepository.js';
+export * from './service/pdfScanDetectionService.js';
+export * from './service/materialOcrService.js';
 export * from './service/pdfMaterialService.js';
 
 // SPEC 017 - Unified Syllabus & Bulk Material Import

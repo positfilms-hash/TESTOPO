@@ -11,6 +11,10 @@ import {
   InMemoryFileStorage,
   SupabaseFileStorage,
   MaterialLibraryService,
+  PdfScanDetectionService,
+  MaterialOcrService,
+  createOcrProvider,
+  PlaceholderPdfPageRenderService,
   type TopicMaterialLinkRepository,
   TopicService,
   QuestionService,
@@ -136,6 +140,8 @@ export function createAppStore(seed = true): AppStore {
   // ToUnicode. En el navegador necesita la URL del worker de pdfjs (la resuelve
   // Vite con `?url`).
   const pdfExtractor = new PdfJsTextExtractor({ workerSrc: pdfWorkerUrl });
+  // SPEC 030: detecta escaneos tras la extraccion (marca `scanned_detected`).
+  const scanDetection = new PdfScanDetectionService();
   const pdfMaterials = new PdfMaterialService({
     materials: materialRepo,
     topics: topicRepo,
@@ -143,6 +149,7 @@ export function createAppStore(seed = true): AppStore {
     oppositions: oppositionRepo,
     storage: fileStorage,
     extractor: pdfExtractor,
+    scanDetection,
   });
   const topics = new TopicService(topicRepo, {
     materialRepository: materialRepo,
@@ -155,9 +162,18 @@ export function createAppStore(seed = true): AppStore {
     oppositions: oppositionRepo,
     storage: fileStorage,
     extractor: pdfExtractor,
+    scanDetection,
     zipReader: new FflateZipReader(),
     batches: core.importBatches,
     items: core.importItems,
+  });
+  // SPEC 030: OCR de escaneados (mock en demo; Edge Function real en Fase 2).
+  const materialOcr = new MaterialOcrService({
+    materials: materialRepo,
+    storage: fileStorage,
+    ocrRepository: core.materialOcr,
+    renderService: new PlaceholderPdfPageRenderService(),
+    provider: createOcrProvider(),
   });
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: async (id) =>
@@ -325,6 +341,7 @@ export function createAppStore(seed = true): AppStore {
     pdfMaterials,
     materialImport,
     materialLibrary,
+    materialOcr,
     topics,
     questions,
     generation,

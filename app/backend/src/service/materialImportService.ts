@@ -26,6 +26,7 @@ import type {
 } from '../repository/materialImportRepository.js';
 import type { FileStorage } from '../storage/fileStorage.js';
 import type { PdfTextExtractor } from '../pdf/pdfTextExtractor.js';
+import type { PdfScanDetectionService } from './pdfScanDetectionService.js';
 import type { ZipReader } from '../import/zipReader.js';
 import {
   isUploadCategory,
@@ -138,6 +139,8 @@ export interface MaterialImportServiceDeps {
   oppositions: OppositionRepository;
   storage: FileStorage;
   extractor: PdfTextExtractor;
+  /** SPEC 030: detecta escaneos tras la extraccion (marca `scanned_detected`). */
+  scanDetection?: PdfScanDetectionService;
   zipReader: ZipReader;
   batches: MaterialImportBatchRepository;
   items: MaterialImportItemRepository;
@@ -446,16 +449,22 @@ export class MaterialImportService {
       return this.recordItem(args, null, args.topicId, 'failed', ImportErrorCode.STORAGE_FAILED);
     }
 
-    const { contentText, extractionStatus, extractionError, pageCount } =
-      await this.extractContent(ext, args.bytes);
+    const {
+      contentText,
+      extractionStatus,
+      extractionError,
+      extractionMethod,
+      pageCount,
+    } = await this.extractContent(ext, args.bytes);
 
-    // SPEC 028, 30: en la carga masiva, un PDF sin texto o un archivo de
-    // categoria ambigua nace `needs_review`. En la importacion clasica
+    // SPEC 028, 30: en la carga masiva, un PDF sin texto/escaneado o un archivo
+    // de categoria ambigua nace `needs_review`. En la importacion clasica
     // (SPEC 017) el material nace `active` como hasta ahora.
     const status: Material['status'] =
       args.flagNeedsReview &&
       (extractionStatus === 'not_supported' ||
         extractionStatus === 'failed' ||
+        extractionStatus === 'scanned_detected' ||
         args.detectedCategory === 'unknown')
         ? 'needs_review'
         : 'active';
@@ -477,6 +486,7 @@ export class MaterialImportService {
       file_extension: ext,
       extraction_status: extractionStatus,
       extraction_error: extractionError,
+      extraction_method: extractionMethod,
       page_count: pageCount,
       uploaded_by: args.uploadedBy,
       created_at: timestamp,
@@ -505,14 +515,21 @@ export class MaterialImportService {
     contentText: string | null;
     extractionStatus: Material['extraction_status'];
     extractionError: string | null;
+    extractionMethod: Material['extraction_method'];
     pageCount: number | null;
   }> {
     if (ext === 'pdf') {
       const result = await this.deps.extractor.extract(bytes);
+      // SPEC 030: probable escaneo -> `scanned_detected` (candidato a OCR).
+      const status = this.deps.scanDetection?.evaluate(result).likely_scan
+        ? 'scanned_detected'
+        : result.status;
+      const completed = status === 'completed';
       return {
-        contentText: result.status === 'completed' ? result.text : null,
-        extractionStatus: result.status,
-        extractionError: result.status === 'completed' ? null : result.message,
+        contentText: completed ? result.text : null,
+        extractionStatus: status,
+        extractionError: completed ? null : result.message,
+        extractionMethod: completed ? 'text' : null,
         pageCount: result.page_count,
       };
     }
@@ -522,6 +539,7 @@ export class MaterialImportService {
       contentText: text,
       extractionStatus: 'completed',
       extractionError: null,
+      extractionMethod: 'text',
       pageCount: null,
     };
   }
