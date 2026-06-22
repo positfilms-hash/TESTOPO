@@ -40,6 +40,8 @@ import type {
 import type { RetrievalResult } from './sourceRetrievalService.js';
 import type { ExamPatternAnalysisService } from './examPatternAnalysisService.js';
 import type { MaterialLibraryService } from './materialLibraryService.js';
+import type { MaterialOcrService } from './materialOcrService.js';
+import { OcrError, OcrErrorCode } from '../ocr/ocrErrors.js';
 import type { AIErrorMemoryService } from './aiErrorMemoryService.js';
 import { formatStyleRules } from '../analysis/examPatternMatching.js';
 import type {
@@ -160,6 +162,8 @@ export interface PlatformServiceDeps {
   aiErrorMemory?: AIErrorMemoryService;
   /** Biblioteca de material (SPEC 029): abrir/borrar seguro. Opcional. */
   materialLibrary?: MaterialLibraryService;
+  /** OCR de escaneados (SPEC 030). Opcional. */
+  materialOcr?: MaterialOcrService;
   testGenerator: TestGeneratorService;
   attempts: TestAttemptService;
 }
@@ -487,6 +491,32 @@ export class PlatformService {
     const material = await this.deps.materials.getMaterial(materialId);
     await this.requireManageOpposition(actor, material?.opposition_id);
     await this.requireMaterialLibrary().deleteMaterial(materialId);
+  }
+
+  // --- OCR de escaneados (SPEC 030). Solo gestion; el alumno no accede. -------
+
+  async startMaterialOcr(actor: User, materialId: string) {
+    const material = await this.deps.materials.getMaterial(materialId);
+    await this.requireManageOpposition(actor, material?.opposition_id);
+    return this.requireMaterialOcr().startOcr({
+      material_id: materialId,
+      created_by: actor.id,
+    });
+  }
+
+  async retryMaterialOcr(actor: User, materialId: string) {
+    const material = await this.deps.materials.getMaterial(materialId);
+    await this.requireManageOpposition(actor, material?.opposition_id);
+    return this.requireMaterialOcr().retryOcr({
+      material_id: materialId,
+      created_by: actor.id,
+    });
+  }
+
+  async getMaterialOcrStatus(actor: User, materialId: string) {
+    const material = await this.deps.materials.getMaterial(materialId);
+    await this.requireManageOpposition(actor, material?.opposition_id);
+    return this.requireMaterialOcr().getStatus(materialId);
   }
 
   async createTopic(actor: User, input: CreateTopicInput): Promise<Topic> {
@@ -1061,6 +1091,16 @@ export class PlatformService {
       throw new Error('Biblioteca de material no configurada.');
     }
     return this.deps.materialLibrary;
+  }
+
+  private requireMaterialOcr(): MaterialOcrService {
+    if (!this.deps.materialOcr) {
+      throw new OcrError(
+        OcrErrorCode.PROVIDER_NOT_CONFIGURED,
+        'OCR no configurado.',
+      );
+    }
+    return this.deps.materialOcr;
   }
 
   // Guard de gestion derivado del perfil (via su oposicion).

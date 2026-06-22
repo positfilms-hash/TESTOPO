@@ -16,6 +16,7 @@ import type { OppositionRepository } from '../repository/oppositionRepository.js
 import type { TopicMaterialLinkRepository } from '../repository/topicMaterialLinkRepository.js';
 import type { FileStorage } from '../storage/fileStorage.js';
 import type { PdfTextExtractor } from '../pdf/pdfTextExtractor.js';
+import type { PdfScanDetectionService } from './pdfScanDetectionService.js';
 import {
   MAX_PDF_SIZE_BYTES,
   PdfErrorCode,
@@ -48,6 +49,8 @@ export interface PdfMaterialServiceDeps {
   oppositions: OppositionRepository;
   storage: FileStorage;
   extractor: PdfTextExtractor;
+  /** SPEC 030: detecta escaneos tras la extraccion (marca `scanned_detected`). */
+  scanDetection?: PdfScanDetectionService;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -134,6 +137,13 @@ export class PdfMaterialService {
 
     // --- Extraccion de texto (PDF.js, sin OCR) ---
     const extraction = await this.deps.extractor.extract(validFile.bytes);
+    // SPEC 030: si no hay texto nativo util pero hay paginas, es probable escaneo
+    // -> `scanned_detected` (candidato a OCR a peticion del gestor).
+    const resolvedStatus =
+      this.deps.scanDetection?.evaluate(extraction).likely_scan
+        ? 'scanned_detected'
+        : extraction.status;
+    const completed = resolvedStatus === 'completed';
     const timestamp = this.now();
     const material: Material = {
       id: this.generateId(),
@@ -143,17 +153,17 @@ export class PdfMaterialService {
       type: input.type as MaterialType,
       // Una extraccion no completada deja el material en revision para que no
       // contamine el pipeline (clasificacion/secciones/indice/generacion).
-      status: extraction.status === 'completed' ? 'active' : 'needs_review',
+      status: completed ? 'active' : 'needs_review',
       original_filename: validFile.original_filename,
       mime_type: validFile.mime_type ?? 'application/pdf',
       size_bytes: validFile.bytes.length,
       storage_path: storagePath,
-      content_text: extraction.status === 'completed' ? extraction.text : null,
+      content_text: completed ? extraction.text : null,
       reference: input.reference ?? null,
       file_extension: 'pdf',
-      extraction_status: extraction.status,
-      extraction_error:
-        extraction.status === 'completed' ? null : extraction.message,
+      extraction_status: resolvedStatus,
+      extraction_error: completed ? null : extraction.message,
+      extraction_method: completed ? 'text' : null,
       page_count: extraction.page_count,
       uploaded_by: input.uploaded_by ?? null,
       created_at: timestamp,

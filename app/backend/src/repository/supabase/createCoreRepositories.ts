@@ -33,6 +33,7 @@ import type { MaterialSectionRepository } from '../materialSectionRepository.js'
 import type { SourceReferenceRepository } from '../sourceReferenceRepository.js';
 import type { SyllabusIndexRepository } from '../syllabusIndexRepository.js';
 import type { ExamPatternLearningRepository } from '../examPatternLearningRepository.js';
+import type { MaterialOcrRepository } from '../materialOcrRepository.js';
 import { InMemoryUserRepository } from '../inMemoryUserRepository.js';
 import { InMemoryWorkspaceRepository } from '../inMemoryWorkspaceRepository.js';
 import { InMemoryWorkspaceMemberRepository } from '../inMemoryWorkspaceMemberRepository.js';
@@ -64,6 +65,7 @@ import {
 } from '../inMemorySectionsRepositories.js';
 import { InMemorySyllabusIndexRepository } from '../inMemorySyllabusIndexRepository.js';
 import { InMemoryExamPatternLearningRepository } from '../inMemoryExamPatternLearningRepository.js';
+import { InMemoryMaterialOcrRepository } from '../inMemoryMaterialOcrRepository.js';
 import type { SupabaseClientPort } from './supabaseClientPort.js';
 import { SupabaseProfileRepository } from './supabaseProfileRepository.js';
 import { SupabaseWorkspaceRepository } from './supabaseWorkspaceRepository.js';
@@ -100,6 +102,7 @@ import {
 } from './supabaseSectionsRepositories.js';
 import { SupabaseSyllabusIndexRepository } from './supabaseSyllabusIndexRepository.js';
 import { SupabaseExamPatternLearningRepository } from './supabaseExamPatternLearningRepository.js';
+import { SupabaseMaterialOcrRepository } from './supabaseMaterialOcrRepository.js';
 import {
   SupabaseRepositoryError,
   SupabaseRepositoryErrorCode,
@@ -145,6 +148,8 @@ export interface CoreRepositories {
   /** SPEC 028-F: aprendizaje de patrones de examen (perfiles de estilo, runs de
    * analisis, patrones por tema, memoria de errores IA y quality scores). */
   examPatternLearning: ExamPatternLearningRepository;
+  /** SPEC 030: runs + paginas de OCR de material escaneado. */
+  materialOcr: MaterialOcrRepository;
   /** Modo efectivo usado (tras aplicar fallback). */
   mode: PersistenceMode;
 }
@@ -214,6 +219,7 @@ export function createCoreRepositories(
       sourceReferences: new SupabaseSourceReferenceRepository(port),
       syllabusIndex: new SupabaseSyllabusIndexRepository(port),
       examPatternLearning: new SupabaseExamPatternLearningRepository(port),
+      materialOcr: new SupabaseMaterialOcrRepository(port),
       mode,
     };
   }
@@ -244,6 +250,7 @@ export function createCoreRepositories(
     sourceReferences: new InMemorySourceReferenceRepository(),
     syllabusIndex: new InMemorySyllabusIndexRepository(),
     examPatternLearning: new InMemoryExamPatternLearningRepository(),
+    materialOcr: new InMemoryMaterialOcrRepository(),
     mode,
   };
 }
