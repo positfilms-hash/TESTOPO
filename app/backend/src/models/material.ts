@@ -31,6 +31,34 @@ export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number];
 export const EXTRACTION_METHODS = ['text', 'ocr', 'mixed'] as const;
 export type ExtractionMethod = (typeof EXTRACTION_METHODS)[number];
 
+// Estados de extraccion cuyo `content_text` es UTILIZABLE para analisis (SPEC 032):
+// texto nativo (`completed`) y texto recuperado por OCR (`completed_ocr` y
+// `completed_ocr_with_warnings`). El de advertencias es utilizable pero debe
+// arrastrar un aviso a la revision. Quedan fuera: not_started/processing/
+// scanned_detected/ocr_processing (aun sin texto) y failed/not_supported/ocr_failed.
+export const USABLE_EXTRACTION_STATUSES = [
+  'completed',
+  'completed_ocr',
+  'completed_ocr_with_warnings',
+] as const;
+
+export function isUsableExtraction(
+  status: ExtractionStatus | null | undefined,
+): boolean {
+  return (
+    status != null &&
+    (USABLE_EXTRACTION_STATUSES as readonly string[]).includes(status)
+  );
+}
+
+// El texto se recupero por OCR con paginas de baja calidad: utilizable, pero la
+// revision debe avisarlo (SPEC 030/032).
+export function extractionHasOcrWarnings(
+  status: ExtractionStatus | null | undefined,
+): boolean {
+  return status === 'completed_ocr_with_warnings';
+}
+
 export interface Material {
   id: string;
   /** Oposicion a la que pertenece el material (SPEC 010). Obligatorio. */

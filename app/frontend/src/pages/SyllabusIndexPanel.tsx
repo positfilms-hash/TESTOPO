@@ -105,7 +105,7 @@ function depthOf(
   return depth;
 }
 
-function ProposalReview({
+export function ProposalReview({
   detail,
   onReload,
   onApplied,

@@ -11,7 +11,8 @@
 //   un intento solo lo ve/gestiona su propio usuario.
 
 import type { User } from '../models/user.js';
-import type { Material } from '../models/material.js';
+import { isUsableExtraction, type Material } from '../models/material.js';
+import { isEligibleDocumentClass } from '../models/materialSection.js';
 import {
   STUDENT_HIDDEN_CLASSES,
   type DocumentClass,
@@ -746,6 +747,61 @@ export class PlatformService {
       opposition_title: opposition?.title ?? null,
       created_by: actor.id,
       material_ids: input.material_ids,
+    });
+  }
+
+  // SPEC 032 "Generar temario": un solo flujo controlado para la oposicion
+  // actual. Compone los pasos ya existentes (no anade pipeline nuevo): (1)
+  // clasifica el material (idempotente, respeta correcciones manuales), (2) crea
+  // las secciones que falten en el material ELEGIBLE (texto nativo o de OCR), y
+  // (3) propone el indice anclado a documentos. Devuelve el tipo de dominio
+  // existente. No aplica nada: la propuesta queda pendiente de revision humana.
+  async generateSyllabusForOpposition(
+    actor: User,
+    oppositionId: string,
+  ): Promise<GroundedProposalDetail> {
+    await this.requireManageOpposition(actor, oppositionId);
+    const classifier = this.requireDocumentClassification();
+    const sectionsSvc = this.requireMaterialSections();
+    const grounded = this.requireSyllabusFromDocuments();
+
+    // 1) Clasifica todo el material analizable de la oposicion.
+    const inventory = await classifier.classifyOpposition({
+      opposition_id: oppositionId,
+      created_by: actor.id,
+    });
+
+    // 2) Crea secciones para el material elegible que aun no las tenga.
+    for (const entry of inventory.classifications) {
+      if (!isEligibleDocumentClass(entry.classification)) {
+        continue;
+      }
+      const material = await this.deps.materials.getMaterial(entry.material_id);
+      if (!material || !isUsableExtraction(material.extraction_status)) {
+        continue;
+      }
+      const existing = await sectionsSvc.listByMaterial(entry.material_id);
+      if (existing.length > 0) {
+        continue;
+      }
+      try {
+        await sectionsSvc.createSectionsForMaterial(entry.material_id);
+      } catch (error) {
+        // Material no seccionable (texto insuficiente, etc.): se omite. Si falta
+        // material primario, proposeFromDocuments avisara con NO_MATERIALS.
+        if (!(error instanceof MaterialSectionError)) {
+          throw error;
+        }
+      }
+    }
+
+    // 3) Propone el indice anclado a documentos (pendiente de revision).
+    const opposition = await this.deps.oppositionRepository.findById(oppositionId);
+    return grounded.proposeFromDocuments({
+      opposition_id: oppositionId,
+      workspace_id: opposition?.workspace_id ?? null,
+      opposition_title: opposition?.title ?? null,
+      created_by: actor.id,
     });
   }
 

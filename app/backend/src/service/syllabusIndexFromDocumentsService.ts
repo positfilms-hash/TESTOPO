@@ -7,7 +7,11 @@
 // explicita y crea referencias de fuente por tema.
 
 import { randomUUID } from 'node:crypto';
-import type { Material } from '../models/material.js';
+import {
+  extractionHasOcrWarnings,
+  isUsableExtraction,
+  type Material,
+} from '../models/material.js';
 import type { Topic } from '../models/topic.js';
 import { isDocumentClass } from '../models/documentClassification.js';
 import type {
@@ -448,8 +452,15 @@ export class SyllabusIndexFromDocumentsService {
       if (!isPrimary && !isSecondary) {
         continue; // irrelevant/not_analyzable/ambiguous (no corregido): excluido.
       }
-      if (material.extraction_status !== 'completed') {
+      // Texto nativo o recuperado por OCR (SPEC 030/032). El OCR con advertencias
+      // es utilizable pero arrastra un aviso a la revision.
+      if (!isUsableExtraction(material.extraction_status)) {
         continue;
+      }
+      if (extractionHasOcrWarnings(material.extraction_status)) {
+        warnings.push(
+          `"${material.title}" se leyó con OCR y puede contener errores: revísalo.`,
+        );
       }
       enriched.push({ material, cls, confidence: classification.confidence, isPrimary });
     }

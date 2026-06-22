@@ -63,17 +63,13 @@ archivo).
    extraído y cuántos no. Un PDF **escaneado** (imágenes, sin texto seleccionable)
    se detecta automáticamente y queda marcado como **«Escaneo detectado»**: puedes
    leerlo con **OCR** (ver más abajo).
-2. **Revisar documentos** (SPEC 028-B): la app clasifica cada archivo y te muestra
-   un **inventario** agrupado: temario/material de estudio, tests antiguos/
-   exámenes, textos legales, apuntes, índices, y los que necesitan revisión
-   (dudosos o no analizables). Cada documento muestra su confianza y el motivo.
-   Si la clasificación se equivoca, **corrígela tú**: tu corrección manda sobre la
-   IA. Se activa por defecto con la casilla "Clasificar documentos después de
-   importar"; si la desmarcas, puedes pulsar **Revisar documentos** en el resumen.
-3. La clasificación **no genera índice ni preguntas todavía**. Solo identifica qué
-   es cada archivo, para que el índice de temario y las preguntas (más adelante)
-   partan de documentos bien entendidos y revisados. El **Crear índice con IA**
-   sigue disponible de forma manual en *Temario*.
+2. **Genera el temario** (SPEC 032): ve a **Temario** y pulsa **Generar temario**.
+   En un solo paso, la app clasifica tus documentos, crea sus secciones y te
+   propone un **índice de temas con fuentes** para que lo revises. No tienes que
+   clasificar ni seccionar a mano. Ver
+   [Generar el temario con IA](./create-syllabus-index.md).
+3. Generar el temario **no crea preguntas ni tests**, y **no aplica nada** sin tu
+   visto bueno: revisas la propuesta, la apruebas y la aplicas tú.
 
 > Los **tests antiguos** y los documentos no aptos (dudosos, no analizables,
 > irrelevantes) son material **interno**: los alumnos nunca los ven en su lista de

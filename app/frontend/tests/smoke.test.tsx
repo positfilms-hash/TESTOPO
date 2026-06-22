@@ -82,23 +82,21 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     expect(screen.queryByRole('button', { name: 'Pegar texto' })).toBeNull();
   });
 
-  it('admin: Temario ya no sube material; redirige a la seccion Material (SPEC 028)', async () => {
+  it('admin: Temario aplicado muestra el arbol y permite regenerar/anadir (SPEC 032)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
       within(screen.getByLabelText('Navegacion principal')).getByText('Temario'),
     );
+    // Con temario ya aplicado (demo), el Topic Map es el contenido principal.
     expect(await screen.findByText('Temas')).toBeInTheDocument();
-    expect(screen.getByText('Anadir tema')).toBeInTheDocument();
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Tema 1 - Constitucion/ }),
-    );
-    // Ya no hay subida/importacion por-tema: se centraliza en "Material".
+    expect(screen.getByRole('button', { name: 'Añadir tema' })).toBeInTheDocument();
+    // SPEC 032: regenerar el temario desde el material es la accion principal.
     expect(
-      await screen.findByText(
-        'Para anadir material usa "Subir material" en la seccion Material.',
-      ),
+      screen.getByRole('button', { name: 'Regenerar temario' }),
     ).toBeInTheDocument();
+    // El arbol muestra los temas aplicados; ya no hay subida/importacion por-tema.
+    expect(screen.getByText(/Tema 1 - Constitucion/)).toBeInTheDocument();
     expect(screen.queryByText('Importar ZIP')).toBeNull();
   });
 

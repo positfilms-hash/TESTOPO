@@ -6,7 +6,7 @@
 // correccion humana prevalece. NO genera indice ni preguntas.
 
 import { randomUUID } from 'node:crypto';
-import type { Material } from '../models/material.js';
+import { isUsableExtraction, type Material } from '../models/material.js';
 import type { MaterialImportItem } from '../models/materialImportItem.js';
 import {
   isDocumentClass,
@@ -248,10 +248,11 @@ export class DocumentClassificationService {
         byMaterial.set(material.id, existing);
         continue;
       }
-      // Salta extraccion fallida/escaneada (no analizable) con aviso.
+      // Salta extraccion no utilizable (fallida/escaneo sin OCR) con aviso.
+      // Texto nativo y texto recuperado por OCR (SPEC 030/032) SI son analizables.
       if (
         material.extraction_status &&
-        material.extraction_status !== 'completed'
+        !isUsableExtraction(material.extraction_status)
       ) {
         warnings.push(
           `"${material.title}" se omitió: extracción ${material.extraction_status}.`,

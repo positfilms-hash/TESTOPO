@@ -15,8 +15,8 @@ import {
 
 // SPEC 029: Material es una biblioteca de archivos simple. Una sola orden
 // "Subir material" abre un menu compacto (PDF / ZIP / carpeta). El intake es
-// NEUTRO (sin categoria ni auto-clasificacion: la clasificacion vive en Temario,
-// "Analizar material"). Cada material se muestra como una fila con `Abrir`
+// NEUTRO (sin categoria ni auto-clasificacion: el analisis vive en Temario,
+// "Generar temario", SPEC 032). Cada material se muestra como una fila con `Abrir`
 // (previsualiza el PDF de forma segura) y `Eliminar` (borrado con trazabilidad).
 
 const TYPE_LABELS: Record<MaterialType, string> = {
@@ -85,7 +85,7 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
       setMenuOpen(false);
       setNotice({
         type: 'success',
-        text: `${batch.imported_files} archivo(s) subido(s). Clasifícalos en Temario → "Analizar material".`,
+        text: `${batch.imported_files} archivo(s) subido(s). Genera el índice en Temario → "Generar temario".`,
       });
       refresh();
     } catch (err) {
