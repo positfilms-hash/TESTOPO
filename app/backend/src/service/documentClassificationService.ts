@@ -199,6 +199,127 @@ export class DocumentClassificationService {
     return { run: finalRun, classifications: created };
   }
 
+  // --- Clasificar TODA la oposicion (SPEC 029, "Analizar material") --------
+
+  // Clasifica todos los materiales `active` y analizables de la oposicion (no
+  // solo un lote). Preserva las correcciones manuales (no reclasifica los
+  // corregidos a mano), salta la extraccion fallida/escaneada con un aviso, y NO
+  // genera indice, preguntas ni tests. Devuelve el inventario revisable.
+  async classifyOpposition(input: {
+    opposition_id: string;
+    created_by?: string | null;
+  }): Promise<DocumentInventory> {
+    const oppositionId = input.opposition_id;
+    const materials = (
+      await this.materials.findAll({ opposition_id: oppositionId })
+    ).filter((m) => m.status === 'active');
+
+    const timestamp = this.now();
+    const run = await this.runs.create({
+      id: this.generateId(),
+      workspace_id: null,
+      opposition_id: oppositionId,
+      batch_id: null,
+      created_by: input.created_by ?? null,
+      status: 'processing',
+      provider: this.provider.name,
+      model: this.provider.model,
+      total_materials: materials.length,
+      classified_materials: 0,
+      needs_review_count: 0,
+      not_analyzable_count: 0,
+      warnings: [],
+      errors: [],
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+
+    const warnings: string[] = [];
+    let needsReviewCount = 0;
+    let notAnalyzableCount = 0;
+    let classifiedCount = 0;
+    // Inventario: la clasificacion vigente por material (nueva o preservada).
+    const byMaterial = new Map<string, DocumentClassification>();
+
+    for (const material of materials) {
+      const existing = await this.classifications.findByMaterial(material.id);
+      // Preserva la correccion humana: no reclasifica.
+      if (existing?.manually_corrected) {
+        byMaterial.set(material.id, existing);
+        continue;
+      }
+      // Salta extraccion fallida/escaneada (no analizable) con aviso.
+      if (
+        material.extraction_status &&
+        material.extraction_status !== 'completed'
+      ) {
+        warnings.push(
+          `"${material.title}" se omitió: extracción ${material.extraction_status}.`,
+        );
+        if (existing) byMaterial.set(material.id, existing);
+        continue;
+      }
+
+      const output = await this.classifyOne(material, undefined, warnings);
+      const needsReview =
+        output.confidence < this.config.confidence_threshold ||
+        ALWAYS_REVIEW.has(output.classification);
+      if (needsReview) needsReviewCount += 1;
+      if (output.classification === 'not_analyzable') notAnalyzableCount += 1;
+
+      const ts = this.now();
+      const classification = await this.classifications.create({
+        id: this.generateId(),
+        workspace_id: null,
+        opposition_id: oppositionId,
+        material_id: material.id,
+        run_id: run.id,
+        classification: output.classification,
+        confidence: output.confidence,
+        reason: output.reason,
+        detected_title: output.detected_title,
+        detected_document_date: null,
+        detected_question_count: output.detected_question_count,
+        detected_page_count: material.page_count ?? null,
+        needs_review: needsReview,
+        manually_corrected: false,
+        corrected_by: null,
+        corrected_at: null,
+        warnings: output.warnings,
+        created_at: ts,
+        updated_at: ts,
+      });
+      byMaterial.set(material.id, classification);
+      classifiedCount += 1;
+      await this.applyMaterialStatus(material, output.classification, needsReview);
+    }
+
+    const finalRun = await this.runs.save({
+      ...run,
+      status: warnings.length > 0 ? 'completed_with_warnings' : 'completed',
+      classified_materials: classifiedCount,
+      needs_review_count: needsReviewCount,
+      not_analyzable_count: notAnalyzableCount,
+      warnings,
+      updated_at: this.now(),
+    });
+
+    return { run: finalRun, classifications: [...byMaterial.values()] };
+  }
+
+  // Inventario por oposicion: la clasificacion vigente de cada material activo.
+  async getOppositionInventory(oppositionId: string): Promise<DocumentInventory> {
+    const materials = (
+      await this.materials.findAll({ opposition_id: oppositionId })
+    ).filter((m) => m.status === 'active');
+    const classifications: DocumentClassification[] = [];
+    for (const material of materials) {
+      const c = await this.classifications.findByMaterial(material.id);
+      if (c) classifications.push(c);
+    }
+    return { run: null, classifications };
+  }
+
   // --- Inventario ----------------------------------------------------------
 
   // Inventario del lote: la ejecucion mas reciente + sus clasificaciones.
