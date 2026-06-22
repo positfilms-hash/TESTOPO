@@ -6,12 +6,14 @@ leerlos y los marca `not_supported`/`failed`, así que su contenido nunca llega 
 clasificación, secciones, índice ni generación de preguntas. SPEC 030 añade un
 **camino OCR** acotado para recuperar ese texto y devolverlo al pipeline normal.
 
-> **Fase 1 (esta entrega)**: dominio + persistencia + orquestación con un
-> **proveedor mock determinista sin red** (`MockOcrProvider`) y un render
-> placeholder. El proveedor real (visión por IA) se enchufa en **Fase 2** vía
-> **Edge Function**, donde la clave es un secreto del servidor — **nunca** del
-> frontend/Vite. Ver [persistence.md](./persistence.md) y la fila 032 del
-> [runbook de migraciones](../setup/migrations-runbook.md).
+> **Fase 1**: dominio + persistencia + orquestación con un **proveedor mock
+> determinista sin red** (`MockOcrProvider`) y un render placeholder.
+> **Fase 2**: UI de gestión en Material (badge + Reintentar OCR + detalle), el
+> seam de proveedor real `EdgeFunctionOcrProvider` y el **scaffold** de la Edge
+> Function `ocr-material`. La clave del proveedor es un secreto del servidor —
+> **nunca** del frontend/Vite. Ver [persistence.md](./persistence.md), la fila 032
+> del [runbook de migraciones](../setup/migrations-runbook.md) y
+> [supabase-edge-functions.md](../setup/supabase-edge-functions.md).
 
 OCR sólo **recupera texto**: no clasifica el documento ni genera contenido. Es
 metadata operativa de **gestión**; el alumno no la ve.
@@ -119,10 +121,59 @@ aplique (proveedor real).
 - No usa RAG/embeddings ni fine-tuning.
 - No expone claves al frontend: el proveedor real corre en la Edge Function.
 
-## Fase 2 (PR aparte)
+## Fase 2: UI de gestión y seam de proveedor real
 
-UI en `MaterialPage` (badge por archivo: *Texto extraído / Escaneo detectado /
-Leyendo escaneo / Leído con OCR / OCR con advertencias / No se pudo leer* +
-**Reintentar OCR** sólo en `scanned`/`warning`/`failed`, detalle compacto sólo
-gestor), Edge Function `supabase/functions/ocr-material/` (scaffold) +
-`EdgeFunctionOcrProvider`, y pasos de despliegue.
+### UI (`MaterialPage`, solo gestor)
+
+Por archivo se muestra **un badge de estado OCR** derivado de `extraction_status`
+(`OcrBadge`/`ocrStatusInfo` en `components/ui.tsx`):
+
+| `extraction_status` | Badge | Tono |
+| --- | --- | --- |
+| `completed` | Texto extraído | success |
+| `scanned_detected` | Escaneo detectado | info |
+| `ocr_processing` | Leyendo escaneo | info |
+| `completed_ocr` | Leído con OCR | success |
+| `completed_ocr_with_warnings` | OCR con advertencias | warning |
+| `ocr_failed` | No se pudo leer | danger |
+
+- **Botón OCR** sólo en estados `scanned_detected` / `completed_ocr_with_warnings`
+  / `ocr_failed` (`ocrCanRetry`): **«Leer escaneo (OCR)»** en el primer intento
+  (`ocrIsFirstRun` → `startMaterialOcr`) y **«Reintentar OCR»** después
+  (`retryMaterialOcr`). La acción `Abrir` (URL firmada/object URL, nunca
+  `storage_path`) sigue disponible.
+- **Detalle compacto** (`ocrHasOutcome`) sólo para resultados de OCR: páginas
+  leídas/total, páginas con fallo, confianza media (%), nº de advertencias y el
+  texto de error accionable. Tomado de la metadata `ocr_*` del material (sin
+  fetch extra). **El alumno no ve nada de esto** (controles bajo `isAdmin` y el
+  facade deniega el acceso).
+
+### `EdgeFunctionOcrProvider` (seam del proveedor real)
+
+`OcrProvider` que delega el reconocimiento de cada página en la Edge Function
+`ocr-material` por HTTP: envía `{ page_number, image_base64 }` con el **Bearer de
+la sesión del gestor** y recibe `{ text, confidence, warnings }`. El navegador
+renderiza la imagen (sin secretos) y la Edge Function guarda la **clave del
+proveedor OCR/vision** como secreto de servidor. Un fallo de transporte/estado
+lanza `OcrError(PAGE_FAILED)`, que `MaterialOcrService` captura por página sin
+romper el run.
+
+`createOcrProvider({ edgeFunctionUrl, getAuthToken, fetchImpl })` devuelve el
+proveedor Edge Function cuando hay URL; si no, el mock (demo/tests). El
+`appStore` activa el real sólo en modo Supabase con `VITE_OCR_EDGE_FUNCTION_URL`
+configurada; en otro caso usa el mock.
+
+### Edge Function `ocr-material` (scaffold)
+
+`supabase/functions/ocr-material/index.ts`: autentica el JWT del gestor, valida el
+payload y, sin `OCR_PROVIDER_API_KEY`, responde `501 OCR_PROVIDER_NOT_CONFIGURED`.
+Marca el **punto exacto de integración** del proveedor real (paso 4). No contiene
+claves; nunca devuelve `storage_path`, claves ni URLs internas. Despliegue,
+secretos y pruebas: [supabase-edge-functions.md](../setup/supabase-edge-functions.md).
+
+### Render real de páginas (pendiente)
+
+En Fase 2 el render sigue siendo `PlaceholderPdfPageRenderService` (imágenes
+vacías). El render real PDF→imagen en el navegador (canvas/pdfjs) queda como
+trabajo posterior; el seam (`PdfPageRenderService`) ya está listo para
+sustituirlo sin tocar la orquestación.

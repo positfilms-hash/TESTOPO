@@ -291,6 +291,28 @@ h4 {
   color: #6b7280;
 }
 
+/* SPEC 030: tonos del estado OCR por archivo (solo gestor). */
+.badge.ocr-success {
+  background: var(--success-soft);
+  color: #15803d;
+}
+.badge.ocr-info {
+  background: var(--accent-soft);
+  color: #1f4f82;
+}
+.badge.ocr-warning {
+  background: var(--warning-soft);
+  color: #92580a;
+}
+.badge.ocr-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.badge.ocr-neutral {
+  background: #edeef0;
+  color: #6b7280;
+}
+
 .field {
   margin-bottom: 14px;
   display: flex;
