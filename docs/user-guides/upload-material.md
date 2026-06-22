@@ -60,8 +60,9 @@ archivo).
 ## Qué pasa después de subir
 
 1. Verás un **resumen**: cuántos archivos se importaron, cuántos tienen texto
-   extraído y cuántos no (p. ej. un PDF escaneado no tiene texto seleccionable; se
-   queda pendiente de revisión, sin OCR por ahora).
+   extraído y cuántos no. Un PDF **escaneado** (imágenes, sin texto seleccionable)
+   se detecta automáticamente y queda marcado como **«Escaneo detectado»**: puedes
+   leerlo con **OCR** (ver más abajo).
 2. **Revisar documentos** (SPEC 028-B): la app clasifica cada archivo y te muestra
    un **inventario** agrupado: temario/material de estudio, tests antiguos/
    exámenes, textos legales, apuntes, índices, y los que necesitan revisión
@@ -77,6 +78,29 @@ archivo).
 > Los **tests antiguos** y los documentos no aptos (dudosos, no analizables,
 > irrelevantes) son material **interno**: los alumnos nunca los ven en su lista de
 > material de estudio.
+
+## PDFs escaneados: leer con OCR (SPEC 030)
+
+Si subes un PDF que en realidad son **imágenes** (un escaneo, sin texto
+seleccionable), la app lo detecta y, en la sección *Material*, lo marca con una
+etiqueta de estado:
+
+| Etiqueta | Qué significa |
+| --- | --- |
+| **Texto extraído** | El PDF ya traía texto legible; no necesita OCR. |
+| **Escaneo detectado** | Es un escaneo. Pulsa **«Leer escaneo (OCR)»** para extraer el texto. |
+| **Leyendo escaneo** | OCR en curso. |
+| **Leído con OCR** | Texto recuperado correctamente. |
+| **OCR con advertencias** | Texto recuperado pero con páginas de baja calidad: **revísalo**. |
+| **No se pudo leer** | El OCR no extrajo texto utilizable. Puedes **«Reintentar OCR»**. |
+
+- El botón **«Leer escaneo (OCR)»** / **«Reintentar OCR»** y el detalle (páginas
+  leídas, confianza, advertencias) son **solo para gestores**: los alumnos no ven
+  nada de esto.
+- Un OCR fallido **no borra** un texto bueno que ya tuviera el material.
+- El OCR **solo recupera texto**: no clasifica el documento ni genera preguntas.
+  En la demo usa un lector simulado; en producción, un proveedor real a través de
+  una función de servidor (la clave nunca está en el navegador).
 
 ## Por qué las preguntas no se generan "validadas" automáticamente
 

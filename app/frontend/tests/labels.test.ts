@@ -3,7 +3,14 @@
 // pruebas fijan las etiquetas de estado y dificultad en espanol.
 
 import { describe, expect, it } from 'vitest';
-import { statusLabel, difficultyLabel } from '../src/components/ui.js';
+import {
+  statusLabel,
+  difficultyLabel,
+  ocrStatusInfo,
+  ocrCanRetry,
+  ocrIsFirstRun,
+  ocrHasOutcome,
+} from '../src/components/ui.js';
 
 describe('SPEC 016 - etiquetas de estado en espanol', () => {
   const cases: Array<[string, string]> = [
@@ -57,5 +64,46 @@ describe('SPEC 016 - etiquetas de dificultad en espanol', () => {
     ['mixed', 'Mixta'],
   ])('dificultad %s -> %s', (value, label) => {
     expect(difficultyLabel(value)).toBe(label);
+  });
+});
+
+describe('SPEC 030 - estado OCR por archivo (gestor)', () => {
+  it.each([
+    ['completed', 'Texto extraido'],
+    ['scanned_detected', 'Escaneo detectado'],
+    ['ocr_processing', 'Leyendo escaneo'],
+    ['completed_ocr', 'Leido con OCR'],
+    ['completed_ocr_with_warnings', 'OCR con advertencias'],
+    ['ocr_failed', 'No se pudo leer'],
+  ])('extraction_status %s -> badge "%s"', (status, label) => {
+    expect(ocrStatusInfo(status)?.label).toBe(label);
+  });
+
+  it('no muestra badge OCR para estados sin mapa (ni undefined)', () => {
+    expect(ocrStatusInfo('not_started')).toBeNull();
+    expect(ocrStatusInfo(undefined)).toBeNull();
+  });
+
+  it('el boton OCR solo aparece en escaneo/advertencias/fallo', () => {
+    expect(ocrCanRetry('scanned_detected')).toBe(true);
+    expect(ocrCanRetry('completed_ocr_with_warnings')).toBe(true);
+    expect(ocrCanRetry('ocr_failed')).toBe(true);
+    // No reintentable: nativo, en proceso, ni OCR limpio.
+    expect(ocrCanRetry('completed')).toBe(false);
+    expect(ocrCanRetry('ocr_processing')).toBe(false);
+    expect(ocrCanRetry('completed_ocr')).toBe(false);
+  });
+
+  it('distingue primer OCR (escaneo) de reintento', () => {
+    expect(ocrIsFirstRun('scanned_detected')).toBe(true);
+    expect(ocrIsFirstRun('ocr_failed')).toBe(false);
+  });
+
+  it('el detalle compacto solo aplica a resultados de OCR', () => {
+    expect(ocrHasOutcome('completed_ocr')).toBe(true);
+    expect(ocrHasOutcome('completed_ocr_with_warnings')).toBe(true);
+    expect(ocrHasOutcome('ocr_failed')).toBe(true);
+    expect(ocrHasOutcome('scanned_detected')).toBe(false);
+    expect(ocrHasOutcome('completed')).toBe(false);
   });
 });

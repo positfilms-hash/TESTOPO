@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { Material, MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
-import { Badge, Button, EmptyState, PageHeader } from '../components/ui.js';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  OcrBadge,
+  PageHeader,
+  ocrCanRetry,
+  ocrHasOutcome,
+  ocrIsFirstRun,
+} from '../components/ui.js';
 
 // SPEC 029: Material es una biblioteca de archivos simple. Una sola orden
 // "Subir material" abre un menu compacto (PDF / ZIP / carpeta). El intake es
@@ -146,6 +155,32 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   };
 
+  // --- OCR de escaneados (SPEC 030, solo gestor). Lanza o reintenta el OCR. ---
+  const runOcr = async (m: Material) => {
+    if (!currentUser) return;
+    setNotice(null);
+    setBusy(true);
+    try {
+      const first = ocrIsFirstRun(m.extraction_status);
+      const status = first
+        ? await store.platform.startMaterialOcr(currentUser, m.id)
+        : await store.platform.retryMaterialOcr(currentUser, m.id);
+      const ok =
+        status.extraction_status === 'completed_ocr' ||
+        status.extraction_status === 'completed_ocr_with_warnings';
+      setNotice(
+        ok
+          ? { type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' }
+          : { type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' },
+      );
+      refresh();
+    } catch (err) {
+      setNotice({ type: 'error', text: ocrErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader title="Material" />
@@ -225,8 +260,15 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
               <div className="row">
                 <Badge status={m.status} />
+                {/* SPEC 030: estado OCR por archivo, solo para el gestor. */}
+                {isAdmin && <OcrBadge extractionStatus={m.extraction_status} />}
                 {isAdmin && (
                   <>
+                    {ocrCanRetry(m.extraction_status) && (
+                      <Button variant="secondary" small disabled={busy} onClick={() => runOcr(m)}>
+                        {ocrIsFirstRun(m.extraction_status) ? 'Leer escaneo (OCR)' : 'Reintentar OCR'}
+                      </Button>
+                    )}
                     <Button variant="secondary" small onClick={() => openMaterial(m.id)}>
                       Abrir
                     </Button>
@@ -237,6 +279,26 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 )}
               </div>
             </div>
+            {/* Detalle compacto del OCR (solo gestor; nunca visible para el alumno). */}
+            {isAdmin && ocrHasOutcome(m.extraction_status) && (
+              <div className="muted small" style={{ marginTop: 8 }}>
+                {typeof m.ocr_page_count === 'number' && (
+                  <span>
+                    {m.ocr_processed_pages ?? 0}/{m.ocr_page_count} páginas leídas
+                  </span>
+                )}
+                {typeof m.ocr_failed_pages === 'number' && m.ocr_failed_pages > 0 && (
+                  <span>{' · '}{m.ocr_failed_pages} con fallo</span>
+                )}
+                {typeof m.ocr_confidence === 'number' && (
+                  <span>{' · '}confianza {Math.round(m.ocr_confidence * 100)}%</span>
+                )}
+                {typeof m.ocr_warning_count === 'number' && m.ocr_warning_count > 0 && (
+                  <span>{' · '}{m.ocr_warning_count} advertencia(s)</span>
+                )}
+                {m.extraction_error && <div>{m.extraction_error}</div>}
+              </div>
+            )}
           </div>
         ))
       )}
@@ -291,4 +353,28 @@ function smartUploadErrorMessage(err: unknown): string {
     return 'Selecciona al menos un archivo valido.';
   }
   return 'No se ha podido completar la subida. Revisa los archivos (PDF, TXT, MD o ZIP) y vuelve a intentarlo.';
+}
+
+// Mensaje de usuario a partir de un error de OCR (SPEC 030). El `code` lo aporta
+// OcrError; si no, mensaje generico.
+function ocrErrorMessage(err: unknown): string {
+  const code =
+    err && typeof err === 'object' && typeof (err as { code?: unknown }).code === 'string'
+      ? (err as { code: string }).code
+      : '';
+  switch (code) {
+    case 'OCR_MATERIAL_NOT_PDF':
+      return 'Solo se puede aplicar OCR a archivos PDF.';
+    case 'OCR_SCAN_NOT_DETECTED':
+      return 'Este material no está marcado como escaneo.';
+    case 'OCR_PAGE_LIMIT_EXCEEDED':
+      return 'El documento supera el máximo de páginas admitido para OCR.';
+    case 'OCR_PROVIDER_NOT_CONFIGURED':
+      return 'El servicio de OCR no está configurado en este entorno.';
+    case 'OCR_RENDER_FAILED':
+    case 'OCR_RETRY_FAILED':
+      return 'No se pudo leer el archivo original para el OCR.';
+    default:
+      return 'No se ha podido completar el OCR. Inténtalo de nuevo más tarde.';
+  }
 }

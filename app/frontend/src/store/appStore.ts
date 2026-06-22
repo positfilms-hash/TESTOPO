@@ -167,13 +167,26 @@ export function createAppStore(seed = true): AppStore {
     batches: core.importBatches,
     items: core.importItems,
   });
-  // SPEC 030: OCR de escaneados (mock en demo; Edge Function real en Fase 2).
+  // SPEC 030: OCR de escaneados. En demo/memoria, proveedor MOCK (sin red ni
+  // claves). En Supabase con `VITE_OCR_EDGE_FUNCTION_URL` configurada, el OCR se
+  // delega en la Edge Function `ocr-material` (la clave del proveedor es un
+  // secreto de SERVIDOR; el navegador solo manda la imagen y su sesion).
+  const ocrEdgeUrl =
+    (import.meta.env.VITE_OCR_EDGE_FUNCTION_URL as string | undefined) ?? null;
+  const ocrProvider =
+    ocrEdgeUrl && supabasePort
+      ? createOcrProvider({
+          edgeFunctionUrl: ocrEdgeUrl,
+          getAuthToken: async () =>
+            (await getSupabase().auth.getSession()).data.session?.access_token ?? null,
+        })
+      : createOcrProvider();
   const materialOcr = new MaterialOcrService({
     materials: materialRepo,
     storage: fileStorage,
     ocrRepository: core.materialOcr,
     renderService: new PlaceholderPdfPageRenderService(),
-    provider: createOcrProvider(),
+    provider: ocrProvider,
   });
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: async (id) =>

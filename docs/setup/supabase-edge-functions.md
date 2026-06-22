@@ -1,10 +1,14 @@
-# Edge Functions de Supabase (SPEC 026)
+# Edge Functions de Supabase (SPEC 026 / 030)
 
-TESTOPO usa Edge Functions para operaciones **privilegiadas** que requieren la
-`service_role` y no pueden ejecutarse en el navegador. Hoy hay una:
+TESTOPO usa Edge Functions para operaciones que no pueden ejecutarse en el
+navegador: bien porque requieren la `service_role`, bien porque guardan una
+**clave de proveedor** que no debe llegar al frontend. Hoy hay dos:
 
-- `supabase/functions/delete-account` — eliminación segura de cuenta
+- `supabase/functions/delete-account` (SPEC 026) — eliminación segura de cuenta
   (ver [`../security/account-deletion.md`](../security/account-deletion.md)).
+- `supabase/functions/ocr-material` (SPEC 030, **scaffold**) — OCR/visión de una
+  página de PDF escaneado. Guarda la clave del proveedor OCR como secreto de
+  servidor (ver [`../architecture/ocr-scanned-pdfs.md`](../architecture/ocr-scanned-pdfs.md)).
 
 ## Requisitos
 
@@ -77,3 +81,56 @@ await supabase.functions.invoke('delete-account', {
 - `app/frontend/tests/supabaseSecurity.test.ts` (CI) escanea `app/frontend/src` y
   falla si aparece `service_role` o una env `SUPABASE_*` sin prefijo `VITE_`.
 - La Edge Function vive en `supabase/functions/`, fuera del bundle del frontend.
+
+## `ocr-material` (SPEC 030, scaffold)
+
+OCR/visión de **una página** de un PDF escaneado. El navegador renderiza la
+página a imagen (sin secretos) y delega aquí el reconocimiento; la función guarda
+la **clave del proveedor OCR/visión** como secreto de servidor. La clave **nunca**
+llega al frontend ni con prefijo `VITE_`.
+
+Contrato HTTP (alineado con `EdgeFunctionOcrProvider` en el backend):
+
+```text
+POST  { page_number: number, image_base64: string }
+200   { text: string, confidence: number | null, warnings: string[] }
+```
+
+### Secreto del proveedor
+
+Además de las variables inyectadas (`SUPABASE_URL`, `SUPABASE_ANON_KEY`), la
+función espera la clave del proveedor OCR como secreto:
+
+```bash
+supabase secrets set OCR_PROVIDER_API_KEY=<clave-del-proveedor>
+```
+
+Sin ella, la función responde `501 OCR_PROVIDER_NOT_CONFIGURED`. El estado actual
+es un **scaffold**: autentica el JWT del gestor y deja marcado el punto exacto
+(paso 4 de `index.ts`) donde se llama al proveedor real; mientras no se integre
+responde `501 OCR_PROVIDER_NOT_IMPLEMENTED`.
+
+### Desplegar y activar en el frontend
+
+```bash
+supabase functions deploy ocr-material
+```
+
+Para que la app use el proveedor real (en modo Supabase), define la URL de la
+función en el frontend:
+
+```text
+VITE_OCR_EDGE_FUNCTION_URL=https://<project-ref>.supabase.co/functions/v1/ocr-material
+```
+
+Sin esa variable (o en modo memoria/demo) la app usa el **mock** determinista sin
+red. La autorización por material la aplica el facade (`startMaterialOcr` /
+`retryMaterialOcr`, solo gestión); el alumno nunca accede.
+
+### Respuestas esperadas
+
+- `200 { text, confidence, warnings }` — página reconocida.
+- `400 OCR_INVALID_REQUEST` — payload inválido (falta `page_number`/`image_base64`).
+- `401 OCR_ACCESS_DENIED` — sin JWT válido.
+- `501 OCR_PROVIDER_NOT_CONFIGURED` — falta `OCR_PROVIDER_API_KEY`.
+- `501 OCR_PROVIDER_NOT_IMPLEMENTED` — scaffold sin proveedor real integrado.

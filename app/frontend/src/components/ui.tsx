@@ -114,6 +114,59 @@ export function Badge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{statusLabel(status)}</span>;
 }
 
+// --- OCR de PDFs escaneados (SPEC 030). Estado operativo por archivo, solo para
+// gestores. Mapea `extraction_status` a una etiqueta clara en espanol + un tono. ---
+export type OcrTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+const OCR_STATUS: Record<string, { label: string; tone: OcrTone }> = {
+  completed: { label: 'Texto extraido', tone: 'success' },
+  scanned_detected: { label: 'Escaneo detectado', tone: 'info' },
+  ocr_processing: { label: 'Leyendo escaneo', tone: 'info' },
+  completed_ocr: { label: 'Leido con OCR', tone: 'success' },
+  completed_ocr_with_warnings: { label: 'OCR con advertencias', tone: 'warning' },
+  ocr_failed: { label: 'No se pudo leer', tone: 'danger' },
+};
+
+// Estados desde los que un gestor puede (re)lanzar OCR (coinciden con
+// MaterialOcrService.OCR_ELIGIBLE en el backend).
+const OCR_ELIGIBLE = new Set([
+  'scanned_detected',
+  'completed_ocr_with_warnings',
+  'ocr_failed',
+]);
+
+// Estados que son resultado de un run de OCR (procede mostrar el detalle compacto).
+const OCR_OUTCOME = new Set([
+  'completed_ocr',
+  'completed_ocr_with_warnings',
+  'ocr_failed',
+]);
+
+export function ocrStatusInfo(
+  extractionStatus: string | null | undefined,
+): { label: string; tone: OcrTone } | null {
+  return extractionStatus ? OCR_STATUS[extractionStatus] ?? null : null;
+}
+
+export function ocrCanRetry(extractionStatus: string | null | undefined): boolean {
+  return OCR_ELIGIBLE.has(extractionStatus ?? '');
+}
+
+// Es el PRIMER OCR (boton "Leer escaneo") frente a un reintento ("Reintentar OCR").
+export function ocrIsFirstRun(extractionStatus: string | null | undefined): boolean {
+  return extractionStatus === 'scanned_detected';
+}
+
+export function ocrHasOutcome(extractionStatus: string | null | undefined): boolean {
+  return OCR_OUTCOME.has(extractionStatus ?? '');
+}
+
+export function OcrBadge({ extractionStatus }: { extractionStatus: string | null | undefined }) {
+  const info = ocrStatusInfo(extractionStatus);
+  if (!info) return null;
+  return <span className={`badge ocr-${info.tone}`}>{info.label}</span>;
+}
+
 export function EmptyState({ message }: { message: string }) {
   return <div className="empty-state">{message}</div>;
 }
