@@ -82,7 +82,7 @@ export function AppLayout({
             {item.label}
           </button>
         ))}
-        <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        <div className="sidebar-context">
           {/* Cabecera de contexto (SPEC 014, 10): donde estoy y que rol tengo. */}
           <div className="small muted">
             {currentUser?.name}
