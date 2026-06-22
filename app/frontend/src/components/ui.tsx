@@ -5,20 +5,40 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 export function PageHeader({
   title,
   subtitle,
+  eyebrow,
   action,
 }: {
   title: string;
   subtitle?: string;
+  /** Etiqueta corta sobre el titulo (mayusculas) para situar la seccion. */
+  eyebrow?: string;
   action?: ReactNode;
 }) {
   return (
     <div className="page-header row spread">
       <div>
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
       </div>
       {action}
     </div>
+  );
+}
+
+// Icono de archivo (SVG inline, sin dependencias): da el aire de biblioteca de
+// documentos a la lista de Material. Decorativo (aria-hidden).
+export function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M6 2.75h7L19.25 9v11.25A1 1 0 0 1 18.25 21.25H6A1 1 0 0 1 5 20.25V3.75A1 1 0 0 1 6 2.75Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M13 3v6h6" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
   );
 }
 

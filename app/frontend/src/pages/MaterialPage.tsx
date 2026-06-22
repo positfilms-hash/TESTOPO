@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  FileIcon,
   OcrBadge,
   PageHeader,
   ocrCanRetry,
@@ -183,11 +184,11 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <div>
-      <PageHeader title="Material" />
+      <PageHeader eyebrow="Biblioteca" title="Material" />
       {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
 
       {isAdmin && (
-        <div className="card" style={{ textAlign: 'center' }}>
+        <div className="upload-card">
           {!menuOpen ? (
             <Button onClick={() => setMenuOpen(true)} disabled={busy}>
               {busy ? 'Subiendo…' : 'Subir material'}
@@ -247,18 +248,41 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
           }
         />
       ) : (
-        materials.map((m) => (
-          <div className="card" key={m.id}>
-            <div className="row spread" style={{ alignItems: 'flex-start' }}>
-              <div>
-                <strong>{m.original_filename ?? m.title}</strong>
-                <div className="muted small">
+        <div className="file-list">
+          {materials.map((m) => (
+            <div className="file-row" key={m.id}>
+              <div className="file-icon">
+                <FileIcon />
+              </div>
+              <div className="file-main">
+                <div className="file-title">{m.original_filename ?? m.title}</div>
+                <div className="file-meta">
                   {TYPE_LABELS[m.type]}
                   {' · '}
                   {new Date(m.created_at).toLocaleDateString()}
                 </div>
+                {/* Detalle compacto del OCR (solo gestor; el alumno nunca lo ve). */}
+                {isAdmin && ocrHasOutcome(m.extraction_status) && (
+                  <div className="file-detail">
+                    {typeof m.ocr_page_count === 'number' && (
+                      <span>
+                        {m.ocr_processed_pages ?? 0}/{m.ocr_page_count} páginas leídas
+                      </span>
+                    )}
+                    {typeof m.ocr_failed_pages === 'number' && m.ocr_failed_pages > 0 && (
+                      <span>{' · '}{m.ocr_failed_pages} con fallo</span>
+                    )}
+                    {typeof m.ocr_confidence === 'number' && (
+                      <span>{' · '}confianza {Math.round(m.ocr_confidence * 100)}%</span>
+                    )}
+                    {typeof m.ocr_warning_count === 'number' && m.ocr_warning_count > 0 && (
+                      <span>{' · '}{m.ocr_warning_count} advertencia(s)</span>
+                    )}
+                    {m.extraction_error && <div>{m.extraction_error}</div>}
+                  </div>
+                )}
               </div>
-              <div className="row">
+              <div className="file-actions">
                 <Badge status={m.status} />
                 {/* SPEC 030: estado OCR por archivo, solo para el gestor. */}
                 {isAdmin && <OcrBadge extractionStatus={m.extraction_status} />}
@@ -279,28 +303,8 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 )}
               </div>
             </div>
-            {/* Detalle compacto del OCR (solo gestor; nunca visible para el alumno). */}
-            {isAdmin && ocrHasOutcome(m.extraction_status) && (
-              <div className="muted small" style={{ marginTop: 8 }}>
-                {typeof m.ocr_page_count === 'number' && (
-                  <span>
-                    {m.ocr_processed_pages ?? 0}/{m.ocr_page_count} páginas leídas
-                  </span>
-                )}
-                {typeof m.ocr_failed_pages === 'number' && m.ocr_failed_pages > 0 && (
-                  <span>{' · '}{m.ocr_failed_pages} con fallo</span>
-                )}
-                {typeof m.ocr_confidence === 'number' && (
-                  <span>{' · '}confianza {Math.round(m.ocr_confidence * 100)}%</span>
-                )}
-                {typeof m.ocr_warning_count === 'number' && m.ocr_warning_count > 0 && (
-                  <span>{' · '}{m.ocr_warning_count} advertencia(s)</span>
-                )}
-                {m.extraction_error && <div>{m.extraction_error}</div>}
-              </div>
-            )}
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </div>
   );

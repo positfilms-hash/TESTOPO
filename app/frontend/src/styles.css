@@ -1,34 +1,62 @@
-/* Identidad visual de TESTOPO (SPEC 018.1): azul pastel + blanco + lineas
-   negras finas. Titulos en Georgia; texto general en sans-serif del sistema.
-   Solo estilos: no cambia funcionalidad, rutas ni textos funcionales. */
+/* Identidad visual de TESTOPO (SPEC 031 - Modern Drive-like Frontend Refresh).
+   Canvas azul muy claro; superficies de lectura BLANCAS/azul palido; navy
+   elegante reservado como ACENTO (barra lateral, accion primaria, enfasis).
+   Titulares en serif (Georgia); cuerpo/formularios/botones/listas en sans del
+   sistema. Solo estilos: no cambia funcionalidad, rutas, permisos ni textos. */
 :root {
-  /* SPEC 029 (revisada): fondo de pagina azul MUY CLARO; tarjetas, filas, paneles
-     y sidebar en azul-marino MEDIO con texto blanco; inputs blancos con texto
-     oscuro. Titulos serif con jerarquia clara. */
-  --app-bg: #eaf4ff; /* fondo de pagina azul muy claro */
-  --panel: #163f66; /* azul-marino medio: tarjetas/paneles/filas/sidebar */
-  --panel-line: #2b5a87; /* borde/divisor sobre navy */
-  --on-panel: #f4f8fd; /* texto sobre navy */
-  --on-panel-muted: #b9c9dd; /* texto secundario sobre navy */
-  --bg: #f7fbff; /* fondo secundario suave */
-  --surface: #ffffff; /* base blanca (inputs) */
-  --line: #111111; /* lineas negras finas (personalidad) */
-  --border: #d1d5db; /* bordes suaves (inputs) */
-  --text: #102a43; /* texto oscuro sobre fondo claro / inputs */
-  --muted: #4b5563;
-  --accent: #bfddf7; /* azul pastel principal */
-  --accent-soft: #eaf5ff; /* azul pastel suave */
-  --accent-hover: #a8cff0; /* azul activo/hover */
+  /* Superficies */
+  --app-bg: #eef4fb; /* lienzo de la app: azul muy claro */
+  --surface: #ffffff; /* superficie de lectura: tarjetas, filas, inputs */
+  --surface-alt: #f2f7fd; /* azul palido: hover de fila, cabeceras suaves */
+
+  /* Navy: acento estructural (sidebar, accion primaria, enfasis) */
+  --navy: #173f66;
+  --navy-hover: #1f4f7e;
+  --navy-press: #102c49;
+  --on-navy: #f4f8fd;
+  --on-navy-muted: #aebfd4;
+
+  /* Tinta y texto */
+  --ink: #13293f; /* texto principal sobre superficie clara */
+  --muted: #5a6b7d; /* texto secundario sobre superficie clara */
+  --hairline: #dce5f0; /* bordes finos sobre claro */
+
+  /* Acento interactivo (foco, marcador activo, enlaces) */
+  --accent: #2f6db0;
+  --accent-soft: #e9f2fb;
+
+  /* Estados */
   --danger: #dc2626;
-  --danger-soft: #fdeaea;
-  --success: #16a34a;
+  --danger-soft: #fdecec;
+  --success: #15803d;
   --success-soft: #e7f6ec;
-  --warning: #d97706;
+  --warning: #b45c09;
   --warning-soft: #fbeed6;
-  --radius: 10px;
-  --shadow: 0 2px 8px rgba(16, 42, 67, 0.12);
+
+  /* Escala de espaciado compacta y consistente */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radios y sombras */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px rgba(16, 42, 67, 0.05), 0 1px 3px rgba(16, 42, 67, 0.08);
+  --shadow-raise: 0 2px 6px rgba(16, 42, 67, 0.1), 0 6px 18px rgba(16, 42, 67, 0.08);
+
+  /* Tipografia */
   --heading-font: Georgia, ui-serif, 'Times New Roman', serif;
+
+  /* Alias legacy para usos inline existentes. */
+  --text: var(--ink);
+  --border: var(--hairline);
+
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ink);
 }
 
 * {
@@ -38,11 +66,12 @@
 body {
   margin: 0;
   background: var(--app-bg);
-  color: var(--text);
+  color: var(--ink);
   line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Titulos elegantes con Georgia (solo encabezados, no UI funcional). */
+/* Titulares elegantes con serif (solo encabezados, no UI funcional). */
 h1,
 h2,
 h3,
@@ -50,59 +79,63 @@ h4 {
   font-family: var(--heading-font);
   font-weight: 600;
   letter-spacing: 0.1px;
+  color: var(--ink);
 }
 
+/* Foco siempre visible y consistente (accesibilidad). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* ===================== Shell y barra lateral ===================== */
 .app-shell {
   display: flex;
   min-height: 100vh;
 }
 
 .sidebar {
-  width: 232px;
+  width: 244px;
   flex-shrink: 0;
-  background: var(--panel); /* panel navy */
-  color: var(--on-panel);
-  border-right: 1px solid var(--panel-line);
-  padding: 24px 16px;
+  background: var(--navy);
+  color: var(--on-navy);
+  padding: var(--space-5) var(--space-3);
   position: sticky;
   top: 0;
   height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar .brand {
   font-family: var(--heading-font);
   font-weight: 700;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   letter-spacing: 0.5px;
-  color: var(--on-panel);
-  padding: 0 12px 4px;
+  color: var(--on-navy);
+  padding: 0 var(--space-3) var(--space-1);
 }
 
 /* Distintivo de zona (SPEC 014): diferencia admin (gestion) de estudio. */
 .zone-badge {
   display: inline-block;
-  margin: 0 12px 16px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  margin: 0 var(--space-3) var(--space-4);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
   font-weight: 600;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-.zone-admin .zone-badge {
-  background: var(--accent-soft);
-  color: #1f4f82;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--on-navy);
 }
 .zone-student .zone-badge {
-  background: var(--success-soft);
-  color: #1b6b3a;
-}
-/* Acento lateral fino distinto por zona para reforzar donde esta el usuario. */
-.zone-admin .sidebar {
-  border-left: 3px solid var(--accent-hover);
-}
-.zone-student .sidebar {
-  border-left: 3px solid #9bd3ad;
+  background: rgba(155, 211, 173, 0.22);
+  color: #d6f0df;
 }
 
 .nav-item {
@@ -111,12 +144,14 @@ h4 {
   text-align: left;
   border: none;
   background: transparent;
-  color: var(--on-panel); /* texto blanco sobre navy */
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 0.97rem;
+  color: var(--on-navy);
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  font-family: inherit;
   cursor: pointer;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  transition: background 120ms ease;
 }
 
 .nav-item:hover {
@@ -124,43 +159,68 @@ h4 {
 }
 
 .nav-item.active {
-  background: rgba(191, 221, 247, 0.18);
+  background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Pie de contexto de la barra lateral (donde estoy / quien soy / acciones). */
+.sidebar-context {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.sidebar-context .small,
+.sidebar .small {
+  color: var(--on-navy-muted);
+}
+.sidebar-context .nav-item.small {
+  color: var(--on-navy);
+  margin-top: 2px;
+}
+
+/* ===================== Area principal ===================== */
 .main {
   flex: 1;
-  padding: 32px 40px;
-  max-width: 1040px;
-  color: var(--text); /* texto suelto sobre fondo claro */
+  padding: var(--space-6) 44px;
+  max-width: 1080px;
+  color: var(--ink);
 }
 
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-5);
+}
+
+.page-header .eyebrow {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
 }
 
 .page-header h1 {
-  margin: 0 0 6px;
-  font-size: 2rem; /* titulo de pagina grande (jerarquia serif) */
+  margin: 0 0 4px;
+  font-size: 1.7rem;
   letter-spacing: 0.2px;
 }
 
 .page-header p {
   margin: 0;
-  color: var(--muted); /* sobre fondo claro */
+  color: var(--muted);
 }
 
-/* SPEC 029: tarjetas/paneles/filas en navy con texto blanco. */
+/* ===================== Tarjetas ===================== */
 .card {
-  background: var(--panel);
-  color: var(--on-panel);
-  border: 1px solid var(--panel-line);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 20px;
-  margin-bottom: 16px;
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .card strong,
@@ -168,7 +228,7 @@ h4 {
 .card h2,
 .card h3,
 .card h4 {
-  color: var(--on-panel);
+  color: var(--ink);
 }
 
 /* Encabezado compacto de panel (jerarquia: titulos de panel mas pequenos). */
@@ -178,16 +238,30 @@ h4 {
   letter-spacing: 0.2px;
 }
 
+/* Tarjeta enfatizada/seleccionada: navy como acento (uso puntual). */
+.card.emphasis {
+  background: var(--navy);
+  color: var(--on-navy);
+  border-color: var(--navy-press);
+}
+.card.emphasis strong,
+.card.emphasis h1,
+.card.emphasis h2,
+.card.emphasis h3,
+.card.emphasis h4 {
+  color: var(--on-navy);
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -195,21 +269,104 @@ h4 {
   justify-content: space-between;
 }
 
-/* Boton principal: azul pastel, texto negro, borde negro fino. */
+/* ===================== Biblioteca de archivos (Material) ===================== */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.file-row:hover {
+  background: var(--surface-alt);
+  border-color: #c7d6e8;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--navy);
+}
+.file-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.file-main {
+  min-width: 0;
+  flex: 1;
+}
+.file-title {
+  font-weight: 600;
+  color: var(--ink);
+  word-break: break-word;
+}
+.file-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.file-detail {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--hairline);
+}
+
+/* Zona de subida centrada y discreta (se conserva la accion existente). */
+.upload-card {
+  background: var(--surface);
+  border: 1px dashed #bcd0e6;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  text-align: center;
+}
+
+/* ===================== Botones ===================== */
 .btn {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 16px;
-  font-size: 0.95rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 9px 15px;
+  font-size: 0.92rem;
   font-family: inherit;
   cursor: pointer;
-  background: var(--accent);
-  color: var(--text);
+  background: var(--navy);
+  color: var(--on-navy);
   font-weight: 600;
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 
 .btn:hover {
-  background: var(--accent-hover);
+  background: var(--navy-hover);
+}
+.btn:active {
+  background: var(--navy-press);
 }
 
 .btn:disabled {
@@ -217,50 +374,51 @@ h4 {
   cursor: not-allowed;
 }
 
-/* Boton secundario: blanco, texto negro, borde negro fino. */
+/* Secundario: superficie blanca con borde fino. */
 .btn.secondary {
   background: var(--surface);
-  color: var(--text);
-  border-color: var(--line);
+  color: var(--ink);
+  border-color: var(--hairline);
 }
-
 .btn.secondary:hover {
-  background: var(--accent-soft);
+  background: var(--surface-alt);
+  border-color: #c7d6e8;
 }
 
-/* Boton destructivo: blanco, texto y borde rojos. */
+/* Destructivo: blanco con texto y borde rojos. */
 .btn.danger {
   background: var(--surface);
   color: var(--danger);
+  border-color: #f0c2c2;
+}
+.btn.danger:hover {
+  background: var(--danger-soft);
   border-color: var(--danger);
 }
 
-.btn.danger:hover {
-  background: var(--danger-soft);
-}
-
 .btn.small {
-  padding: 6px 12px;
-  font-size: 0.85rem;
+  padding: 6px 11px;
+  font-size: 0.83rem;
 }
 
-/* Badges de estado: legibles y suaves. Los valores internos se traducen en la
-   capa de presentacion (SPEC 016); aqui solo se les da color. */
+/* ===================== Badges ===================== */
 .badge {
   display: inline-block;
   padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 0.78rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.76rem;
   font-weight: 600;
-  background: #eef1f6;
+  letter-spacing: 0.2px;
+  background: #eef2f7;
   color: var(--muted);
+  border: 1px solid transparent;
 }
 
 .badge.validated,
 .badge.active,
 .badge.completed {
   background: var(--success-soft);
-  color: #15803d;
+  color: var(--success);
 }
 .badge.pending_review,
 .badge.pending,
@@ -269,12 +427,12 @@ h4 {
 .badge.created,
 .badge.submitted {
   background: var(--accent-soft);
-  color: #1f4f82;
+  color: #1f5286;
 }
 .badge.needs_fix,
 .badge.needs_review {
   background: var(--warning-soft);
-  color: #92580a;
+  color: var(--warning);
 }
 .badge.rejected,
 .badge.failed {
@@ -287,62 +445,64 @@ h4 {
 .badge.revoked,
 .badge.cancelled,
 .badge.not_supported {
-  background: #edeef0;
+  background: #eef1f5;
   color: #6b7280;
 }
 
 /* SPEC 030: tonos del estado OCR por archivo (solo gestor). */
 .badge.ocr-success {
   background: var(--success-soft);
-  color: #15803d;
+  color: var(--success);
 }
 .badge.ocr-info {
   background: var(--accent-soft);
-  color: #1f4f82;
+  color: #1f5286;
 }
 .badge.ocr-warning {
   background: var(--warning-soft);
-  color: #92580a;
+  color: var(--warning);
 }
 .badge.ocr-danger {
   background: var(--danger-soft);
   color: var(--danger);
 }
 .badge.ocr-neutral {
-  background: #edeef0;
+  background: #eef1f5;
   color: #6b7280;
 }
 
+/* ===================== Formularios ===================== */
 .field {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .field label {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  color: var(--on-panel-muted); /* etiquetas claras sobre panel navy */
+  color: var(--ink);
 }
 
 .field input,
 .field select,
 .field textarea {
   padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.95rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-size: 0.94rem;
   font-family: inherit;
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
   outline: none;
-  border-color: var(--accent-hover);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
@@ -351,79 +511,137 @@ h4 {
   resize: vertical;
 }
 
-.muted { color: var(--muted); }
-/* SPEC 029: texto secundario claro dentro de paneles navy; oscuro sobre fondo
-   claro o avisos (cajas claras). */
-.card .muted,
-.sidebar .muted,
-.empty-state .muted,
-.loading-state .muted { color: var(--on-panel-muted); }
-.notice .muted { color: var(--muted); }
-.small { font-size: 0.85rem; }
-.empty-state, .loading-state {
+/* ===================== Texto auxiliar y estados ===================== */
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.83rem;
+}
+
+.empty-state,
+.loading-state {
   text-align: center;
-  color: var(--on-panel-muted);
-  padding: 40px 20px;
-  border: 1px solid var(--panel-line);
+  color: var(--muted);
+  padding: 44px 20px;
+  border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--surface);
 }
 .error-state {
   text-align: center;
   color: var(--danger);
-  padding: 40px 20px;
-  border: 1px solid var(--danger);
+  padding: 44px 20px;
+  border: 1px solid #f0c2c2;
   border-radius: var(--radius);
   background: var(--danger-soft);
 }
 
 .notice {
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  color: var(--text);
-  border: 1px solid var(--accent-hover);
-  margin-bottom: 16px;
+  color: #1f5286;
+  border: 1px solid #cfe2f5;
+  margin-bottom: var(--space-4);
 }
 .notice.error {
   background: var(--danger-soft);
   color: var(--danger);
-  border-color: var(--danger);
+  border-color: #f0c2c2;
 }
 .notice.success {
   background: var(--success-soft);
-  color: #15803d;
-  border-color: #9bd3ad;
+  color: var(--success);
+  border-color: #bfe6cc;
 }
 
-/* Opciones: por defecto sobre panel navy (texto claro); los estados usan cajas
-   claras (texto oscuro) para mantener el contraste. */
+/* ===================== Opciones de test ===================== */
 .option {
   display: flex;
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid var(--panel-line);
-  border-radius: 8px;
-  margin-bottom: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--on-panel);
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color 120ms ease, background 120ms ease;
 }
-.option.selected { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--text); }
-.option.correct { border-color: var(--success); background: var(--success-soft); color: var(--text); }
-.option.wrong { border-color: var(--danger); background: var(--danger-soft); color: var(--text); }
+.option:hover {
+  border-color: #c7d6e8;
+  background: var(--surface-alt);
+}
+.option.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.option.correct {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--ink);
+}
+.option.wrong {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--ink);
+}
 
-.tree-item { padding: 4px 0; }
-.tree-children { margin-left: 20px; border-left: 1px solid var(--panel-line); padding-left: 14px; }
+/* ===================== Arbol (temario) ===================== */
+.tree-item {
+  padding: 4px 0;
+}
+.tree-children {
+  margin-left: 20px;
+  border-left: 1px solid var(--hairline);
+  padding-left: 14px;
+}
 
-.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.tab { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-family: inherit; color: var(--text); }
-.tab.active { background: var(--accent); color: var(--text); border-color: var(--accent-hover); font-weight: 600; }
+/* ===================== Pestanas ===================== */
+.tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+}
+.tab {
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.92rem;
+  color: var(--muted);
+  margin-bottom: -1px;
+}
+.tab:hover {
+  color: var(--ink);
+}
+.tab.active {
+  color: var(--navy);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
 
-.stat { font-family: var(--heading-font); font-size: 1.95rem; font-weight: 700; color: var(--on-panel); }
+/* ===================== Dato destacado ===================== */
+.stat {
+  font-family: var(--heading-font);
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--navy);
+}
 
-/* Movil: la barra lateral pasa arriba a ancho completo (no fuerza el layout). */
+/* ===================== Responsive ===================== */
+@media (max-width: 860px) {
+  .main {
+    padding: var(--space-5) var(--space-4);
+  }
+}
+
 @media (max-width: 640px) {
   .app-shell {
     flex-direction: column;
@@ -432,15 +650,33 @@ h4 {
     width: 100%;
     height: auto;
     position: static;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    padding: 16px;
+    padding: var(--space-4);
+  }
+  .sidebar-context {
+    margin-top: var(--space-4);
   }
   .main {
-    padding: 20px 16px;
+    padding: var(--space-4) var(--space-4);
     max-width: 100%;
+  }
+  .card,
+  .upload-card {
+    padding: var(--space-4);
   }
   .card-grid {
     grid-template-columns: 1fr;
+  }
+  .file-row {
+    flex-wrap: wrap;
+  }
+  .file-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
   }
 }
