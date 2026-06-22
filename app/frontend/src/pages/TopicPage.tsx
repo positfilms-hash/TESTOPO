@@ -9,6 +9,7 @@ import {
   PageHeader,
 } from '../components/ui.js';
 import { SyllabusIndexPanel } from './SyllabusIndexPanel.js';
+import { DocumentInventory } from './DocumentInventory.js';
 
 // Temario unificado (SPEC 017): el temario y el material se gestionan juntos.
 // Se selecciona un tema en el arbol y, a la derecha, se ven y suben sus
@@ -21,6 +22,10 @@ export function TopicPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSyllabus, setShowSyllabus] = useState(false);
+  // SPEC 029: "Analizar material" clasifica toda la oposicion y abre el inventario.
+  const [showInventory, setShowInventory] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeNotice, setAnalyzeNotice] = useState<string | null>(null);
   const [tree, setTree] = useState<TopicTreeNode[]>([]);
   const [allTopics, setAllTopics] = useState<Topic[]>([]);
 
@@ -81,6 +86,30 @@ export function TopicPage() {
     refresh();
   };
 
+  // SPEC 029: clasifica todos los materiales analizables de la oposicion (no
+  // genera indice ni preguntas) y abre el inventario revisable.
+  const analyzeMaterial = async () => {
+    if (!currentUser || !oppositionId) return;
+    setAnalyzing(true);
+    setAnalyzeNotice(null);
+    try {
+      const inv = await store.platform.classifyOppositionMaterials(
+        currentUser,
+        oppositionId,
+      );
+      const warns = inv.run?.warnings.length ?? 0;
+      setAnalyzeNotice(
+        `Análisis completado: ${inv.classifications.length} documento(s)` +
+          (warns > 0 ? ` · ${warns} aviso(s) (extracción).` : '.'),
+      );
+      setShowInventory(true);
+    } catch {
+      setAnalyzeNotice('No se ha podido analizar el material de la oposición.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -88,6 +117,9 @@ export function TopicPage() {
         subtitle="Organiza temas y su material en un mismo lugar."
         action={
           <div className="row">
+            <Button variant="secondary" onClick={analyzeMaterial} disabled={analyzing}>
+              {analyzing ? 'Analizando…' : 'Analizar material'}
+            </Button>
             <Button variant="secondary" onClick={() => setShowSyllabus((v) => !v)}>
               Crear indice con IA
             </Button>
@@ -95,6 +127,17 @@ export function TopicPage() {
           </div>
         }
       />
+
+      {analyzeNotice && <div className="notice">{analyzeNotice}</div>}
+
+      {showInventory && oppositionId && (
+        <div style={{ marginBottom: 16 }}>
+          <DocumentInventory
+            oppositionId={oppositionId}
+            onDone={() => setShowInventory(false)}
+          />
+        </div>
+      )}
 
       {showSyllabus && (
         <div style={{ marginBottom: 16 }}>

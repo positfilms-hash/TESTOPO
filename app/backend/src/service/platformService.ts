@@ -270,6 +270,31 @@ export class PlatformService {
     return classifier.getInventory(batchId);
   }
 
+  // SPEC 029: "Analizar material" — clasifica TODA la oposicion (no solo un
+  // lote), preserva correcciones manuales, salta extraccion fallida con aviso y
+  // NO genera indice/preguntas. Solo gestion.
+  async classifyOppositionMaterials(
+    actor: User,
+    oppositionId: string,
+  ): Promise<DocumentInventory> {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireDocumentClassification().classifyOpposition({
+      opposition_id: oppositionId,
+      created_by: actor.id,
+    });
+  }
+
+  // Inventario por oposicion (clasificacion vigente de cada material activo).
+  async getOppositionInventory(
+    actor: User,
+    oppositionId: string,
+  ): Promise<DocumentInventory> {
+    await this.requireManageOpposition(actor, oppositionId);
+    return this.requireDocumentClassification().getOppositionInventory(
+      oppositionId,
+    );
+  }
+
   // Corrige manualmente la clasificacion de un documento. La correccion humana
   // prevalece sobre la IA (SPEC 028-B, 16). Solo owner/admin.
   async correctDocumentClassification(

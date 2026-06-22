@@ -36,9 +36,12 @@ const GROUP_ORDER: DocumentClass[] = [
 
 export function DocumentInventory({
   batchId,
+  oppositionId,
   onDone,
 }: {
-  batchId: string;
+  /** Inventario de un lote (SPEC 028-B) o de toda la oposicion (SPEC 029). */
+  batchId?: string;
+  oppositionId?: string;
   onDone: () => void;
 }) {
   const { store, currentUser } = useStore();
@@ -55,7 +58,11 @@ export function DocumentInventory({
   const load = async () => {
     if (!currentUser) return;
     try {
-      const inv = await store.platform.getDocumentInventory(currentUser, batchId);
+      const inv = oppositionId
+        ? await store.platform.getOppositionInventory(currentUser, oppositionId)
+        : batchId
+          ? await store.platform.getDocumentInventory(currentUser, batchId)
+          : { classifications: [] };
       setItems(inv.classifications);
     } catch {
       setError('No se ha podido cargar el inventario de documentos.');
@@ -67,7 +74,7 @@ export function DocumentInventory({
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, currentUser, batchId]);
+  }, [store, currentUser, batchId, oppositionId]);
 
   const correct = async (id: string, classification: DocumentClass) => {
     if (!currentUser) return;
