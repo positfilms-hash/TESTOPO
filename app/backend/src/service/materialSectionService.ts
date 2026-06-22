@@ -4,7 +4,7 @@
 // previas. NO genera indice ni preguntas; sin OCR/RAG/embeddings.
 
 import { randomUUID } from 'node:crypto';
-import type { Material } from '../models/material.js';
+import { isUsableExtraction, type Material } from '../models/material.js';
 import {
   isEligibleDocumentClass,
   sectionClassForDocument,
@@ -77,8 +77,9 @@ export class MaterialSectionService {
         MaterialSectionErrorCode.MATERIAL_NOT_FOUND,
       ]);
     }
+    // Texto nativo (`completed`) o recuperado por OCR (SPEC 030/032) es analizable.
     if (
-      material.extraction_status !== 'completed' ||
+      !isUsableExtraction(material.extraction_status) ||
       !isNonEmptyString(material.content_text)
     ) {
       throw new MaterialSectionError([

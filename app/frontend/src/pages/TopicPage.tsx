@@ -1,63 +1,264 @@
 import { useEffect, useState } from 'react';
-import type { Material, Topic, TopicTreeNode } from '@backend';
+import {
+  isUsableExtraction,
+  type GroundedProposalDetail,
+  type Material,
+  type SyllabusIndexProposal,
+  type Topic,
+  type TopicTreeNode,
+} from '@backend';
 import { useStore } from '../store/StoreContext.js';
+import type { Section } from '../components/AppLayout.js';
 import {
   Badge,
   Button,
   EmptyState,
   Field,
+  LoadingState,
   PageHeader,
 } from '../components/ui.js';
-import { SyllabusIndexPanel } from './SyllabusIndexPanel.js';
-import { DocumentInventory } from './DocumentInventory.js';
+import { ProposalReview } from './SyllabusIndexPanel.js';
 
-// Temario unificado (SPEC 017): el temario y el material se gestionan juntos.
-// Se selecciona un tema en el arbol y, a la derecha, se ven y suben sus
-// materiales (individual, multiple o importando un ZIP).
-export function TopicPage() {
+// SPEC 032: Temario es una pantalla enfocada. Si la oposicion no tiene temario
+// aplicado, la experiencia principal es UNA accion: "Generar temario", que compone
+// el flujo existente (clasificar -> seccionar -> proponer indice con fuentes) para
+// todo el material elegible. La IA solo PROPONE; nada se aplica sin un clic humano
+// explicito. (Temario es solo de gestion; el alumno nunca ve esta pantalla.)
+
+// Estados de extraccion cuyo material aun se esta leyendo (no elegible todavia).
+const PROCESSING_STATUSES = new Set([
+  'not_started',
+  'processing',
+  'ocr_processing',
+  'scanned_detected',
+]);
+
+type ActiveProposal = SyllabusIndexProposal | null;
+
+export function TopicPage({ onNavigate }: { onNavigate?: (section: Section) => void }) {
   const { store, refresh, currentUser, currentOpposition, version } = useStore();
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const [parentId, setParentId] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [showSyllabus, setShowSyllabus] = useState(false);
-  // SPEC 029: "Analizar material" clasifica toda la oposicion y abre el inventario.
-  const [showInventory, setShowInventory] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analyzeNotice, setAnalyzeNotice] = useState<string | null>(null);
+  const oppositionId = currentOpposition?.id;
+
+  const [loading, setLoading] = useState(true);
+  const [materials, setMaterials] = useState<Material[]>([]);
   const [tree, setTree] = useState<TopicTreeNode[]>([]);
   const [allTopics, setAllTopics] = useState<Topic[]>([]);
+  const [proposalDetail, setProposalDetail] = useState<GroundedProposalDetail | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  const oppositionId = currentOpposition?.id;
+  // Carga el estado de la oposicion: material, temas aplicados y propuesta activa.
   useEffect(() => {
     let cancelled = false;
+    if (!currentUser || !oppositionId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     void (async () => {
-      const t = (await store.topics.getTopicTree()).filter(
-        (node) => node.opposition_id === oppositionId,
-      );
-      const a = (await store.topics.listTopics()).filter(
-        (x) => x.opposition_id === oppositionId,
-      );
+      const mats = await store.platform.listMaterials(currentUser, oppositionId);
+      const t = (await store.topics.getTopicTree()).filter((n) => n.opposition_id === oppositionId);
+      const a = (await store.topics.listTopics()).filter((x) => x.opposition_id === oppositionId);
+      // Propuesta activa (pendiente de revision/aprobada) para retomar la revision.
+      let detail: GroundedProposalDetail | null = null;
+      try {
+        const proposals = await store.platform.listSyllabusProposals(currentUser, oppositionId);
+        const active = pickActiveProposal(proposals);
+        if (active) {
+          detail = await store.platform.getSyllabusIndexProposalDetail(currentUser, active.id);
+        }
+      } catch {
+        detail = null;
+      }
       if (!cancelled) {
+        setMaterials(mats);
         setTree(t);
         setAllTopics(a);
+        setProposalDetail(detail);
+        setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [store, oppositionId, version]);
-  const selected = selectedId
-    ? allTopics.find((t) => t.id === selectedId) ?? null
-    : null;
+  }, [store, currentUser, oppositionId, version]);
+
+  const eligibleCount = materials.filter(
+    (m) => isUsableExtraction(m.extraction_status) && m.status !== 'obsolete',
+  ).length;
+  const processingCount = materials.filter((m) =>
+    PROCESSING_STATUSES.has(m.extraction_status ?? ''),
+  ).length;
+  const hasAppliedSyllabus = tree.length > 0;
+
+  const generate = async () => {
+    if (!currentUser || !oppositionId) return;
+    setGenerating(true);
+    setNotice(null);
+    try {
+      const detail = await store.platform.generateSyllabusForOpposition(currentUser, oppositionId);
+      setProposalDetail(detail);
+      setReviewNotice({
+        type: 'success',
+        text: `Temario propuesto: ${detail.nodes.length} tema(s) con fuente, pendiente de tu revisión.`,
+      });
+    } catch (err) {
+      setNotice({ type: 'error', text: syllabusErrorMessage(err) });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const reloadProposal = async (proposalId: string) => {
+    if (!currentUser) return;
+    const fresh = await store.platform.getSyllabusIndexProposalDetail(currentUser, proposalId);
+    setProposalDetail(fresh);
+  };
+
+  if (loading) {
+    return (
+      <div>
+        <PageHeader eyebrow="Temario" title="Temario" />
+        <LoadingState />
+      </div>
+    );
+  }
+
+  // --- Revision de una propuesta activa (recien generada o pendiente) ----------
+  if (proposalDetail) {
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Temario"
+          title="Índice propuesto"
+          subtitle="Revisa los temas y sus fuentes. Nada se aplica al temario hasta que lo apruebes y lo apliques."
+        />
+        <ProposalReview
+          detail={proposalDetail}
+          onReload={reloadProposal}
+          onApplied={() => {
+            setProposalDetail(null);
+            setReviewNotice(null);
+            refresh();
+          }}
+          onClose={() => {
+            setProposalDetail(null);
+            setReviewNotice(null);
+            refresh();
+          }}
+          notice={reviewNotice}
+          setNotice={setReviewNotice}
+        />
+      </div>
+    );
+  }
+
+  // --- Temario ya aplicado: el Topic Map es el contenido principal -------------
+  if (hasAppliedSyllabus) {
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Temario"
+          title="Temario"
+          subtitle="Tu índice de temas. Puedes regenerarlo desde el material o añadir temas a mano."
+          action={
+            <Button onClick={generate} disabled={generating}>
+              {generating ? 'Generando…' : 'Regenerar temario'}
+            </Button>
+          }
+        />
+        {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+        <TopicMap tree={tree} allTopics={allTopics} />
+      </div>
+    );
+  }
+
+  // --- Sin temario aplicado: pantalla enfocada en "Generar temario" -----------
+  return (
+    <div>
+      <PageHeader eyebrow="Temario" title="Temario" />
+      <p className="muted">
+        La app analiza el material que has subido y te propone un índice de temas y
+        subtemas <strong>para que lo revises</strong>. No escribe el temario ni genera
+        preguntas: solo organiza tus documentos con sus fuentes.
+      </p>
+
+      {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+
+      {generating ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>
+            <strong>Generando temario…</strong>
+          </p>
+          <p className="muted small">Analizando material… · Generando índice…</p>
+        </div>
+      ) : materials.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>Primero sube material en la sección Material.</p>
+          {onNavigate && (
+            <Button onClick={() => onNavigate('material')}>Ir a Material</Button>
+          )}
+        </div>
+      ) : eligibleCount === 0 && processingCount > 0 ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>Algunos archivos todavía se están leyendo.</p>
+          <p className="muted small">
+            Espera a que termine la lectura del material para generar el temario.
+          </p>
+        </div>
+      ) : eligibleCount === 0 ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>No hay material legible para analizar.</p>
+          <p className="muted small">
+            Sube documentos con texto (o usa el OCR de un escaneo en Material) y vuelve.
+          </p>
+          {onNavigate && (
+            <Button variant="secondary" onClick={() => onNavigate('material')}>
+              Ir a Material
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <Button onClick={generate} disabled={generating}>
+            Generar temario
+          </Button>
+          <p className="muted small" style={{ marginTop: 10 }}>
+            {eligibleCount} documento(s) listo(s) para analizar
+            {processingCount > 0 ? ` · ${processingCount} todavía leyéndose` : ''}.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// La propuesta a retomar: la mas reciente que aun no esta aplicada ni rechazada.
+function pickActiveProposal(proposals: SyllabusIndexProposal[]): ActiveProposal {
+  const active = proposals.filter((p) =>
+    ['draft', 'pending_review', 'approved'].includes(p.status),
+  );
+  if (active.length === 0) return null;
+  return active.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )[0];
+}
+
+// --- Topic Map (temario aplicado): arbol + alta manual de temas ---------------
+function TopicMap({ tree, allTopics }: { tree: TopicTreeNode[]; allTopics: Topic[] }) {
+  const { store, refresh, currentUser, currentOpposition } = useStore();
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState('');
+  const [parentId, setParentId] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const addTopic = async () => {
     setError(null);
     if (!currentUser) return;
     try {
       await store.platform.createTopic(currentUser, {
-        opposition_id: oppositionId,
+        opposition_id: currentOpposition?.id,
         title,
         parent_id: parentId || null,
       });
@@ -86,67 +287,17 @@ export function TopicPage() {
     refresh();
   };
 
-  // SPEC 029: clasifica todos los materiales analizables de la oposicion (no
-  // genera indice ni preguntas) y abre el inventario revisable.
-  const analyzeMaterial = async () => {
-    if (!currentUser || !oppositionId) return;
-    setAnalyzing(true);
-    setAnalyzeNotice(null);
-    try {
-      const inv = await store.platform.classifyOppositionMaterials(
-        currentUser,
-        oppositionId,
-      );
-      const warns = inv.run?.warnings.length ?? 0;
-      setAnalyzeNotice(
-        `Análisis completado: ${inv.classifications.length} documento(s)` +
-          (warns > 0 ? ` · ${warns} aviso(s) (extracción).` : '.'),
-      );
-      setShowInventory(true);
-    } catch {
-      setAnalyzeNotice('No se ha podido analizar el material de la oposición.');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   return (
-    <div>
-      <PageHeader
-        title="Temario"
-        subtitle="Organiza temas y su material en un mismo lugar."
-        action={
-          <div className="row">
-            <Button variant="secondary" onClick={analyzeMaterial} disabled={analyzing}>
-              {analyzing ? 'Analizando…' : 'Analizar material'}
-            </Button>
-            <Button variant="secondary" onClick={() => setShowSyllabus((v) => !v)}>
-              Crear indice con IA
-            </Button>
-            <Button onClick={() => setAdding((v) => !v)}>Anadir tema</Button>
-          </div>
-        }
-      />
-
-      {analyzeNotice && <div className="notice">{analyzeNotice}</div>}
-
-      {showInventory && oppositionId && (
-        <div style={{ marginBottom: 16 }}>
-          <DocumentInventory
-            oppositionId={oppositionId}
-            onDone={() => setShowInventory(false)}
-          />
-        </div>
-      )}
-
-      {showSyllabus && (
-        <div style={{ marginBottom: 16 }}>
-          <SyllabusIndexPanel onClose={() => setShowSyllabus(false)} />
-        </div>
-      )}
+    <div className="card">
+      <div className="row spread">
+        <strong>Temas</strong>
+        <Button variant="secondary" small onClick={() => setAdding((v) => !v)}>
+          Añadir tema
+        </Button>
+      </div>
 
       {adding && (
-        <div className="card" style={{ maxWidth: 520 }}>
+        <div style={{ marginTop: 12, maxWidth: 520 }}>
           {error && <div className="notice error">{error}</div>}
           <Field label="Titulo del tema">
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tema 3 - …" />
@@ -170,34 +321,15 @@ export function TopicPage() {
         </div>
       )}
 
-      <div className="row" style={{ alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 280px', minWidth: 260 }}>
-          <strong>Temas</strong>
-          {tree.length === 0 ? (
-            <EmptyState message="Todavia no hay temas. Anade el primero." />
-          ) : (
-            <div style={{ marginTop: 8 }}>
-              {tree.map((node) => (
-                <TopicNode
-                  key={node.id}
-                  node={node}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onEdit={editTopic}
-                  onObsolete={markObsolete}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ flex: '2 1 360px', minWidth: 320 }}>
-          {selected ? (
-            <TopicDetail topicId={selected.id} topicTitle={selected.title} />
-          ) : (
-            <EmptyState message="Selecciona un tema para ver y subir su material." />
-          )}
-        </div>
+      <div style={{ marginTop: 12 }}>
+        {tree.map((node) => (
+          <TopicNode
+            key={node.id}
+            node={node}
+            onEdit={editTopic}
+            onObsolete={markObsolete}
+          />
+        ))}
       </div>
     </div>
   );
@@ -205,28 +337,20 @@ export function TopicPage() {
 
 function TopicNode({
   node,
-  selectedId,
-  onSelect,
   onEdit,
   onObsolete,
 }: {
   node: TopicTreeNode;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
   onEdit: (id: string, title: string) => void;
   onObsolete: (id: string) => void;
 }) {
   return (
     <div className="tree-item">
       <div className="row spread">
-        <button
-          className={`nav-item small ${selectedId === node.id ? 'active' : ''}`}
-          style={{ textAlign: 'left', flex: 1 }}
-          onClick={() => onSelect(node.id)}
-        >
+        <span style={{ flex: 1 }}>
           {node.code ? `${node.code} · ` : ''}
           {node.title} {node.status !== 'active' && <Badge status={node.status} />}
-        </button>
+        </span>
         <span className="row">
           <Button variant="secondary" small onClick={() => onEdit(node.id, node.title)}>
             Editar
@@ -241,14 +365,7 @@ function TopicNode({
       {node.children.length > 0 && (
         <div className="tree-children">
           {node.children.map((child) => (
-            <TopicNode
-              key={child.id}
-              node={child}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onEdit={onEdit}
-              onObsolete={onObsolete}
-            />
+            <TopicNode key={child.id} node={child} onEdit={onEdit} onObsolete={onObsolete} />
           ))}
         </div>
       )}
@@ -256,58 +373,14 @@ function TopicNode({
   );
 }
 
-// SPEC 028: la subida de material se centraliza en la seccion "Material"
-// (carga masiva por categoria). Aqui el tema solo muestra, en modo lectura, el
-// material que ya tiene asociado.
-function TopicDetail({ topicId, topicTitle }: { topicId: string; topicTitle: string }) {
-  const { store, version } = useStore();
-  const [materials, setMaterials] = useState<Material[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const links = await store.topicMaterialLinks.findAll({ topic_id: topicId });
-      const list: Material[] = [];
-      for (const link of links) {
-        const m = await store.materials.getMaterial(link.material_id);
-        if (m) list.push(m);
-      }
-      if (!cancelled) setMaterials(list);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [store, topicId, version]);
-
-  return (
-    <div className="card">
-      <PageHeader title={topicTitle} subtitle={`${materials.length} material(es)`} />
-      <p className="muted small">
-        Para anadir material usa "Subir material" en la seccion Material.
-      </p>
-
-      <div style={{ marginTop: 12 }}>
-        {materials.length === 0 ? (
-          <EmptyState message="Este tema todavia no tiene material asociado." />
-        ) : (
-          materials.map((m) => (
-            <div className="card" key={m.id}>
-              <div className="row spread">
-                <div>
-                  <strong>{m.title}</strong>
-                  <div className="muted small">
-                    {m.original_filename ?? 'sin archivo'}
-                  </div>
-                </div>
-                <div className="row">
-                  <Badge status={m.status} />
-                  {m.extraction_status && <Badge status={m.extraction_status} />}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+// Mensaje de usuario a partir de un error de generacion de temario (SPEC 032).
+function syllabusErrorMessage(err: unknown): string {
+  const codes =
+    err && typeof err === 'object' && Array.isArray((err as { codes?: unknown }).codes)
+      ? (err as { codes: string[] }).codes
+      : [];
+  if (codes.some((c) => /NO_MATERIALS|NO_SOURCES/.test(c))) {
+    return 'No hay documentos de estudio legibles con fuente suficiente. Sube temario o apuntes y vuelve a intentarlo.';
+  }
+  return 'No se ha podido generar el temario. Revisa el material e inténtalo de nuevo.';
 }
