@@ -64,35 +64,22 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     ).toBeInTheDocument();
   });
 
-  it('admin: "Subir material" abre la carga masiva por categoria (SPEC 028)', async () => {
+  it('admin: "Subir material" abre un menu unico (PDF/ZIP/carpeta), sin categoria ni pegar texto (SPEC 029)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
       within(screen.getByLabelText('Navegacion principal')).getByText('Material'),
     );
-    // Un unico CTA principal "Subir material".
+    // Una unica orden visible "Subir material" que abre un menu compacto.
     fireEvent.click(
       await screen.findByRole('button', { name: 'Subir material' }),
     );
-    // SPEC 028: solo dos categorias de cara al usuario.
-    expect(await screen.findByText('Que vas a subir?')).toBeInTheDocument();
-    expect(screen.getByText('Material de la oposicion')).toBeInTheDocument();
-    expect(screen.getByText('Tests antiguos')).toBeInTheDocument();
-    // Entradas de carga masiva: ZIP y varios PDFs (carpeta solo si el navegador
-    // la soporta; en jsdom no, asi que se recomienda comprimir en ZIP).
-    expect(screen.getByText('Subir ZIP')).toBeInTheDocument();
-    expect(screen.getByText('Subir PDFs')).toBeInTheDocument();
-    expect(
-      screen.getByText('Tambien puedes comprimir la carpeta en ZIP y subirla aqui.'),
-    ).toBeInTheDocument();
-    // Sigue disponible el alta manual por texto.
-    expect(
-      screen.getByRole('button', { name: 'Pegar texto' }),
-    ).toBeInTheDocument();
-    // SPEC 028-B: tras subir, el paso es clasificar documentos (no auto-indice).
-    expect(
-      screen.getByText('Clasificar documentos despues de importar'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Archivos PDF')).toBeInTheDocument();
+    expect(screen.getByText('Archivo ZIP')).toBeInTheDocument();
+    // SPEC 029: sin radios de categoria, sin checkbox de clasificacion, sin pegar texto.
+    expect(screen.queryByText('Material de la oposicion')).toBeNull();
+    expect(screen.queryByText('Clasificar documentos despues de importar')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pegar texto' })).toBeNull();
   });
 
   it('admin: Temario ya no sube material; redirige a la seccion Material (SPEC 028)', async () => {

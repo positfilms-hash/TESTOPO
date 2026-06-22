@@ -9,6 +9,8 @@ import {
   FflateZipReader,
   PdfJsTextExtractor,
   InMemoryFileStorage,
+  SupabaseFileStorage,
+  MaterialLibraryService,
   type TopicMaterialLinkRepository,
   TopicService,
   QuestionService,
@@ -125,9 +127,11 @@ export function createAppStore(seed = true): AppStore {
     workspaceMemberRepo,
   );
   const materials = new MaterialService(materialRepo);
-  // Almacenamiento y extractor compartidos para que PDFs subidos e importados
-  // vivan en el mismo sitio (SPEC 012/017).
-  const fileStorage = new InMemoryFileStorage();
+  // Almacenamiento de archivos (SPEC 012/017/029): en modo Supabase, bucket
+  // PRIVADO con URL firmada; en memoria/demo, en memoria.
+  const fileStorage = supabasePort
+    ? new SupabaseFileStorage(supabasePort)
+    : new InMemoryFileStorage();
   // Extractor real (PDF.js): resuelve streams comprimidos, fuentes embebidas y
   // ToUnicode. En el navegador necesita la URL del worker de pdfjs (la resuelve
   // Vite con `?url`).
@@ -304,6 +308,15 @@ export function createAppStore(seed = true): AppStore {
       ? new SupabaseStudentAttemptGateway(supabasePort)
       : undefined,
   });
+  // SPEC 029: biblioteca de material (abrir original seguro + borrado seguro).
+  const materialLibrary = new MaterialLibraryService({
+    materials: materialRepo,
+    storage: fileStorage,
+    topicMaterialLinks: topicMaterialLinkRepo,
+    sections: core.materialSections,
+    sourceReferences: core.sourceReferences,
+    questions,
+  });
   const platform = new PlatformService({
     oppositionRepository: oppositionRepo,
     workspaceMembers: workspaceMemberRepo,
@@ -311,6 +324,7 @@ export function createAppStore(seed = true): AppStore {
     materials,
     pdfMaterials,
     materialImport,
+    materialLibrary,
     topics,
     questions,
     generation,

@@ -121,6 +121,8 @@ export * from './pdf/pdfErrors.js';
 export * from './pdf/pdfTextExtractor.js';
 export * from './pdf/pdfQuality.js';
 export * from './storage/fileStorage.js';
+export * from './storage/supabaseFileStorage.js';
+export * from './service/materialLibraryService.js';
 export * from './service/pdfMaterialService.js';
 
 // SPEC 017 - Unified Syllabus & Bulk Material Import

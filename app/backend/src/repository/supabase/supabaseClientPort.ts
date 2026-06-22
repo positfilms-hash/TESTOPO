@@ -20,6 +20,15 @@ export interface SupabaseTablePort {
   deleteMatch(criteria: SupabaseRow): Promise<number>;
 }
 
+/** Puerto de Supabase Storage (SPEC 029): bucket privado de materiales. */
+export interface SupabaseStoragePort {
+  upload(path: string, bytes: Uint8Array, contentType?: string): Promise<void>;
+  download(path: string): Promise<Uint8Array | null>;
+  /** URL firmada de corta duracion (segundos). null si no se puede firmar. */
+  createSignedUrl(path: string, expiresInSeconds: number): Promise<string | null>;
+  remove(path: string): Promise<void>;
+}
+
 export interface SupabaseClientPort {
   table(name: string): SupabaseTablePort;
   /**
@@ -28,4 +37,6 @@ export interface SupabaseClientPort {
    * Supabase real; el puerto en memoria no lo soporta.
    */
   rpc(fn: string, args?: SupabaseRow): Promise<unknown>;
+  /** Acceso a un bucket privado de Supabase Storage (SPEC 029). */
+  storage(bucket: string): SupabaseStoragePort;
 }

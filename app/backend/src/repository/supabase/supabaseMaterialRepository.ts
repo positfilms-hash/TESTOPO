@@ -52,6 +52,10 @@ export class SupabaseMaterialRepository implements MaterialRepository {
     const row = await this.port.table(TABLE).updateById(material.id, patch);
     return toMaterial(row);
   }
+
+  async delete(id: string): Promise<void> {
+    await this.port.table(TABLE).deleteMatch({ id });
+  }
 }
 
 function toRow(m: Material): SupabaseRow {
