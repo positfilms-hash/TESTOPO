@@ -11,21 +11,16 @@ function renderApp() {
   );
 }
 
-// Entra como admin o estudiante, elige el workspace y la oposicion sembrados.
-// Todo es asincrono (SPEC 018.3): seed + cargas de datos via Promise.
+// Entra como admin o estudiante. SPEC 036: con un unico workspace y una unica
+// oposicion sembrados, la rehidratacion los AUTO-SELECCIONA, asi que no hay que
+// pulsar los gates; tras el login se llega directo al shell. Todo asincrono.
 async function enter(role: 'admin' | 'student') {
   fireEvent.click(
     await screen.findByText(
       role === 'admin' ? 'Entrar como Admin' : 'Entrar como Estudiante',
     ),
   );
-  // "Mis espacios": espera el workspace sembrado y entra.
-  await screen.findByText('Workspace MVP');
-  fireEvent.click(screen.getByText('Entrar'));
-  // "Mis oposiciones": espera la oposicion sembrada y entra.
-  await screen.findByText('Oposicion MVP');
-  fireEvent.click(screen.getByText('Entrar'));
-  // Espera a que monte el layout con la navegacion.
+  // Espera a que monte el layout con la navegacion (workspace + oposicion auto-seleccionados).
   await screen.findByLabelText('Navegacion principal');
 }
 

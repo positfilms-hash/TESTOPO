@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { User } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { SEED_ADMIN, SEED_STUDENT } from '../store/appStore.js';
 import { Button, Field } from '../components/ui.js';
@@ -37,17 +36,7 @@ export function LoginPage() {
     if (!profile) {
       throw new AuthError([AuthErrorCode.SESSION_REQUIRED]);
     }
-    const user: User = {
-      id: profile.id,
-      name: profile.name ?? profile.email,
-      email: profile.email,
-      password_hash: '',
-      role: profile.role,
-      status: profile.status === 'deleted' ? 'inactive' : profile.status,
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-    login(user);
+    login(auth.mapProfileToUser(profile));
   };
 
   const submitLogin = async () => {

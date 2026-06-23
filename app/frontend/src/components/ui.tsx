@@ -197,8 +197,8 @@ export function EmptyState({ message }: { message: string }) {
   return <div className="empty-state">{message}</div>;
 }
 
-export function LoadingState() {
-  return <div className="loading-state">Cargando…</div>;
+export function LoadingState({ message }: { message?: string } = {}) {
+  return <div className="loading-state">{message ?? 'Cargando…'}</div>;
 }
 
 export function ErrorState({ message }: { message: string }) {
