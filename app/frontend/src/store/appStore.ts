@@ -167,28 +167,20 @@ export function createAppStore(seed = true): AppStore {
     batches: core.importBatches,
     items: core.importItems,
   });
-  // SPEC 030: OCR de escaneados. En demo/memoria, proveedor MOCK (sin red ni
-  // claves). En Supabase con `VITE_OCR_EDGE_FUNCTION_URL` configurada, el OCR se
-  // delega en la Edge Function `ocr-material` (la clave del proveedor es un
-  // secreto de SERVIDOR; el navegador solo manda la imagen y su sesion).
-  const ocrEdgeUrl =
-    (import.meta.env.VITE_OCR_EDGE_FUNCTION_URL as string | undefined) ?? null;
-  const ocrProvider =
-    ocrEdgeUrl && supabasePort
-      ? createOcrProvider({
-          edgeFunctionUrl: ocrEdgeUrl,
-          getAuthToken: async () =>
-            (await getSupabase().auth.getSession()).data.session?.access_token ?? null,
-        })
-      : createOcrProvider();
+  // SPEC 030/034: OCR de escaneados. En demo/memoria, servicio EN PROCESO con
+  // proveedor MOCK (sin red ni claves). En modo Supabase el OCR REAL ya NO pasa
+  // por el navegador: corre integramente en la Edge Function `ocr-material`
+  // (server-owned, SPEC 034) y la UI lo invoca via `serverOcrMaterial`. Por eso
+  // aqui ya no se construye el bridge browser-image (que renderizaba/enviaba
+  // imagenes); el servicio en proceso solo se usa en InMemory.
   const materialOcr = new MaterialOcrService({
     materials: materialRepo,
     storage: fileStorage,
     ocrRepository: core.materialOcr,
     renderService: new PlaceholderPdfPageRenderService(),
-    provider: ocrProvider,
-    // Revision Codex (staging): en Supabase sin Edge Function de OCR real, el
-    // proveedor es el mock -> no se finge lectura (se bloquea con aviso).
+    provider: createOcrProvider(),
+    // Revision Codex (staging): en Supabase, el mock NO se finge como lectura real
+    // (se bloquea); ademas la UI enruta el OCR a la Edge Function server-owned.
     allowMockProvider: !supabasePort,
   });
   const questions = new QuestionService(questionRepo, {
