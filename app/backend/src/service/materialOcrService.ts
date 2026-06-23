@@ -42,17 +42,26 @@ export interface MaterialOcrServiceDeps {
   renderService: PdfPageRenderService;
   provider: OcrProvider;
   config?: OcrConfig;
+  /**
+   * Revision Codex (staging): si es `false`, NO se permite el proveedor OCR MOCK
+   * como si fuera lectura real (se bloquea con PROVIDER_NOT_CONFIGURED sin
+   * escribir nada; el material queda como escaneo pendiente). Por defecto `true`
+   * (tests/InMemory/demo); en Supabase sin Edge Function la app lo pone a `false`.
+   */
+  allowMockProvider?: boolean;
   generateId?: () => string;
   now?: () => Date;
 }
 
 export class MaterialOcrService {
   private readonly config: OcrConfig;
+  private readonly allowMockProvider: boolean;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
   constructor(private readonly deps: MaterialOcrServiceDeps) {
     this.config = deps.config ?? DEFAULT_OCR_CONFIG;
+    this.allowMockProvider = deps.allowMockProvider ?? true;
     this.generateId = deps.generateId ?? (() => randomUUID());
     this.now = deps.now ?? (() => new Date());
   }
@@ -109,6 +118,15 @@ export class MaterialOcrService {
     const pageCount = material.page_count ?? 0;
     if (pageCount > this.config.max_pages) {
       throw new OcrError(OcrErrorCode.PAGE_LIMIT_EXCEEDED);
+    }
+    // Revision Codex (staging): sin proveedor OCR real (solo el mock) no se finge
+    // una lectura. Se bloquea ANTES de leer/escribir: el material queda como
+    // escaneo pendiente, abrible y sin texto simulado.
+    if (!this.allowMockProvider && this.deps.provider.name === 'mock-ocr') {
+      throw new OcrError(
+        OcrErrorCode.PROVIDER_NOT_CONFIGURED,
+        'El servicio de OCR no esta configurado en este entorno.',
+      );
     }
     const bytes = await this.deps.storage.read(material.storage_path);
     if (!bytes) {

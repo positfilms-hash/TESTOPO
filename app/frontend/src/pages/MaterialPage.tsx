@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Material, MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import {
@@ -43,21 +43,21 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
     { type: 'error' | 'success'; text: string } | null
   >(null);
 
+  // Carga la lista de materiales de la oposicion actual (gestor: todos).
+  const loadMaterials = useCallback(async (): Promise<Material[]> => {
+    if (!currentUser || !currentOpposition) return [];
+    return store.platform.listMaterials(currentUser, currentOpposition.id);
+  }, [store, currentUser, currentOpposition]);
+
   useEffect(() => {
     let cancelled = false;
-    if (currentUser && currentOpposition) {
-      void store.platform
-        .listMaterials(currentUser, currentOpposition.id)
-        .then((list) => {
-          if (!cancelled) setMaterials(list);
-        });
-    } else {
-      setMaterials([]);
-    }
+    void loadMaterials().then((list) => {
+      if (!cancelled) setMaterials(list);
+    });
     return () => {
       cancelled = true;
     };
-  }, [store, currentUser, currentOpposition, version]);
+  }, [loadMaterials, version]);
 
   // --- Subida (intake neutro; sin categoria ni clasificacion) ---
   const runUpload = async (
@@ -84,6 +84,11 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
         ...payload,
       });
       setMenuOpen(false);
+      // Revision Codex (B2): refrescar la lista INMEDIATAMENTE con lo persistido,
+      // sin depender solo del contador `version` ni de volver a entrar. La UI
+      // confirma el numero real de materiales subidos en este lote.
+      const list = await loadMaterials();
+      setMaterials(list);
       setNotice({
         type: 'success',
         text: `${batch.imported_files} archivo(s) subido(s). Genera el índice en Temario → "Generar temario".`,

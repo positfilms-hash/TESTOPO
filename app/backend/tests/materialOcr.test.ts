@@ -365,3 +365,30 @@ describe('createCoreRepositories - materialOcr', () => {
     expect(core.mode).toBe('supabase');
   });
 });
+
+describe('MaterialOcrService - sin proveedor OCR real (Revision Codex B3)', () => {
+  it('con mock NO permitido, no finge lectura: bloquea y deja el escaneo intacto', async () => {
+    const materials = new InMemoryMaterialRepository();
+    const ocrRepository = new InMemoryMaterialOcrRepository();
+    const storage = new InMemoryFileStorage();
+    await materials.create(makeMaterial());
+    await storage.save(STORAGE_PATH, bytes);
+    const service = new MaterialOcrService({
+      materials,
+      storage,
+      ocrRepository,
+      renderService: new PlaceholderPdfPageRenderService(),
+      provider: new MockOcrProvider(),
+      allowMockProvider: false, // staging sin Edge Function real
+    });
+
+    await expect(service.startOcr({ material_id: 'mat-1' })).rejects.toMatchObject({
+      code: OcrErrorCode.PROVIDER_NOT_CONFIGURED,
+    });
+    // El material sigue como escaneo pendiente; no se escribio texto ni run.
+    const material = await materials.findById('mat-1');
+    expect(material?.extraction_status).toBe('scanned_detected');
+    expect(material?.content_text).toBeNull();
+    expect(await ocrRepository.getLatestRunByMaterial('mat-1')).toBeNull();
+  });
+});
