@@ -53,6 +53,14 @@ supabase secrets set OPENAI_MODEL=gpt-4o-mini
 supabase functions deploy generate-questions
 ```
 
+## Límites por secreto (SPEC 035)
+
+`generate-questions` lee `MAX_GENERATED_QUESTIONS` y `MAX_QUESTION_SOURCE_CHARS`
+del entorno y los **clampea** al máximo seguro compilado (`resolveQuestionLimits`):
+un valor del operador solo puede **endurecer** (≤ 20 preguntas / ≤ 20000 chars),
+nunca superarlo; si falta o es inválido, se usa el máximo seguro. Activación
+completa en [`../setup/staging-ai-activation.md`](../setup/staging-ai-activation.md).
+
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` las inyecta
 Supabase automáticamente; no hace falta declararlas salvo para sobreescribir.
 

@@ -55,6 +55,16 @@ supabase secrets set OCR_MODEL=gpt-4o-mini            # debe soportar visión
 supabase functions deploy ocr-material
 ```
 
+## Límites por secreto (SPEC 035)
+
+`ocr-material` lee `OCR_MAX_PAGES_PER_DOCUMENT`, `OCR_MAX_CONCURRENT_PAGES` y
+`OCR_PAGE_TIMEOUT_SECONDS` del entorno y los **clampea** al máximo seguro
+(`resolveOcrLimits`): un valor del operador solo puede **endurecer**
+(≤ 300 páginas / ≤ 3 concurrentes / ≤ 60 s por página), nunca superarlo; si falta o
+es inválido, se usa el máximo seguro. El procesamiento es secuencial (1 página a la
+vez), que satisface el cap de concurrencia. Activación completa en
+[`../setup/staging-ai-activation.md`](../setup/staging-ai-activation.md).
+
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` las inyecta
 Supabase automáticamente; no hace falta declararlas salvo para sobreescribir.
 

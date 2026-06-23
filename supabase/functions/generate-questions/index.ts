@@ -20,8 +20,8 @@ import { evaluateManagementAccess } from '../_shared/authz/management.ts';
 import {
   QG_ERROR,
   PROVIDER_NOT_CONFIGURED_MESSAGE,
-  MAX_QUESTION_SOURCE_CHARS,
   MAX_QUESTION_SOURCE_REFERENCES,
+  resolveQuestionLimits,
   validateGenerateRequest,
   resolveProvider,
   evaluateTopicSourceReference,
@@ -145,7 +145,14 @@ Deno.serve(async (req: Request) => {
   const sectionIds = new Set<string>();
   const referenceIds = new Set<string>();
   const topicRefIds = new Set<string>();
-  let charBudget = MAX_QUESTION_SOURCE_CHARS;
+  // SPEC 035: limites efectivos por secreto de Edge Function (clamp al maximo
+  // seguro). El navegador no los controla.
+  const limits = resolveQuestionLimits({
+    MAX_GENERATED_QUESTIONS: Deno.env.get('MAX_GENERATED_QUESTIONS'),
+    MAX_QUESTION_SOURCE_CHARS: Deno.env.get('MAX_QUESTION_SOURCE_CHARS'),
+  });
+  const questionCount = Math.min(request.question_count, limits.maxQuestions);
+  let charBudget = limits.maxSourceChars;
   let secondaryStyleCount = 0;
 
   const pushSource = (s: PromptSource): boolean => {
@@ -312,7 +319,7 @@ Deno.serve(async (req: Request) => {
       model: provider.model,
       topic_title: topic.title,
       difficulty: request.difficulty,
-      question_count: request.question_count,
+      question_count: questionCount,
       sources: promptSources,
       style_note: styleNote,
     });
@@ -359,7 +366,7 @@ Deno.serve(async (req: Request) => {
   const usedReferenceIds = new Set<string>();
 
   for (const candidate of parseRes.candidates) {
-    if (created >= request.question_count) break;
+    if (created >= questionCount) break;
     const v = validateCandidate(candidate, scope);
     if (!v.ok) {
       hadErrors = true;
@@ -419,7 +426,7 @@ Deno.serve(async (req: Request) => {
       opposition_id: request.opposition_id,
       topic_id: request.topic_id,
       mode: 'server_grounded',
-      requested_count: request.question_count,
+      requested_count: questionCount,
       created_count: 0,
       status: 'failed',
       errors: [],
@@ -434,7 +441,7 @@ Deno.serve(async (req: Request) => {
 
   const runStatus = mapRunStatus({
     created,
-    requested: request.question_count,
+    requested: questionCount,
     hadErrors,
   });
   await userClient.from('question_generation_runs').insert({
@@ -443,7 +450,7 @@ Deno.serve(async (req: Request) => {
     opposition_id: request.opposition_id,
     topic_id: request.topic_id,
     mode: 'server_grounded',
-    requested_count: request.question_count,
+    requested_count: questionCount,
     created_count: created,
     status: runStatus,
     errors: [],
@@ -457,7 +464,7 @@ Deno.serve(async (req: Request) => {
   return json({
     run_id: runId,
     created,
-    requested: request.question_count,
+    requested: questionCount,
     warnings: [...new Set(warnings)],
   });
 });
