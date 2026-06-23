@@ -53,6 +53,34 @@ export const MIN_QUESTION_COUNT = 1;
 export const MAX_QUESTION_SOURCE_CHARS = 20000;
 export const MAX_QUESTION_SOURCE_REFERENCES = 20;
 
+// SPEC 035: limites configurables por SECRETO de Edge Function. Un valor del
+// entorno SOLO puede ENDURECER el limite (nunca superar el maximo seguro de
+// arriba); si falta o es invalido, se usa el maximo seguro por defecto. PURA.
+function clampLimit(
+  raw: string | null | undefined,
+  min: number,
+  max: number,
+): number {
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < min) return max; // ausente/invalido -> maximo seguro
+  return Math.min(n, max);
+}
+
+export interface QuestionLimits {
+  maxQuestions: number;
+  maxSourceChars: number;
+}
+
+export function resolveQuestionLimits(env: {
+  MAX_GENERATED_QUESTIONS?: string | null;
+  MAX_QUESTION_SOURCE_CHARS?: string | null;
+}): QuestionLimits {
+  return {
+    maxQuestions: clampLimit(env.MAX_GENERATED_QUESTIONS, MIN_QUESTION_COUNT, MAX_QUESTION_COUNT),
+    maxSourceChars: clampLimit(env.MAX_QUESTION_SOURCE_CHARS, 1, MAX_QUESTION_SOURCE_CHARS),
+  };
+}
+
 export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
 

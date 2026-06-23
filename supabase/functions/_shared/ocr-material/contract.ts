@@ -63,6 +63,39 @@ export const OCR_PER_PAGE_TIMEOUT_MS = 60000; // 60 s por pagina (SPEC 034)
 export const OCR_USABLE_THRESHOLD = 0.7;
 export const OCR_WARNING_THRESHOLD = 0.4;
 
+// SPEC 035: limites configurables por SECRETO de Edge Function. Un valor del
+// entorno SOLO puede ENDURECER el limite (nunca superar el maximo seguro); si
+// falta o es invalido, se usa el maximo seguro por defecto. PURA.
+function clampOcrLimit(raw: string | null | undefined, min: number, max: number): number {
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < min) return max;
+  return Math.min(n, max);
+}
+
+export interface OcrLimits {
+  maxPages: number;
+  maxConcurrentPages: number;
+  pageTimeoutMs: number;
+}
+
+export function resolveOcrLimits(env: {
+  OCR_MAX_PAGES_PER_DOCUMENT?: string | null;
+  OCR_MAX_CONCURRENT_PAGES?: string | null;
+  OCR_PAGE_TIMEOUT_SECONDS?: string | null;
+}): OcrLimits {
+  const timeoutSecondsRaw = env.OCR_PAGE_TIMEOUT_SECONDS;
+  const timeoutSeconds = clampOcrLimit(
+    timeoutSecondsRaw,
+    1,
+    Math.floor(OCR_PER_PAGE_TIMEOUT_MS / 1000),
+  );
+  return {
+    maxPages: clampOcrLimit(env.OCR_MAX_PAGES_PER_DOCUMENT, 1, MAX_OCR_PAGES),
+    maxConcurrentPages: clampOcrLimit(env.OCR_MAX_CONCURRENT_PAGES, 1, MAX_OCR_CONCURRENT_PAGES),
+    pageTimeoutMs: timeoutSeconds * 1000,
+  };
+}
+
 // Para el MVP solo existe el modo automatico (escaneo completo).
 export const OCR_MODES = ['auto'] as const;
 export type OcrMode = (typeof OCR_MODES)[number];

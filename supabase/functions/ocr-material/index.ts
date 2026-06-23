@@ -20,8 +20,7 @@ import { evaluateManagementAccess } from '../_shared/authz/management.ts';
 import {
   OCR_ERROR,
   OCR_PROVIDER_NOT_CONFIGURED_MESSAGE,
-  OCR_PER_PAGE_TIMEOUT_MS,
-  MAX_OCR_PAGES,
+  resolveOcrLimits,
   resolveOcrProvider,
   validateOcrRequest,
   isOcrRetryState,
@@ -140,7 +139,14 @@ Deno.serve(async (req: Request) => {
   if (isRetry && !isOcrRetryState(material.extraction_status)) {
     return fail(OCR_ERROR.RETRY_NOT_ALLOWED, 409);
   }
-  if (typeof material.page_count === 'number' && material.page_count > MAX_OCR_PAGES) {
+  // SPEC 035: limites efectivos por secreto de Edge Function (clamp al maximo
+  // seguro). El navegador no los controla.
+  const limits = resolveOcrLimits({
+    OCR_MAX_PAGES_PER_DOCUMENT: Deno.env.get('OCR_MAX_PAGES_PER_DOCUMENT'),
+    OCR_MAX_CONCURRENT_PAGES: Deno.env.get('OCR_MAX_CONCURRENT_PAGES'),
+    OCR_PAGE_TIMEOUT_SECONDS: Deno.env.get('OCR_PAGE_TIMEOUT_SECONDS'),
+  });
+  if (typeof material.page_count === 'number' && material.page_count > limits.maxPages) {
     return fail(OCR_ERROR.PAGE_LIMIT_EXCEEDED, 413);
   }
 
@@ -200,7 +206,7 @@ Deno.serve(async (req: Request) => {
   // 5b) Render server-side (fail-closed si MuPDF no inicializa/rasteriza).
   let pages: { page_number: number; imageDataUrl: string }[];
   try {
-    pages = await renderPdfToPages(bytes, { maxPages: MAX_OCR_PAGES });
+    pages = await renderPdfToPages(bytes, { maxPages: limits.maxPages });
   } catch (e) {
     const isPage = e instanceof PdfRenderError && e.kind === 'page';
     return await failRun(userClient, runId, request.material_id, material, {
@@ -231,7 +237,7 @@ Deno.serve(async (req: Request) => {
           },
           body: JSON.stringify(body),
         }),
-        OCR_PER_PAGE_TIMEOUT_MS,
+        limits.pageTimeoutMs,
       );
       if (resp.ok) {
         const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };

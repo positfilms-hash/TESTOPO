@@ -15,6 +15,7 @@ import {
   isOcrRetryState,
   isOcrProviderReady,
   resolveOcrProvider,
+  resolveOcrLimits,
   ocrConfidenceBand,
   aggregateUsableText,
   averageOcrConfidence,
@@ -228,6 +229,23 @@ describe('mapOcrTerminalOutcome (estados HONESTOS)', () => {
       extraction_status: 'completed_ocr',
       material_status: 'active',
     });
+  });
+});
+
+describe('resolveOcrLimits (SPEC 035: limites por secreto, clamp)', () => {
+  it('sin env usa los maximos seguros por defecto', () => {
+    expect(resolveOcrLimits({})).toEqual({ maxPages: 300, maxConcurrentPages: 3, pageTimeoutMs: 60000 });
+  });
+  it('un valor del entorno solo puede ENDURECER (nunca superar el maximo)', () => {
+    expect(resolveOcrLimits({ OCR_MAX_PAGES_PER_DOCUMENT: '50' }).maxPages).toBe(50);
+    expect(resolveOcrLimits({ OCR_MAX_PAGES_PER_DOCUMENT: '9999' }).maxPages).toBe(300);
+    expect(resolveOcrLimits({ OCR_MAX_CONCURRENT_PAGES: '1' }).maxConcurrentPages).toBe(1);
+    expect(resolveOcrLimits({ OCR_MAX_CONCURRENT_PAGES: '99' }).maxConcurrentPages).toBe(3);
+    expect(resolveOcrLimits({ OCR_PAGE_TIMEOUT_SECONDS: '30' }).pageTimeoutMs).toBe(30000);
+    expect(resolveOcrLimits({ OCR_PAGE_TIMEOUT_SECONDS: '120' }).pageTimeoutMs).toBe(60000);
+  });
+  it('valor invalido cae al maximo seguro', () => {
+    expect(resolveOcrLimits({ OCR_MAX_PAGES_PER_DOCUMENT: 'x' }).maxPages).toBe(300);
   });
 });
 

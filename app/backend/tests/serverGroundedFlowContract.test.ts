@@ -10,6 +10,7 @@ import { evaluateManagementAccess } from '../../../supabase/functions/_shared/au
 import {
   QG_ERROR,
   resolveProvider,
+  resolveQuestionLimits,
   evaluateTopicSourceReference,
   isEligiblePrimarySection,
   isSecondaryStyleSection,
@@ -127,6 +128,22 @@ describe('evaluateTopicSourceReference (SPEC 033: valida la referencia de tema)'
     expect(
       evaluateTopicSourceReference({ ...okArgs, hasValidConcretePointer: false }),
     ).toMatchObject({ ok: false, reason: 'no_concrete_pointer' });
+  });
+});
+
+describe('resolveQuestionLimits (SPEC 035: limites por secreto, clamp)', () => {
+  it('sin env usa el maximo seguro por defecto', () => {
+    expect(resolveQuestionLimits({})).toEqual({ maxQuestions: 20, maxSourceChars: 20000 });
+  });
+  it('un valor del entorno solo puede ENDURECER (nunca superar el maximo)', () => {
+    expect(resolveQuestionLimits({ MAX_GENERATED_QUESTIONS: '5' }).maxQuestions).toBe(5);
+    expect(resolveQuestionLimits({ MAX_GENERATED_QUESTIONS: '999' }).maxQuestions).toBe(20);
+    expect(resolveQuestionLimits({ MAX_QUESTION_SOURCE_CHARS: '1000' }).maxSourceChars).toBe(1000);
+    expect(resolveQuestionLimits({ MAX_QUESTION_SOURCE_CHARS: '999999' }).maxSourceChars).toBe(20000);
+  });
+  it('valor invalido/<min cae al maximo seguro', () => {
+    expect(resolveQuestionLimits({ MAX_GENERATED_QUESTIONS: 'abc' }).maxQuestions).toBe(20);
+    expect(resolveQuestionLimits({ MAX_GENERATED_QUESTIONS: '0' }).maxQuestions).toBe(20);
   });
 });
 
