@@ -24,7 +24,9 @@ generación de preguntas en servidor (Edge Function `generate-questions`, SPEC 0
 ## Comportamiento sin proveedor (honesto)
 
 Si la Edge Function no encuentra un proveedor real configurado
-(`AI_PROVIDER` ∈ {openai, anthropic} y `OPENAI_API_KEY` presente), responde:
+(`AI_PROVIDER = openai` y `OPENAI_API_KEY` presente — **solo OpenAI** está
+soportado por la función; Anthropic no se declara aquí para no usar su clave con
+otro proveedor), responde:
 
 ```
 HTTP 501

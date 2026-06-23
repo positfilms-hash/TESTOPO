@@ -442,3 +442,336 @@ export function mapRunStatus(args: {
   if (args.hadErrors || args.created < args.requested) return 'partial';
   return 'completed';
 }
+
+// ---------------------------------------------------------------------------
+// SPEC 033 (flujo real): resolucion de proveedor, elegibilidad de secciones,
+// construccion de la peticion al proveedor, parseo de salida y constructores de
+// filas de persistencia. Todo PURO (sin red ni Supabase) y testeado en vitest.
+// ---------------------------------------------------------------------------
+
+// Proveedor SOPORTADO de verdad. Solo OpenAI: usa OPENAI_API_KEY. (Anthropic NO
+// se declara como soportado para no prometer un proveedor con la clave de otro;
+// si en el futuro se cablea, debe usar ANTHROPIC_API_KEY, su secreto correcto.)
+export interface ResolvedProvider {
+  provider: 'openai';
+  apiKey: string;
+  model: string;
+}
+
+export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+
+// Resuelve el proveedor desde el entorno de la Edge Function. Devuelve null si no
+// hay un proveedor real configurado (=> 501 honesto, sin escrituras).
+export function resolveProvider(env: {
+  AI_PROVIDER?: string | null;
+  OPENAI_API_KEY?: string | null;
+  OPENAI_MODEL?: string | null;
+}): ResolvedProvider | null {
+  const provider = (env.AI_PROVIDER ?? '').toLowerCase();
+  if (provider !== 'openai') return null;
+  if (!isNonEmptyString(env.OPENAI_API_KEY)) return null;
+  return {
+    provider: 'openai',
+    apiKey: env.OPENAI_API_KEY.trim(),
+    model: isNonEmptyString(env.OPENAI_MODEL) ? env.OPENAI_MODEL.trim() : DEFAULT_OPENAI_MODEL,
+  };
+}
+
+// material_sections.classification (028-C) -> elegibilidad como evidencia
+// PRIMARIA factual. `old_exam_content` solo aporta estilo/cobertura secundaria.
+export const ELIGIBLE_SECTION_CLASSIFICATIONS = [
+  'study_content',
+  'legal_content',
+  'summary_content',
+  'index_content',
+] as const;
+
+export function isEligiblePrimarySection(args: {
+  classification: unknown;
+  status: unknown;
+}): boolean {
+  return (
+    typeof args.classification === 'string' &&
+    (ELIGIBLE_SECTION_CLASSIFICATIONS as readonly string[]).includes(args.classification) &&
+    args.status === 'active'
+  );
+}
+
+export function isSecondaryStyleSection(classification: unknown): boolean {
+  return classification === 'old_exam_content';
+}
+
+// Instruccion de sistema (resumen canonico de
+// prompts/server-side-source-grounded-question-generator.md). Vive aqui para que
+// la Edge Function la despliegue sin leer ficheros del repo en runtime.
+export const QG_SYSTEM_PROMPT = [
+  'Eres un generador de preguntas tipo test para oposiciones en espanol.',
+  'USA EXCLUSIVAMENTE los fragmentos de fuente proporcionados por el servidor.',
+  'No uses conocimiento externo, no inventes datos, no copies preguntas de examenes antiguos.',
+  'Cada pregunta debe tener: enunciado, 3-4 opciones, EXACTAMENTE una correcta, explicacion,',
+  'dificultad (easy|medium|hard), y el puntero de fuente concreto que te indique el servidor',
+  '(material_id + material_section_id o source_reference_id) y un source_excerpt CONTENIDO en el',
+  'fragmento. NUNCA marques una pregunta como validated: solo el revisor humano valida.',
+].join(' ');
+
+// Esquema de salida estructurada (OpenAI json_schema strict).
+export function openAIResponseSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['candidates'],
+    properties: {
+      candidates: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'statement',
+            'options',
+            'explanation',
+            'difficulty',
+            'topic_id',
+            'material_id',
+            'material_section_id',
+            'source_reference_id',
+            'source_excerpt',
+          ],
+          properties: {
+            statement: { type: 'string' },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['text', 'is_correct'],
+                properties: {
+                  text: { type: 'string' },
+                  is_correct: { type: 'boolean' },
+                },
+              },
+            },
+            explanation: { type: 'string' },
+            difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+            topic_id: { type: 'string' },
+            material_id: { type: 'string' },
+            material_section_id: { type: ['string', 'null'] },
+            source_reference_id: { type: ['string', 'null'] },
+            source_excerpt: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+}
+
+export interface PromptSource {
+  material_id: string;
+  material_section_id: string | null;
+  source_reference_id: string | null;
+  topic_source_reference_id?: string | null;
+  excerpt: string;
+}
+
+// Construye el cuerpo de la peticion a OpenAI Chat Completions con salida
+// estructurada. PURO: no hace fetch. El servidor pasa el modelo y las fuentes
+// concretas; el usuario del navegador NUNCA aporta texto.
+export function buildOpenAIRequest(args: {
+  model: string;
+  topic_title: string;
+  difficulty: Difficulty;
+  question_count: number;
+  sources: ReadonlyArray<PromptSource>;
+  style_note?: string | null;
+}): Record<string, unknown> {
+  const sourceBlock = args.sources
+    .map((s, i) => {
+      const pointer = s.material_section_id
+        ? `material_section_id=${s.material_section_id}`
+        : s.source_reference_id
+          ? `source_reference_id=${s.source_reference_id}`
+          : 'sin puntero';
+      return `FUENTE ${i + 1} [material_id=${s.material_id}; ${pointer}]\n${s.excerpt}`;
+    })
+    .join('\n\n');
+  const userContent = [
+    `Tema: ${args.topic_title}`,
+    `Dificultad solicitada: ${args.difficulty}`,
+    `Numero de preguntas: ${args.question_count}`,
+    args.style_note ? `Contexto de estilo (NO factual): ${args.style_note}` : null,
+    'Genera preguntas SOLO desde estas fuentes, citando el puntero exacto:',
+    sourceBlock,
+  ]
+    .filter((x): x is string => typeof x === 'string')
+    .join('\n\n');
+
+  return {
+    model: args.model,
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: QG_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'grounded_questions',
+        strict: true,
+        schema: openAIResponseSchema(),
+      },
+    },
+  };
+}
+
+export type ParseResult =
+  | { ok: true; candidates: ProviderCandidate[] }
+  | { ok: false; code: QgErrorCode };
+
+// Parsea el contenido JSON devuelto por el proveedor. PURO. No valida anclaje
+// (eso lo hace validateCandidate); solo asegura una estructura minima.
+export function parseProviderCandidates(content: unknown): ParseResult {
+  if (!isNonEmptyString(content)) {
+    return { ok: false, code: QG_ERROR.INVALID_OUTPUT };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { ok: false, code: QG_ERROR.INVALID_OUTPUT };
+  }
+  const root = parsed as { candidates?: unknown };
+  if (typeof root !== 'object' || root === null || !Array.isArray(root.candidates)) {
+    return { ok: false, code: QG_ERROR.INVALID_OUTPUT };
+  }
+  return { ok: true, candidates: root.candidates as ProviderCandidate[] };
+}
+
+// --- Constructores de filas de persistencia (esquema SPEC 023 + 028-E). PUROS. ---
+
+export interface QuestionRow {
+  id: string;
+  workspace_id: string;
+  opposition_id: string;
+  statement: string;
+  correct_answer: string | null;
+  explanation: string;
+  source: Record<string, unknown>;
+  topic: string;
+  topic_id: string;
+  difficulty: Difficulty;
+  status: CandidateStatus;
+  generation_metadata: Record<string, unknown>;
+  material_section_id: string | null;
+  source_reference_id: string | null;
+  topic_source_reference_id: string | null;
+}
+
+export function buildQuestionRow(args: {
+  id: string;
+  workspace_id: string;
+  opposition_id: string;
+  topic_id: string;
+  topic_title: string;
+  candidate: ValidatedCandidate;
+  status: CandidateStatus;
+  run_id: string;
+  provider: string;
+  model: string;
+  topic_source_reference_id?: string | null;
+  now: string;
+}): QuestionRow {
+  const correct = args.candidate.options.find((o) => o.is_correct) ?? null;
+  return {
+    id: args.id,
+    workspace_id: args.workspace_id,
+    opposition_id: args.opposition_id,
+    statement: args.candidate.statement,
+    correct_answer: correct ? correct.text : null,
+    explanation: args.candidate.explanation,
+    source: {
+      id: args.id,
+      material_id: args.candidate.material_id,
+      reference: args.topic_title,
+      excerpt: args.candidate.source_excerpt,
+      status: 'active',
+    },
+    topic: args.topic_title,
+    topic_id: args.topic_id,
+    difficulty: args.candidate.difficulty,
+    status: args.status,
+    generation_metadata: {
+      generated_by_ai: true,
+      generation_run_id: args.run_id,
+      provider: args.provider,
+      model: args.model,
+      created_at: args.now,
+    },
+    material_section_id: args.candidate.material_section_id,
+    source_reference_id: args.candidate.source_reference_id,
+    topic_source_reference_id: args.topic_source_reference_id ?? null,
+  };
+}
+
+export interface OptionRow {
+  question_id: string;
+  workspace_id: string;
+  opposition_id: string;
+  text: string;
+  is_correct: boolean;
+  order_index: number;
+}
+
+export function buildOptionRows(args: {
+  question_id: string;
+  workspace_id: string;
+  opposition_id: string;
+  candidate: ValidatedCandidate;
+}): OptionRow[] {
+  return args.candidate.options.map((o, idx) => ({
+    question_id: args.question_id,
+    workspace_id: args.workspace_id,
+    opposition_id: args.opposition_id,
+    text: o.text,
+    is_correct: o.is_correct,
+    order_index: idx,
+  }));
+}
+
+export interface ValidationRow {
+  question_id: string;
+  workspace_id: string;
+  opposition_id: string;
+  status: 'passed' | 'passed_with_warnings';
+  passed: boolean;
+  errors: string[];
+  warnings: string[];
+  info: string[];
+  recommended_status: CandidateStatus;
+  validator_version: string;
+}
+
+// La candidata ya paso validateCandidate (estructuralmente valida y anclada): el
+// informe automatico es passed / passed_with_warnings (NUNCA failed: una
+// candidata que fallaria no se persiste). El estado recomendado es el de la
+// candidata (pending_review | needs_fix).
+export function buildValidationRow(args: {
+  question_id: string;
+  workspace_id: string;
+  opposition_id: string;
+  status: CandidateStatus;
+  warnings: string[];
+}): ValidationRow {
+  const hasWarnings = args.warnings.length > 0 || args.status === 'needs_fix';
+  return {
+    question_id: args.question_id,
+    workspace_id: args.workspace_id,
+    opposition_id: args.opposition_id,
+    status: hasWarnings ? 'passed_with_warnings' : 'passed',
+    passed: true,
+    errors: [],
+    warnings: args.warnings,
+    info: [],
+    recommended_status: args.status,
+    validator_version: 'server-grounded-1',
+  };
+}

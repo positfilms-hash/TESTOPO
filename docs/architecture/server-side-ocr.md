@@ -69,22 +69,37 @@ crudos del proveedor ni secretos.
    `ocr_failed` o `completed_ocr_with_warnings`; se respeta el límite de páginas. La
    autorización autoritativa de escritura la garantiza además la RLS de
    `material_ocr_runs`/`material_ocr_pages` (`*_manage` → `can_manage_workspace`).
-4. **Proveedor**: lee `OCR_PROVIDER` / `OPENAI_API_KEY` / `OCR_MODEL` de los
-   **secretos de la Edge Function**. Sin proveedor real → **HTTP 501**
+3b. **Guarda explícita de gestión (no solo RLS)**: además de la RLS, la función
+   consulta `profiles` (no eliminado/bloqueado) y `workspace_members` (membership
+   `active` con rol `owner`/`admin`) y evalúa `evaluateManagementAccess`
+   (`_shared/authz/management.ts`). Student/eliminado/revocado fallan **antes** de
+   Storage, del proveedor o de cualquier escritura.
+4. **Proveedor**: `resolveOcrProvider` lee `OCR_PROVIDER` / `OPENAI_API_KEY` /
+   `OCR_MODEL` de los **secretos de la Edge Function**. **Solo OpenAI** (visión)
+   está soportado; Anthropic no se declara aquí. Sin proveedor real → **HTTP 501**
    `OCR_PROVIDER_NOT_CONFIGURED`, se **preserva** el estado detectado y **cero
    escrituras**.
-5. **Integración real (punto marcado en el código)**: cliente service-role solo de
-   servidor → descarga del PDF privado por `storage_path` → render server-side
-   página a página (renderer compatible con Deno; *fail closed* con
-   `OCR_RENDER_FAILED`/`OCR_PAGE_RENDER_FAILED`, nunca render en navegador ni texto
-   inventado) → por página real: `ocrConfidenceBand` + un `material_ocr_pages` →
+5. **Flujo real (implementado)**: crea run (`processing`) y mueve el material a
+   `ocr_processing` → descarga el PDF privado por `storage_path` (Storage, RLS de
+   bucket owner/admin) → render server-side página a página con **MuPDF WASM**
+   (`ocr-material/pdfRender.ts`; *fail closed* con `OCR_RENDER_FAILED`/
+   `OCR_PAGE_RENDER_FAILED`, nunca render en navegador ni texto inventado) → por
+   página real: `buildOcrVisionRequest` → `fetch` a OpenAI (visión, timeout 60s) →
+   `parseOcrVisionResponse` → `ocrConfidenceBand` + un `material_ocr_pages` →
    `aggregateUsableText` + `averageOcrConfidence` + `mapOcrTerminalOutcome` →
-   `content_text` solo si hay texto usable → resumen seguro.
+   `content_text` solo si hay texto usable → resumen seguro. Un reintento borra
+   runs/páginas previos y crea un run **nuevo aislado**.
 
-> **Estado actual = scaffold honesto** (mismo enfoque que `generate-questions`):
-> pasos 1–4 implementados; el paso 5 (render real + proveedor + persistencia) está
-> claramente marcado y se cablea cuando haya secretos de servidor. Mientras tanto,
-> el comportamiento vivo es el 501 honesto, sin persistir nada.
+> **Estado de verificación (honesto).** La lógica determinista (validación de body,
+> autorización explícita, elegibilidad/reintento, bandas de confianza, agregación y
+> estados terminales, construcción de la petición de visión y parseo) vive en
+> `_shared/*` y está **cubierta por vitest** (`serverOcrMaterialContract.test.ts`).
+> El `index.ts` y `pdfRender.ts` corren en **Deno** y **no** los ejecuta ningún test
+> de este repo. **Riesgo principal de staging:** el render server-side de PDF con
+> MuPDF WASM dentro del runtime de Edge Functions (memoria/tiempo) **no está
+> verificado aquí**; si no inicializa, la función falla cerrada (`OCR_RENDER_FAILED`)
+> sin inventar texto. La descarga de Storage, la llamada de visión y la persistencia
+> **solo** se verifican en **staging con secretos reales**.
 
 ## Límites (acotados, documentados)
 

@@ -18,7 +18,15 @@ secretos.
   `*_REQUIRED`. Body no-objeto → `OCR_INVALID_REQUEST`.
 - **Elegibilidad/reintento**: solo `scanned_detected`/`ocr_failed`/
   `completed_ocr_with_warnings` son elegibles; los demás se rechazan.
-- **Proveedor**: `isOcrProviderReady` exige proveedor compatible **y** clave.
+- **Proveedor**: `isOcrProviderReady`/`resolveOcrProvider` exigen **OpenAI** + clave
+  (Anthropic ya **no** se declara soportado: corrige el bug de usar su clave con
+  otro proveedor).
+- **Visión (puro)**: `buildOcrVisionRequest` envía la imagen como data URL +
+  `json_schema`; `parseOcrVisionResponse` tolera salida inválida (texto vacío +
+  confianza null ⇒ página fallida) y acota la confianza a `[0,1]`.
+- **Autorización explícita** (`evaluateManagementAccess`, compartida con 033): owner/
+  admin activos sí; Student/eliminado/revocado/sin perfil fallan antes de Storage/
+  proveedor/escrituras.
 - **Bandas de confianza**: `>=0.70`/`0.40–0.69`/`<0.40|null`.
 - **Agregación**: solo texto usable en orden; media a 2 decimales o `null`.
 - **Estados honestos**: `mapOcrTerminalOutcome` (sin texto → `ocr_failed`; con
@@ -38,9 +46,9 @@ persistencia mockeados):
 
 ## 3. Regresión (debe seguir verde)
 
-- `cd app/backend && npx vitest run` → **570** (incluye material/OCR, plataforma,
-  autorización Supabase/InMemory). El servicio en proceso `MaterialOcrService` y su
-  proveedor mock siguen intactos para InMemory.
+- `cd app/backend && npx vitest run` → **585** (incluye material/OCR, plataforma,
+  autorización Supabase/InMemory y la lógica `_shared` del flujo real). El servicio
+  en proceso `MaterialOcrService` y su proveedor mock siguen intactos para InMemory.
 - `cd app/frontend && npx vitest run` → **78** (incluye smoke + labels OCR).
 - `cd app/frontend && npx vite build` → OK.
 - Subida (PDF/ZIP/carpeta), apertura de PDF firmado y la UI de Material (badges de
@@ -53,7 +61,13 @@ El alumno no puede invocar `ocr-material` (verify_jwt + checks de scope + RLS de
 `material_ocr_runs`/`material_ocr_pages`), ni ver controles de OCR (la UI los limita
 a `isAdmin`), ni runs/páginas/confianza/errores ni referencias internas de imagen.
 
-## 5. Retest de staging (NO codificable; requiere secretos desplegados)
+## 5. Retest de staging (OBLIGATORIO; el `index.ts`/`pdfRender.ts` corren en Deno)
+
+> **El flujo real (`ocr-material/index.ts` + `pdfRender.ts`) NO lo ejecuta ningún
+> test de este repo.** La lógica determinista está cubierta por vitest, pero el
+> **render server-side de PDF con MuPDF WASM en el runtime de Edge Functions** es el
+> **riesgo principal** y no está verificado aquí; la descarga de Storage, la llamada
+> de visión y la persistencia solo se verifican en staging con secretos reales.
 
 Tras `supabase secrets set OCR_PROVIDER/OPENAI_API_KEY/OCR_MODEL` y
 `supabase functions deploy ocr-material` (ver
