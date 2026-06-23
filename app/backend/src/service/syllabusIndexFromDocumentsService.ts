@@ -358,14 +358,33 @@ export class SyllabusIndexFromDocumentsService {
     }
 
     // Referencias de fuente por tema desde las node sources (SPEC 028-D).
+    //
+    // Revision Codex (bloqueante): aplicar no es atomico (crea temas -> refs ->
+    // marca aplicada) y no hay transaccion en los repos. Estrategia explicita de
+    // IDEMPOTENCIA para que un reintento tras un fallo parcial converja sin
+    // duplicar: los temas se reutilizan por clave (arriba) y las referencias se
+    // crean solo si NO existe ya una equivalente (mismo tema/material/seccion/
+    // referencia). Asi `applyProposal` puede re-ejecutarse con seguridad mientras
+    // la propuesta siga `approved`; solo al final se marca `applied`.
     let topicSourceRefs = 0;
     for (const node of applicable) {
       const topicId = nodeToTopicId.get(node.id);
       if (!topicId) {
         continue;
       }
+      const existingRefs = await this.repo.listTopicSourceReferencesByTopic(topicId);
+      const existingKeys = new Set(existingRefs.map(topicSourceRefKey));
       const sources = await this.repo.listNodeSourcesByNode(node.id);
       for (const source of sources) {
+        const key = topicSourceRefKey({
+          material_id: source.material_id,
+          material_section_id: source.material_section_id,
+          source_reference_id: source.source_reference_id,
+        });
+        if (existingKeys.has(key)) {
+          continue; // ya creada en un intento anterior: no duplicar.
+        }
+        existingKeys.add(key);
         await this.repo.createTopicSourceReference({
           id: this.generateId(),
           topic_id: topicId,
@@ -602,6 +621,16 @@ function looksForbidden(text: string): boolean {
 
 function topicKey(parentId: string | null, title: string): string {
   return `${parentId ?? 'root'}::${title.trim().toLowerCase()}`;
+}
+
+// Clave de deduplicacion de una referencia de fuente por tema (idempotencia del
+// apply): mismo material + seccion + referencia para el mismo tema.
+function topicSourceRefKey(ref: {
+  material_id: string;
+  material_section_id: string | null;
+  source_reference_id: string | null;
+}): string {
+  return `${ref.material_id}::${ref.material_section_id ?? ''}::${ref.source_reference_id ?? ''}`;
 }
 
 function orderForApply(

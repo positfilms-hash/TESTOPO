@@ -58,6 +58,7 @@ import {
   type GroundedIndexOutput,
   type DocumentGroundedIndexProvider,
   type SmartUploadFile,
+  type SyllabusIndexProposal,
 } from '../src/index.js';
 
 const enc = new TextEncoder();
@@ -529,5 +530,103 @@ describe('SPEC 028-D - proveedor invalido (servicio)', () => {
     // El run quedo registrado como fallido (no se creo propuesta aplicable).
     const proposals = await repository.listProposalsByOpposition('opp-1');
     expect(proposals).toHaveLength(0);
+  });
+});
+
+// --- Revision Codex (R1-B2): aplicar es idempotente ante reintentos -----------
+describe('SPEC 028-D / Revision Codex - apply idempotente', () => {
+  // Repo que falla UNA vez al marcar la propuesta como `applied` (simula un fallo
+  // parcial: temas y referencias ya creados, pero la marca final no se persiste).
+  class FlakyRepo extends InMemorySyllabusIndexRepository {
+    private failOnce = true;
+    async updateProposal(proposal: SyllabusIndexProposal): Promise<SyllabusIndexProposal> {
+      if (proposal.status === 'applied' && this.failOnce) {
+        this.failOnce = false;
+        throw new Error('fallo simulado al marcar aplicada');
+      }
+      return super.updateProposal(proposal);
+    }
+  }
+
+  it('un reintento tras fallo parcial no duplica temas ni referencias', async () => {
+    const now = new Date('2026-06-23T00:00:00Z');
+    const materialRepo = new InMemoryMaterialRepository();
+    await materialRepo.create({
+      id: 'mat-1',
+      opposition_id: 'opp-1',
+      title: 'Tema 1',
+      description: null,
+      type: 'syllabus',
+      status: 'active',
+      original_filename: 'Tema 1.txt',
+      mime_type: 'text/plain',
+      size_bytes: 10,
+      storage_path: null,
+      content_text: SYLLABUS_TEXT,
+      reference: null,
+      extraction_status: 'completed',
+      created_at: now,
+      updated_at: now,
+    } as Material);
+    const sectionRepo = new InMemoryMaterialSectionRepository();
+    await sectionRepo.create({
+      id: 'sec-1',
+      workspace_id: 'ws-1',
+      opposition_id: 'opp-1',
+      material_id: 'mat-1',
+      section_title: 'Tema 1',
+      section_type: 'heading',
+      page_start: null,
+      page_end: null,
+      content_excerpt: 'La organizacion administrativa del Estado.',
+      content_text: SYLLABUS_TEXT,
+      order_index: 0,
+      classification: 'study_content',
+      source_path: null,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    });
+    const classifier = {
+      getClassificationForMaterial: async () => ({
+        classification: 'syllabus_material',
+        confidence: 0.9,
+        workspace_id: 'ws-1',
+        opposition_id: 'opp-1',
+      }),
+    } as unknown as DocumentClassificationService;
+
+    const repo = new FlakyRepo();
+    const topics = new TopicService(new InMemoryTopicRepository(), {
+      linkRepository: new InMemoryTopicMaterialLinkRepository(),
+    });
+    const service = new SyllabusIndexFromDocumentsService({
+      materials: materialRepo,
+      documentClassification: classifier,
+      sections: sectionRepo,
+      sourceReferences: new InMemorySourceReferenceRepository(),
+      repository: repo,
+      topics,
+      provider: new MockDocumentGroundedIndexProvider(),
+    });
+
+    const detail = await service.proposeFromDocuments({ opposition_id: 'opp-1', workspace_id: 'ws-1' });
+    // Aprueba directamente (precondicion de applyProposal).
+    await repo.updateProposal({ ...detail.proposal, status: 'approved' });
+
+    // Primer intento: crea temas + referencias, pero falla al marcar aplicada.
+    await expect(service.applyProposal(detail.proposal.id)).rejects.toBeTruthy();
+    const topicsAfter1 = (await topics.listTopics()).filter((t) => t.opposition_id === 'opp-1').length;
+    const refsAfter1 = (await repo.listTopicSourceReferencesByOpposition('opp-1')).length;
+    expect(topicsAfter1).toBeGreaterThan(0);
+    expect(refsAfter1).toBeGreaterThan(0);
+
+    // Reintento: converge sin duplicar (temas reutilizados, referencias deduplicadas).
+    const result = await service.applyProposal(detail.proposal.id);
+    const topicsAfter2 = (await topics.listTopics()).filter((t) => t.opposition_id === 'opp-1').length;
+    const refsAfter2 = (await repo.listTopicSourceReferencesByOpposition('opp-1')).length;
+    expect(topicsAfter2).toBe(topicsAfter1);
+    expect(refsAfter2).toBe(refsAfter1);
+    expect(result.proposal.status).toBe('applied');
   });
 });

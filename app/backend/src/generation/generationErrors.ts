@@ -23,6 +23,12 @@ export enum QuestionGenerationErrorCode {
   TOPIC_REQUIRED = 'QUESTION_GENERATION_TOPIC_REQUIRED',
   // SPEC 028-E: una candidata referencia una fuente ajena/inexistente.
   FOREIGN_SOURCE = 'QUESTION_GENERATION_FOREIGN_SOURCE',
+  // Revision Codex: el fragmento pegado no esta contenido en el texto del
+  // material seleccionado (no se puede anclar a una fuente real).
+  EXCERPT_NOT_IN_SOURCE = 'QUESTION_GENERATION_EXCERPT_NOT_IN_SOURCE',
+  // Revision Codex: una candidata no se pudo persistir/finalizar de forma fiable
+  // (fallo parcial). Se registra en el run y la candidata nunca queda en `draft`.
+  PERSIST_FAILED = 'QUESTION_GENERATION_PERSIST_FAILED',
 }
 
 // Limites de numero de preguntas por solicitud (SPEC 004, 7 y 9.7).

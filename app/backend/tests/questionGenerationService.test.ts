@@ -103,12 +103,31 @@ describe('QuestionGenerationService - generacion correcta', () => {
 
     const { questions: created } = await generation.generateFromExcerpt({
       material_id: material.id,
-      excerpt: 'Articulo 14 - igualdad ante la ley (ficticio).',
+      excerpt: 'procedimiento administrativo',
       difficulty: 'hard',
       question_count: 1,
     });
 
-    expect(created[0].source?.excerpt).toContain('Articulo 14');
+    expect(created[0].source?.excerpt).toContain('procedimiento administrativo');
+    // Revision Codex (R1-B1): la generacion expuesta desde fragmento nunca deja
+    // candidatas en `draft` (quedan pending_review aunque no haya tema).
+    expect(created.every((q) => q.status === 'pending_review')).toBe(true);
+  });
+
+  it('rechaza un fragmento que NO pertenece al material (R1-B1)', async () => {
+    const { materials, generation } = await makeSetup();
+    const material = await materialWithText(materials);
+
+    await expect(
+      generation.generateFromExcerpt({
+        material_id: material.id,
+        excerpt: 'Fragmento inventado que no aparece en el documento real.',
+        difficulty: 'easy',
+        question_count: 1,
+      }),
+    ).rejects.toMatchObject({
+      errors: expect.arrayContaining(['QUESTION_GENERATION_EXCERPT_NOT_IN_SOURCE']),
+    });
   });
 
   it('genera desde texto manual sin material, con fuente temporal', async () => {

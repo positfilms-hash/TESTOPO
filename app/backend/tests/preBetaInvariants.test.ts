@@ -216,7 +216,7 @@ describe('SPEC 027 - release gate pre-beta', () => {
   it('BLOCKER: la IA nunca crea preguntas validated', async () => {
     const { platform, admin, material } = await makeWorld();
     const result = await platform.generateFromExcerpt(admin, {
-      material_id: material.id, excerpt: 'Fragmento concreto de prueba para generar.',
+      material_id: material.id, excerpt: 'Texto ficticio del material.',
       difficulty: 'easy', question_count: 3,
     });
     expect(result.questions.length).toBeGreaterThan(0);

@@ -11,6 +11,7 @@ import {
   ocrCanRetry,
   ocrHasOutcome,
   ocrIsFirstRun,
+  ocrIsSimulated,
 } from '../components/ui.js';
 
 // SPEC 029: Material es una biblioteca de archivos simple. Una sola orden
@@ -169,11 +170,20 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
       const ok =
         status.extraction_status === 'completed_ocr' ||
         status.extraction_status === 'completed_ocr_with_warnings';
-      setNotice(
-        ok
-          ? { type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' }
-          : { type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' },
-      );
+      // Revision Codex (R2-2): si el proveedor es el MOCK (no hay Edge Function
+      // real configurada), el texto extraido es SIMULADO. No anunciarlo como OCR
+      // real: mostrar una advertencia clara para no inducir a error.
+      const simulated = ocrIsSimulated(status.run?.provider);
+      if (simulated) {
+        setNotice({
+          type: 'error',
+          text: 'OCR en modo demostración: el texto extraído es SIMULADO, no real. Para leer escaneos de verdad hay que configurar el servicio de OCR (Edge Function).',
+        });
+      } else if (ok) {
+        setNotice({ type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' });
+      } else {
+        setNotice({ type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' });
+      }
       refresh();
     } catch (err) {
       setNotice({ type: 'error', text: ocrErrorMessage(err) });

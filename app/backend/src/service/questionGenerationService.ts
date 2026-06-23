@@ -157,6 +157,20 @@ export class QuestionGenerationService {
         QuestionGenerationErrorCode.CONTENT_REQUIRED,
       ]);
     }
+
+    // Revision Codex (bloqueante): un fragmento pegado debe PERTENECER al
+    // material seleccionado. Si no esta contenido en su `content_text`, no se
+    // puede anclar a una fuente real -> se rechaza (evita etiquetar texto
+    // inventado con un PDF real y que acabe como pregunta aprobable).
+    if (
+      request.mode === 'from_material_excerpt' &&
+      material &&
+      !excerptBelongsToMaterial(request.excerpt ?? '', material.content_text)
+    ) {
+      throw new QuestionGenerationError([
+        QuestionGenerationErrorCode.EXCERPT_NOT_IN_SOURCE,
+      ]);
+    }
     // Limite de caracteres enviados al proveedor (SPEC 018.4, 19).
     const text = baseText.slice(0, this.config.max_input_chars);
 
@@ -183,9 +197,15 @@ export class QuestionGenerationService {
       ? material.opposition_id
       : requireOpposition(request.opposition_id);
 
-    // Sin tema vinculado, los borradores quedan en `draft`; con tema, en
-    // `pending_review` (SPEC 004, regla central y 9.4).
-    const targetStatus: QuestionStatus = topic ? 'pending_review' : 'draft';
+    // Sin tema vinculado, los borradores del motor base quedan en `draft`; con
+    // tema, en `pending_review` (SPEC 004, regla central y 9.4). Revision Codex:
+    // la generacion EXPUESTA desde un fragmento concreto (`from_material_excerpt`,
+    // unica via de motor base que ofrece el facade) nunca debe dejar candidatas en
+    // `draft` -> queda `pending_review` aunque no haya tema.
+    const targetStatus: QuestionStatus =
+      topic || request.mode === 'from_material_excerpt'
+        ? 'pending_review'
+        : 'draft';
 
     const existingStatements = new Set(
       (await this.questionService.listQuestions()).map((question) =>
@@ -421,4 +441,23 @@ function runStatus(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// El fragmento debe estar CONTENIDO en el texto del material (modulo espacios y
+// mayusculas), igual que el anclaje de SPEC 028-E. Sin `content_text` (escaneo
+// fallido, material sin texto) no se puede verificar -> no pertenece.
+function excerptBelongsToMaterial(
+  excerpt: string,
+  contentText: string | null | undefined,
+): boolean {
+  const needle = normalizeForMatch(excerpt);
+  const haystack = normalizeForMatch(contentText ?? '');
+  if (needle.length === 0 || haystack.length === 0) {
+    return false;
+  }
+  return haystack.includes(needle);
+}
+
+function normalizeForMatch(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
