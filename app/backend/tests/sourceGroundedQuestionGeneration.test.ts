@@ -253,6 +253,11 @@ async function makeSetup() {
     topics,
     platform,
     examPatternLearningRepo,
+    // Expuestos para tests que construyen un grounded service alternativo
+    // (p. ej. con validacion flaky) sobre los mismos repos sembrados.
+    sourceRetrieval,
+    materialRepo,
+    validation,
   };
 }
 
@@ -570,5 +575,49 @@ describe('SPEC 028-F - IA de la oposicion (facade)', () => {
     await expect(
       ctx.platform.listStyleProfiles(ctx.student, ctx.opp.id),
     ).rejects.toBeInstanceOf(AccessError);
+  });
+});
+
+// --- Revision Codex (R2-3): la generacion nunca deja `draft` ------------------
+describe('SPEC 028-E / Revision Codex - estados de generacion fiables', () => {
+  it('si la finalizacion de una candidata falla, NO queda en draft y el run se crea', async () => {
+    const ctx = await orgSetup();
+    const topicId = await seedAppliedTopic(ctx);
+
+    // Validacion que SIEMPRE falla: simula un fallo parcial al finalizar la
+    // candidata (p. ej. un error transitorio de Supabase entre crear y transicionar).
+    const flakyValidation = {
+      validateQuestion: async () => {
+        throw new Error('fallo simulado de validacion');
+      },
+    } as unknown as QuestionValidationService;
+
+    const grounded = new SourceGroundedQuestionGenerationService({
+      questionService: ctx.questions,
+      materials: ctx.materialRepo,
+      topics: ctx.topics,
+      retrieval: ctx.sourceRetrieval,
+      validationService: flakyValidation,
+      runRepository: new InMemoryGenerationRunRepository(),
+    });
+
+    // La operacion termina (no se cuelga ni propaga): devuelve un run con estado.
+    const result = await grounded.generateFromTopic({
+      opposition_id: ctx.opp.id,
+      topic_id: topicId,
+      difficulty: 'easy',
+      count: 2,
+    });
+
+    expect(result.run).toBeDefined();
+    expect(result.run.status).toBe('failed'); // ninguna candidata se completo
+    expect(result.run.errors).toContain('QUESTION_GENERATION_PERSIST_FAILED');
+
+    // NINGUNA pregunta queda en `draft`: el borrador huerfano se remedia a needs_fix.
+    const all = await ctx.questions.listQuestions();
+    expect(all.every((q) => q.status !== 'draft')).toBe(true);
+    expect(all.some((q) => q.status === 'needs_fix')).toBe(true);
+    // Y nunca validated automaticamente.
+    expect(all.every((q) => q.status !== 'validated')).toBe(true);
   });
 });

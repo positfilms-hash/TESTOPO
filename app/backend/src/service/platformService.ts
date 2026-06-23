@@ -283,8 +283,10 @@ export class PlatformService {
     oppositionId: string,
   ): Promise<DocumentInventory> {
     await this.requireManageOpposition(actor, oppositionId);
+    const opposition = await this.deps.oppositionRepository.findById(oppositionId);
     return this.requireDocumentClassification().classifyOpposition({
       opposition_id: oppositionId,
+      workspace_id: opposition?.workspace_id ?? null,
       created_by: actor.id,
     });
   }
@@ -764,10 +766,12 @@ export class PlatformService {
     const classifier = this.requireDocumentClassification();
     const sectionsSvc = this.requireMaterialSections();
     const grounded = this.requireSyllabusFromDocuments();
+    const opposition = await this.deps.oppositionRepository.findById(oppositionId);
 
     // 1) Clasifica todo el material analizable de la oposicion.
     const inventory = await classifier.classifyOpposition({
       opposition_id: oppositionId,
+      workspace_id: opposition?.workspace_id ?? null,
       created_by: actor.id,
     });
 
@@ -796,7 +800,6 @@ export class PlatformService {
     }
 
     // 3) Propone el indice anclado a documentos (pendiente de revision).
-    const opposition = await this.deps.oppositionRepository.findById(oppositionId);
     return grounded.proposeFromDocuments({
       opposition_id: oppositionId,
       workspace_id: opposition?.workspace_id ?? null,

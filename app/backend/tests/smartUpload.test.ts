@@ -47,6 +47,7 @@ import {
   AccessError,
   AccessErrorCode,
   type SmartUploadFile,
+  type MaterialImportBatch,
 } from '../src/index.js';
 
 const enc = new TextEncoder();
@@ -656,5 +657,67 @@ describe('SPEC 028 - el estudiante no ve tests antiguos', () => {
         }),
       SmartUploadErrorCode.INVALID_CATEGORY,
     );
+  });
+});
+
+// --- Revision Codex (R2-4): contador de importacion robusto -------------------
+//
+// En staging, `imported_files` salia 0 aunque se creaban materiales: el "echo"
+// del UPDATE/SELECT de Supabase no reflejaba el contador. `finishBatch` ahora
+// devuelve el lote LOCAL autoritativo, asi que el resumen es correcto aunque el
+// repositorio pierda el campo al guardar.
+describe('SPEC 028 / Revision Codex - contador de importacion', () => {
+  // Repo de lotes "lossy": al guardar, devuelve el lote con los contadores a 0
+  // (simula el echo de Supabase filtrado por RLS).
+  class LossyBatchRepo extends InMemoryMaterialImportBatchRepository {
+    async save(batch: MaterialImportBatch): Promise<MaterialImportBatch> {
+      await super.save(batch);
+      return { ...batch, imported_files: 0, total_files: 0, analyzed_files: 0 };
+    }
+  }
+
+  function makeImport(batches: InMemoryMaterialImportBatchRepository) {
+    const oppositionRepo = new InMemoryOppositionRepository();
+    const now = new Date('2026-06-23T00:00:00Z');
+    void oppositionRepo.create({
+      id: 'opp-1',
+      workspace_id: 'ws-1',
+      title: 'Aux',
+      description: null,
+      slug: 'aux',
+      status: 'active',
+      created_by: 'admin',
+      created_at: now,
+      updated_at: now,
+    });
+    const materialRepo = new InMemoryMaterialRepository();
+    const topicRepo = new InMemoryTopicRepository();
+    const linkRepo = new InMemoryTopicMaterialLinkRepository();
+    const topics = new TopicService(topicRepo, { materialRepository: materialRepo, linkRepository: linkRepo });
+    return new MaterialImportService({
+      materials: materialRepo,
+      topics,
+      topicMaterialLinks: linkRepo,
+      oppositions: oppositionRepo,
+      storage: new InMemoryFileStorage(),
+      extractor: new StubPdfTextExtractor(),
+      zipReader: new FflateZipReader(),
+      batches,
+      items: new InMemoryMaterialImportItemRepository(),
+    });
+  }
+
+  it('cuenta los archivos importados aunque el repo pierda el campo al guardar', async () => {
+    const materialImport = makeImport(new LossyBatchRepo());
+    const { batch, items } = await materialImport.smartUpload({
+      opposition_id: 'opp-1',
+      upload_category: 'opposition_material',
+      source_type: 'multi_file',
+      files: [file('uno.pdf', pdfWithText('uno')), file('dos.pdf', pdfWithText('dos'))],
+    });
+    // A pesar del echo lossy del repo, el resumen refleja lo realmente importado.
+    expect(batch.imported_files).toBe(2);
+    expect(batch.total_files).toBe(2);
+    expect(items.filter((i) => i.status === 'imported')).toHaveLength(2);
   });
 });

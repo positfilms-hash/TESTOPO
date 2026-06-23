@@ -207,6 +207,7 @@ export class DocumentClassificationService {
   // genera indice, preguntas ni tests. Devuelve el inventario revisable.
   async classifyOpposition(input: {
     opposition_id: string;
+    workspace_id?: string | null;
     created_by?: string | null;
   }): Promise<DocumentInventory> {
     const oppositionId = input.opposition_id;
@@ -217,7 +218,7 @@ export class DocumentClassificationService {
     const timestamp = this.now();
     const run = await this.runs.create({
       id: this.generateId(),
-      workspace_id: null,
+      workspace_id: input.workspace_id ?? null,
       opposition_id: oppositionId,
       batch_id: null,
       created_by: input.created_by ?? null,
@@ -271,7 +272,7 @@ export class DocumentClassificationService {
       const ts = this.now();
       const classification = await this.classifications.create({
         id: this.generateId(),
-        workspace_id: null,
+        workspace_id: input.workspace_id ?? null,
         opposition_id: oppositionId,
         material_id: material.id,
         run_id: run.id,

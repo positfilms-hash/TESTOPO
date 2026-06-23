@@ -66,9 +66,14 @@ describe('DocumentClassificationService.classifyOpposition', () => {
     await materials.create(makeMaterial({ id: 'm2', title: 'Tema 2' }));
     await materials.create(makeMaterial({ id: 'other', opposition_id: 'opp-2' }));
 
-    const inv = await service.classifyOpposition({ opposition_id: 'opp-1' });
+    const inv = await service.classifyOpposition({
+      opposition_id: 'opp-1',
+      workspace_id: 'ws-1',
+    });
     expect(inv.run?.opposition_id).toBe('opp-1');
+    expect(inv.run?.workspace_id).toBe('ws-1');
     expect(inv.classifications).toHaveLength(2);
+    expect(inv.classifications.every((c) => c.workspace_id === 'ws-1')).toBe(true);
     expect(inv.classifications.map((c) => c.material_id).sort()).toEqual(['m1', 'm2']);
   });
 

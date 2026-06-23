@@ -289,87 +289,109 @@ export class SourceGroundedQuestionGenerationService {
           created_at: this.now(),
         };
 
-        const draft = await this.questions.createQuestion({
-          opposition_id: input.opposition_id,
-          statement: candidate.statement,
-          options: candidate.options.map((o, idx) => ({
-            text: o.text,
-            is_correct: o.is_correct,
-            order: idx,
-          })),
-          explanation: candidate.explanation,
-          source: builtSource,
-          topic: topic.title,
-          topic_id: topic.id,
-          difficulty: candidate.difficulty,
-          generation_metadata: metadata,
-          material_section_id: source.material_section_id,
-          source_reference_id: source.source_reference_id,
-          topic_source_reference_id: source.topic_source_reference_id,
-        });
-
-        // SPEC 028-F: anti-copia + calidad SOLO en modo adaptativo (con
-        // `learning`). Sin el, comportamiento 028-E identico (finalizeStatus).
-        let question: Question;
-        if (this.learning) {
-          const copy = assessCopyRisk(
-            candidate.statement,
-            fingerprints,
-            this.copyRiskThreshold,
-          );
-          const quality = scoreCandidateQuality({
-            grounded: isNonEmptyString(builtSource.excerpt),
-            option_count: candidate.options.length,
-            statement_length: candidate.statement.length,
-            single_correct:
-              candidate.options.filter((o) => o.is_correct).length === 1,
-            requested_difficulty: input.difficulty,
-            candidate_difficulty: candidate.difficulty ?? null,
-            rules: profile?.rules ?? null,
+        // Revision Codex (bloqueante): la candidata se crea en `draft` y luego se
+        // transiciona; si un fallo (p. ej. Supabase) interrumpe esa transicion,
+        // NO debe quedar un `draft` huerfano ni abortar el run entero. Cada
+        // candidata va en su propio try/catch: el fallo se registra, el draft se
+        // remedia a `needs_fix` (nunca queda en `draft`), y el run continua y se
+        // crea siempre con estado visible.
+        let draft: Question | null = null;
+        try {
+          draft = await this.questions.createQuestion({
+            opposition_id: input.opposition_id,
+            statement: candidate.statement,
+            options: candidate.options.map((o, idx) => ({
+              text: o.text,
+              is_correct: o.is_correct,
+              order: idx,
+            })),
+            explanation: candidate.explanation,
+            source: builtSource,
+            topic: topic.title,
+            topic_id: topic.id,
+            difficulty: candidate.difficulty,
+            generation_metadata: metadata,
+            material_section_id: source.material_section_id,
+            source_reference_id: source.source_reference_id,
+            topic_source_reference_id: source.topic_source_reference_id,
           });
-          const qualityWarnings = [...quality.warnings];
-          if (copy.risk) {
-            qualityWarnings.push(
-              `copying_risk: parecido alto a un examen antiguo (${copy.score}).`,
+
+          // SPEC 028-F: anti-copia + calidad SOLO en modo adaptativo (con
+          // `learning`). Sin el, comportamiento 028-E identico (finalizeStatus).
+          let question: Question;
+          if (this.learning) {
+            const copy = assessCopyRisk(
+              candidate.statement,
+              fingerprints,
+              this.copyRiskThreshold,
             );
-          }
-          // Riesgo de copia o calidad baja: NUNCA pending_review en silencio.
-          if (copy.risk) {
-            question = await this.questions.changeStatus(draft.id, 'needs_fix');
-            warnings.push(
-              'Una candidata se marcó needs_fix por posible copia de un examen antiguo (copying_risk).',
-            );
-          } else if (quality.overall < this.lowQualityThreshold) {
-            question = await this.questions.changeStatus(draft.id, 'needs_fix');
-            warnings.push(
-              'Una candidata se marcó needs_fix por baja puntuación de calidad.',
-            );
+            const quality = scoreCandidateQuality({
+              grounded: isNonEmptyString(builtSource.excerpt),
+              option_count: candidate.options.length,
+              statement_length: candidate.statement.length,
+              single_correct:
+                candidate.options.filter((o) => o.is_correct).length === 1,
+              requested_difficulty: input.difficulty,
+              candidate_difficulty: candidate.difficulty ?? null,
+              rules: profile?.rules ?? null,
+            });
+            const qualityWarnings = [...quality.warnings];
+            if (copy.risk) {
+              qualityWarnings.push(
+                `copying_risk: parecido alto a un examen antiguo (${copy.score}).`,
+              );
+            }
+            // Riesgo de copia o calidad baja: NUNCA pending_review en silencio.
+            if (copy.risk) {
+              question = await this.questions.changeStatus(draft.id, 'needs_fix');
+              warnings.push(
+                'Una candidata se marcó needs_fix por posible copia de un examen antiguo (copying_risk).',
+              );
+            } else if (quality.overall < this.lowQualityThreshold) {
+              question = await this.questions.changeStatus(draft.id, 'needs_fix');
+              warnings.push(
+                'Una candidata se marcó needs_fix por baja puntuación de calidad.',
+              );
+            } else {
+              question = await this.finalizeStatus(draft);
+            }
+            pendingScores.push({
+              id: this.generateId(),
+              question_id: question.id,
+              run_id: null,
+              workspace_id: input.workspace_id ?? null,
+              opposition_id: input.opposition_id,
+              source_grounding: quality.source_grounding,
+              exam_style_similarity: quality.exam_style_similarity,
+              clarity: quality.clarity,
+              single_answer_confidence: quality.single_answer_confidence,
+              difficulty_fit: quality.difficulty_fit,
+              overall: quality.overall,
+              warnings: qualityWarnings,
+              created_at: this.now(),
+              updated_at: this.now(),
+            });
           } else {
             question = await this.finalizeStatus(draft);
           }
-          pendingScores.push({
-            id: this.generateId(),
-            question_id: question.id,
-            run_id: null,
-            workspace_id: input.workspace_id ?? null,
-            opposition_id: input.opposition_id,
-            source_grounding: quality.source_grounding,
-            exam_style_similarity: quality.exam_style_similarity,
-            clarity: quality.clarity,
-            single_answer_confidence: quality.single_answer_confidence,
-            difficulty_fit: quality.difficulty_fit,
-            overall: quality.overall,
-            warnings: qualityWarnings,
-            created_at: this.now(),
-            updated_at: this.now(),
-          });
-        } else {
-          question = await this.finalizeStatus(draft);
-        }
-        created.push(question);
+          created.push(question);
 
-        if (source.material_section_id) usedSectionIds.add(source.material_section_id);
-        if (source.source_reference_id) usedReferenceIds.add(source.source_reference_id);
+          if (source.material_section_id) usedSectionIds.add(source.material_section_id);
+          if (source.source_reference_id) usedReferenceIds.add(source.source_reference_id);
+        } catch {
+          errors.push(QuestionGenerationErrorCode.PERSIST_FAILED);
+          warnings.push(
+            'Una candidata no se pudo finalizar de forma fiable y quedó marcada para corrección.',
+          );
+          // Remedia el borrador huerfano: nunca debe quedar en `draft`.
+          if (draft) {
+            try {
+              await this.questions.changeStatus(draft.id, 'needs_fix');
+            } catch {
+              // Best-effort: si tampoco se puede, queda registrado en el run.
+            }
+          }
+        }
       }
     }
 

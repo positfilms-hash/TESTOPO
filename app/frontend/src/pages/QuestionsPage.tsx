@@ -481,10 +481,17 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
         text: `Se han generado ${result.questions.length} preguntas pendientes de revision.`,
       });
     } catch (error) {
-      const text =
-        error instanceof QuestionGenerationError
-          ? 'No se pudo generar: revisa el material (con texto y no obsoleto) y los parametros.'
-          : 'No se pudo generar.';
+      const codes =
+        error && typeof error === 'object' && Array.isArray((error as { errors?: unknown }).errors)
+          ? (error as { errors: string[] }).errors
+          : [];
+      let text = 'No se pudo generar.';
+      if (codes.some((c) => c.includes('EXCERPT_NOT_IN_SOURCE'))) {
+        text =
+          'El fragmento no pertenece al material seleccionado. Copia y pega un texto que aparezca en ese documento.';
+      } else if (error instanceof QuestionGenerationError) {
+        text = 'No se pudo generar: revisa el material (con texto y no obsoleto) y los parametros.';
+      }
       setNotice({ type: 'error', text });
     }
   };

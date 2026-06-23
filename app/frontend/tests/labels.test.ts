@@ -10,6 +10,7 @@ import {
   ocrCanRetry,
   ocrIsFirstRun,
   ocrHasOutcome,
+  ocrIsSimulated,
 } from '../src/components/ui.js';
 
 describe('SPEC 016 - etiquetas de estado en espanol', () => {
@@ -105,5 +106,12 @@ describe('SPEC 030 - estado OCR por archivo (gestor)', () => {
     expect(ocrHasOutcome('ocr_failed')).toBe(true);
     expect(ocrHasOutcome('scanned_detected')).toBe(false);
     expect(ocrHasOutcome('completed')).toBe(false);
+  });
+
+  it('detecta OCR simulado (mock) frente a proveedor real (R2-2)', () => {
+    expect(ocrIsSimulated('mock-ocr')).toBe(true);
+    expect(ocrIsSimulated('edge-function-ocr')).toBe(false);
+    expect(ocrIsSimulated(null)).toBe(false);
+    expect(ocrIsSimulated(undefined)).toBe(false);
   });
 });

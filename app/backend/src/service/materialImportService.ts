@@ -661,7 +661,12 @@ export class MaterialImportService {
     } else {
       status = 'completed';
     }
-    const saved = await this.deps.batches.save({
+    // Revision Codex (contador): construimos el lote final con los recuentos
+    // autoritativos, lo persistimos y devolvemos ESE objeto local. No dependemos
+    // del valor devuelto por `save` (el UPDATE/SELECT en Supabase puede no
+    // reflejar `imported_files` por RLS), de modo que el resumen mostrado al
+    // usuario coincide siempre con lo realmente importado.
+    const finalBatch: MaterialImportBatch = {
       ...batch,
       status,
       total_files: items.length,
@@ -672,11 +677,12 @@ export class MaterialImportService {
       errors,
       warnings,
       updated_at: this.now(),
-    });
-    return { batch: saved, items };
+    };
+    await this.deps.batches.save(finalBatch);
+    return { batch: finalBatch, items };
   }
 
-  private recordItem(
+  private async recordItem(
     args: IngestArgs,
     materialId: string | null,
     topicId: string | null,
@@ -684,7 +690,7 @@ export class MaterialImportService {
     error: ImportErrorCode | null,
   ): Promise<MaterialImportItem> {
     const timestamp = this.now();
-    return this.deps.items.create({
+    const item: MaterialImportItem = {
       id: this.generateId(),
       batch_id: args.batchId,
       workspace_id: args.workspaceId,
@@ -700,7 +706,13 @@ export class MaterialImportService {
       error,
       created_at: timestamp,
       updated_at: timestamp,
-    });
+    };
+    // Revision Codex (contador): persistimos el item pero devolvemos el objeto
+    // LOCAL autoritativo. El "echo" de Supabase puede perder campos (p. ej.
+    // `status`) por RLS en el SELECT posterior al INSERT, lo que hacia que el
+    // recuento de `finishBatch` saliera 0 aunque los materiales se creaban.
+    await this.deps.items.create(item);
+    return item;
   }
 
   // Duplicado a nivel de oposicion (carga masiva sin tema): mismo nombre de

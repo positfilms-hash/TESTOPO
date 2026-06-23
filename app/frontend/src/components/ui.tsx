@@ -181,6 +181,12 @@ export function ocrHasOutcome(extractionStatus: string | null | undefined): bool
   return OCR_OUTCOME.has(extractionStatus ?? '');
 }
 
+// Revision Codex (R2-2): el OCR es SIMULADO cuando el proveedor es el mock (no hay
+// Edge Function real configurada). La UI no debe anunciarlo como OCR real.
+export function ocrIsSimulated(provider: string | null | undefined): boolean {
+  return provider === 'mock-ocr';
+}
+
 export function OcrBadge({ extractionStatus }: { extractionStatus: string | null | undefined }) {
   const info = ocrStatusInfo(extractionStatus);
   if (!info) return null;
