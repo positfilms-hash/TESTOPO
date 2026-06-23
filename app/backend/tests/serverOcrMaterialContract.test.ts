@@ -14,10 +14,13 @@ import {
   isOcrEligibleState,
   isOcrRetryState,
   isOcrProviderReady,
+  resolveOcrProvider,
   ocrConfidenceBand,
   aggregateUsableText,
   averageOcrConfidence,
   mapOcrTerminalOutcome,
+  buildOcrVisionRequest,
+  parseOcrVisionResponse,
   MAX_OCR_PAGES,
   OCR_PER_PAGE_TIMEOUT_MS,
 } from '../../../supabase/functions/_shared/ocr-material/contract';
@@ -120,18 +123,52 @@ describe('elegibilidad y reintento por estado', () => {
   });
 });
 
-describe('isOcrProviderReady', () => {
-  it('exige proveedor compatible Y clave presente', () => {
+describe('isOcrProviderReady / resolveOcrProvider', () => {
+  it('solo OpenAI esta soportado (anthropic NO, para no usar su clave con otro)', () => {
     expect(isOcrProviderReady({ provider: 'openai', apiKey: 'sk-x' })).toBe(true);
-    expect(isOcrProviderReady({ provider: 'anthropic', apiKey: 'k' })).toBe(true);
+    expect(isOcrProviderReady({ provider: 'anthropic', apiKey: 'k' })).toBe(false);
     expect(isOcrProviderReady({ provider: 'openai', apiKey: '' })).toBe(false);
     expect(isOcrProviderReady({ provider: 'openai', apiKey: null })).toBe(false);
     expect(isOcrProviderReady({ provider: '', apiKey: 'sk-x' })).toBe(false);
     expect(isOcrProviderReady({ provider: 'mock', apiKey: 'sk-x' })).toBe(false);
   });
 
+  it('resolveOcrProvider devuelve null sin proveedor real; OpenAI con clave', () => {
+    expect(resolveOcrProvider({ OCR_PROVIDER: 'openai', OPENAI_API_KEY: '' })).toBeNull();
+    expect(resolveOcrProvider({ OCR_PROVIDER: 'anthropic', OPENAI_API_KEY: 'k' })).toBeNull();
+    const r = resolveOcrProvider({ OCR_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-x', OCR_MODEL: 'gpt-4o' });
+    expect(r).toMatchObject({ provider: 'openai', apiKey: 'sk-x', model: 'gpt-4o' });
+  });
+
   it('expone el mensaje honesto sin proveedor', () => {
     expect(OCR_PROVIDER_NOT_CONFIGURED_MESSAGE).toContain('no configurado en servidor');
+  });
+});
+
+describe('vision request/response (puro)', () => {
+  it('buildOcrVisionRequest incluye la imagen como data URL y json_schema', () => {
+    const body = buildOcrVisionRequest({ model: 'gpt-4o', imageDataUrl: 'data:image/png;base64,AAA' }) as {
+      model: string;
+      messages: { role: string; content: unknown }[];
+      response_format: { type: string };
+    };
+    expect(body.model).toBe('gpt-4o');
+    expect(body.response_format.type).toBe('json_schema');
+    const userMsg = body.messages.find((m) => m.role === 'user');
+    expect(JSON.stringify(userMsg?.content)).toContain('data:image/png;base64,AAA');
+  });
+
+  it('parseOcrVisionResponse extrae texto/confianza/warnings y tolera basura', () => {
+    expect(parseOcrVisionResponse(JSON.stringify({ text: 'Hola', confidence: 0.9, warnings: [] }))).toEqual({
+      text: 'Hola',
+      confidence: 0.9,
+      warnings: [],
+    });
+    // confianza fuera de rango se acota a [0,1]
+    expect(parseOcrVisionResponse(JSON.stringify({ text: 'x', confidence: 5 })).confidence).toBe(1);
+    // salida no JSON -> texto vacio + confianza null (=> pagina fallida)
+    expect(parseOcrVisionResponse('no-json').confidence).toBeNull();
+    expect(parseOcrVisionResponse(null).text).toBe('');
   });
 });
 

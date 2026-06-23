@@ -206,10 +206,15 @@ export function validateOcrRequest(raw: unknown): OcrRequestValidation {
 }
 
 // ---------------------------------------------------------------------------
-// Proveedor OCR/vision. La CLAVE es un secreto de SERVIDOR. Esta funcion PURA
-// decide si hay un proveedor real configurado (sin leer el entorno ella misma).
+// Proveedor OCR/vision. La CLAVE es un secreto de SERVIDOR. Solo OpenAI esta
+// soportado de verdad (usa OPENAI_API_KEY). NO se declara Anthropic como
+// soportado para no prometer un proveedor con la clave de otro; si se cablea en
+// el futuro debe usar ANTHROPIC_API_KEY, su secreto correcto. Funciones PURAS:
+// no leen el entorno ellas mismas.
 // ---------------------------------------------------------------------------
-export const OCR_PROVIDERS = ['openai', 'anthropic'] as const;
+export const OCR_PROVIDERS = ['openai'] as const;
+
+export const DEFAULT_OCR_VISION_MODEL = 'gpt-4o-mini';
 
 export function isOcrProviderReady(args: {
   provider: string | null | undefined;
@@ -220,6 +225,115 @@ export function isOcrProviderReady(args: {
     (OCR_PROVIDERS as readonly string[]).includes(provider) &&
     isNonEmptyString(args.apiKey)
   );
+}
+
+export interface ResolvedOcrProvider {
+  provider: 'openai';
+  apiKey: string;
+  model: string;
+}
+
+// Resuelve el proveedor OCR desde el entorno de la Edge Function. null si no hay
+// proveedor real configurado (=> 501 honesto, conserva el estado detectado).
+export function resolveOcrProvider(env: {
+  OCR_PROVIDER?: string | null;
+  OPENAI_API_KEY?: string | null;
+  OCR_MODEL?: string | null;
+}): ResolvedOcrProvider | null {
+  const provider = (env.OCR_PROVIDER ?? '').toLowerCase();
+  if (provider !== 'openai') return null;
+  if (!isNonEmptyString(env.OPENAI_API_KEY)) return null;
+  return {
+    provider: 'openai',
+    apiKey: env.OPENAI_API_KEY.trim(),
+    model: isNonEmptyString(env.OCR_MODEL) ? env.OCR_MODEL.trim() : DEFAULT_OCR_VISION_MODEL,
+  };
+}
+
+// Instruccion de sistema para el OCR de una pagina escaneada con un modelo de
+// vision. Pide SOLO transcribir el texto visible (sin interpretar ni inventar) y
+// estimar una confianza 0..1.
+export const OCR_VISION_SYSTEM_PROMPT = [
+  'Eres un OCR de paginas escaneadas en espanol.',
+  'Transcribe FIELMENTE el texto visible de la imagen, respetando el orden de lectura.',
+  'No interpretes, no resumas, no inventes texto que no se vea.',
+  'Devuelve JSON: { "text": string, "confidence": number(0..1), "warnings": string[] }.',
+  'Si la pagina esta en blanco o ilegible, text="" y confidence baja.',
+].join(' ');
+
+export function ocrVisionResponseSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['text', 'confidence', 'warnings'],
+    properties: {
+      text: { type: 'string' },
+      confidence: { type: 'number' },
+      warnings: { type: 'array', items: { type: 'string' } },
+    },
+  };
+}
+
+// Construye la peticion de vision a OpenAI para UNA pagina (imagen como data URL
+// base64). PURA: no hace fetch. La imagen la renderiza el servidor; el navegador
+// NUNCA aporta imagenes ni texto OCR.
+export function buildOcrVisionRequest(args: {
+  model: string;
+  imageDataUrl: string;
+}): Record<string, unknown> {
+  return {
+    model: args.model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: OCR_VISION_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Transcribe el texto de esta pagina escaneada.' },
+          { type: 'image_url', image_url: { url: args.imageDataUrl } },
+        ],
+      },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'ocr_page',
+        strict: true,
+        schema: ocrVisionResponseSchema(),
+      },
+    },
+  };
+}
+
+export interface OcrPageParse {
+  text: string;
+  confidence: number | null;
+  warnings: string[];
+}
+
+// Parsea la salida JSON del modelo de vision para una pagina. PURA y tolerante:
+// nunca lanza; ante salida invalida devuelve texto vacio y confianza null (la
+// pagina se clasificara como fallida por ocrConfidenceBand).
+export function parseOcrVisionResponse(content: unknown): OcrPageParse {
+  if (!isNonEmptyString(content)) {
+    return { text: '', confidence: null, warnings: ['Respuesta OCR vacia.'] };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { text: '', confidence: null, warnings: ['Respuesta OCR no valida.'] };
+  }
+  const o = parsed as { text?: unknown; confidence?: unknown; warnings?: unknown };
+  const text = typeof o.text === 'string' ? o.text : '';
+  const confidence =
+    typeof o.confidence === 'number' && Number.isFinite(o.confidence)
+      ? Math.min(1, Math.max(0, o.confidence))
+      : null;
+  const warnings = Array.isArray(o.warnings)
+    ? o.warnings.filter((w): w is string => typeof w === 'string')
+    : [];
+  return { text, confidence, warnings };
 }
 
 // ---------------------------------------------------------------------------

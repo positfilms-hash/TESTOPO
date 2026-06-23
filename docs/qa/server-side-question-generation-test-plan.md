@@ -30,6 +30,25 @@ Importa el mismo módulo que la Edge Function
 - **Estados**: `candidateStatus` nunca devuelve `validated`; `mapRunStatus` mapea a
   `completed`/`partial`/`failed`.
 
+### Flujo real (lógica determinista) — `app/backend/tests/serverGroundedFlowContract.test.ts`
+
+Cubre los helpers `_shared` que orquesta el `index.ts` (Deno) del flujo real:
+
+- **Autorización explícita** (`evaluateManagementAccess`): permite owner/admin
+  activos; rechaza Student (`access_denied`), membership revocada/pendiente/ausente,
+  y usuario eliminado/bloqueado/sin perfil (`auth_required`). Es la guarda que no
+  depende solo de RLS.
+- **Proveedor OpenAI-only** (`resolveProvider`): null sin proveedor real; rechaza
+  `anthropic`/`mock`; corrige el bug de declarar Anthropic con `OPENAI_API_KEY`.
+- **Elegibilidad de secciones (028-C)**: primaria solo
+  `study_content`/`legal_content`/`summary_content`/`index_content` activas;
+  `old_exam_content` solo estilo secundario.
+- **Petición/parseo**: `buildOpenAIRequest` incluye system+user, `json_schema` y los
+  punteros de fuente; `parseProviderCandidates` tolera salida inválida.
+- **Persistencia**: `buildQuestionRow`/`buildOptionRows`/`buildValidationRow` con
+  `generated_by_ai`, `generation_run_id`, trazabilidad y estado solo
+  `pending_review`/`needs_fix`.
+
 ### Wrapper del frontend — `app/frontend/tests/serverQuestionGeneration.test.ts`
 
 - El body construido contiene **solo** campos permitidos (sin texto/fuente/prompt).
@@ -38,15 +57,17 @@ Importa el mismo módulo que la Edge Function
 
 ### Regresión
 
-- Suite de backend (`app/backend`: vitest) y de frontend (`app/frontend`: vitest)
-  verde, incluido `sourceGroundedQuestionGeneration.test.ts` (camino InMemory) y
-  los tests de OCR/Auth/RLS sin cambios.
+- Suite de backend (`app/backend`: **585** vitest) y de frontend (`app/frontend`:
+  **78** vitest) verde, incluido `sourceGroundedQuestionGeneration.test.ts` (camino
+  InMemory) y los tests de OCR/Auth/RLS sin cambios.
 
-## Verificación manual en staging (cuando haya secretos)
+## Verificación manual en staging (cuando haya secretos) — OBLIGATORIA
 
-> Hasta que se configuren los secretos del proveedor, el comportamiento vivo es el
-> **501 honesto** sin escrituras. No se debe afirmar que la integración real
-> funciona sin un retest de staging con secretos.
+> **El `index.ts` corre en Deno y NO lo ejecuta ningún test de este repo.** La
+> lógica determinista está cubierta por vitest, pero la llamada real a OpenAI, las
+> consultas a Supabase y la persistencia **solo** se verifican en staging con
+> secretos reales. No se debe afirmar que la integración real funciona sin ese
+> retest.
 
 1. **Sin proveedor**: invocar generación desde *Generar desde tema* ⇒ mensaje
    «La generación de preguntas todavía no está configurada en servidor.»; sin run,

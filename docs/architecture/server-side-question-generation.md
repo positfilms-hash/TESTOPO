@@ -67,19 +67,33 @@ Nunca se devuelven prompts, excerpts completos, errores del proveedor ni secreto
    oposición pertenece al `workspace_id` declarado. La autorización autoritativa de
    escritura la garantiza además la RLS de `questions` (`questions_manage` →
    `can_manage_workspace`).
-4. **Proveedor**: lee `AI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_MODEL` de los
-   **secretos de la Edge Function**. Sin proveedor real → **HTTP 501**
+3b. **Guarda explícita de gestión (no solo RLS)**: además de la RLS, la función
+   consulta `profiles` (no eliminado/bloqueado) y `workspace_members` (membership
+   `active` con rol `owner`/`admin`) y evalúa `evaluateManagementAccess`
+   (`_shared/authz/management.ts`). Student, usuario eliminado/revocado o fuera de
+   scope fallan **aquí**, antes del proveedor o de cualquier escritura.
+4. **Proveedor**: `resolveProvider` lee `AI_PROVIDER` / `OPENAI_API_KEY` /
+   `OPENAI_MODEL` de los **secretos de la Edge Function**. **Solo OpenAI** está
+   soportado de verdad (usa `OPENAI_API_KEY`); Anthropic **no** se declara como
+   proveedor soportado por esta función (no se promete un proveedor con la clave de
+   otro). Sin proveedor real → **HTTP 501**
    `QUESTION_GENERATION_PROVIDER_NOT_CONFIGURED` y **cero escrituras**.
-5. **Integración real (punto marcado en el código)**: recuperación de evidencia
-   concreta desde Supabase → construir `EvidenceScope` → llamar al proveedor con el
-   prompt de `prompts/server-side-source-grounded-question-generator.md` →
-   `validateCandidate` por salida → persistir run + questions + options +
-   validation_results → resumen seguro.
+5. **Flujo real (implementado)**: recuperación de evidencia concreta desde Supabase
+   (`topic_source_references` → secciones elegibles enlazadas) → `buildOpenAIRequest`
+   (salida estructurada `json_schema`) → `fetch` a OpenAI → `parseProviderCandidates`
+   → `validateCandidate` por salida (ancla a la evidencia; rechaza `validated`) →
+   `buildQuestionRow`/`buildOptionRows`/`buildValidationRow` → persistir run +
+   questions + options + validation_results (cliente del usuario, RLS `can_manage`)
+   → resumen seguro.
 
-> **Estado actual = scaffold honesto** (mismo enfoque que `ocr-material`): pasos
-> 1–4 implementados; el paso 5 (recuperación real + proveedor + persistencia) está
-> claramente marcado y se cablea cuando haya secretos de servidor. Mientras tanto,
-> el comportamiento vivo es el 501 honesto, sin persistir nada.
+> **Estado de verificación (honesto).** La lógica determinista (validación de body,
+> autorización explícita, elegibilidad, construcción de petición, parseo y filas de
+> persistencia) vive en `_shared/*` y está **cubierta por vitest**
+> (`serverQuestionGenerationContract.test.ts`, `serverGroundedFlowContract.test.ts`).
+> El `index.ts` corre en **Deno** y **no** lo ejecuta ningún test de este repo: la
+> llamada real a OpenAI, las consultas a Supabase y la persistencia **solo** se
+> pueden verificar en **staging con secretos reales**. No se afirma que la
+> integración real funcione sin ese retest.
 
 ## Persistencia y trazabilidad
 
@@ -108,6 +122,28 @@ Alumnos, usuarios borrados/revocados y sin acceso no pueden invocar la función
 `needs_fix`, ni excerpts internos. Los tests de estudiante siguen usando solo
 preguntas `validated`. Nada de OCR, Auth, RLS, embeddings, RAG ni fine-tuning se
 modifica aquí.
+
+## Flujo Material → Temario → Preguntas (y limitación de SPEC 032)
+
+El producto encadena tres pasos con revisión humana obligatoria:
+
+1. **Material**: subir/abrir/revisar/eliminar archivos. El material legible
+   (`extraction_status = completed`, o `completed_ocr`/`completed_ocr_with_warnings`
+   vía SPEC 030/034) habilita proponer índice.
+2. **Temario**: `Generar temario` (SPEC 032) analiza el material elegible y propone
+   un índice de temas/subtemas **revisable**. **Nunca** escribe temario completo,
+   preguntas ni tests, y **no aplica** nada sin un clic humano explícito.
+3. **Preguntas**: la generación anclada a fuentes (esta función) exige un **tema
+   aplicado** (`topics.status = 'active'`) y **fuentes reales** del scope; si no las
+   hay, falla honestamente sin escribir.
+
+> **Limitación documentada (no se arregla aquí).** El índice de SPEC 032 usa un
+> proveedor **mock/heurístico** (`compressed-text`) en proceso, no IA real. **No
+> debe presentarse como "IA real" en staging/producción.** Esta tarea **no** amplía
+> el alcance para sustituirlo por un generador de índice en servidor; solo deja
+> constancia de la limitación. Mientras tanto, la propuesta de índice sigue
+> requiriendo revisión y aplicación humana antes de poder generar preguntas, así que
+> ninguna pregunta se ancla a un índice aplicado automáticamente sin intervención.
 
 ## Despliegue
 
