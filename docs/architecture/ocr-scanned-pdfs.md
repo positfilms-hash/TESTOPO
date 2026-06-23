@@ -148,20 +148,18 @@ Por archivo se muestra **un badge de estado OCR** derivado de `extraction_status
   fetch extra). **El alumno no ve nada de esto** (controles bajo `isAdmin` y el
   facade deniega el acceso).
 
-### `EdgeFunctionOcrProvider` (seam del proveedor real)
+### `EdgeFunctionOcrProvider` — RETIRADO (superado por SPEC 034)
 
-`OcrProvider` que delega el reconocimiento de cada página en la Edge Function
-`ocr-material` por HTTP: envía `{ page_number, image_base64 }` con el **Bearer de
-la sesión del gestor** y recibe `{ text, confidence, warnings }`. El navegador
-renderiza la imagen (sin secretos) y la Edge Function guarda la **clave del
-proveedor OCR/vision** como secreto de servidor. Un fallo de transporte/estado
-lanza `OcrError(PAGE_FAILED)`, que `MaterialOcrService` captura por página sin
-romper el run.
+> El seam browser-image (`OcrProvider` que rendereaba cada página en el navegador y
+> la enviaba a `ocr-material` con `{ page_number, image_base64 }`) se **eliminó** en
+> SPEC 034. El OCR real es ahora **server-owned**: corre íntegro en la Edge Function
+> `ocr-material` (descarga del PDF privado + render server-side MuPDF + visión, todo
+> en el servidor). No existe ya `EdgeFunctionOcrProvider` ni el flag
+> `VITE_OCR_EDGE_FUNCTION_URL`; el contrato browser-image no debe reutilizarse.
 
-`createOcrProvider({ edgeFunctionUrl, getAuthToken, fetchImpl })` devuelve el
-proveedor Edge Function cuando hay URL; si no, el mock (demo/tests). El
-`appStore` activa el real sólo en modo Supabase con `VITE_OCR_EDGE_FUNCTION_URL`
-configurada; en otro caso usa el mock.
+En proceso (InMemory/demo) `createOcrProvider()` devuelve solo el proveedor MOCK
+determinista (sin red ni claves); el OCR real vive en la Edge Function, no en el
+backend. Ver [`server-side-ocr.md`](./server-side-ocr.md).
 
 ### Edge Function `ocr-material` (scaffold)
 

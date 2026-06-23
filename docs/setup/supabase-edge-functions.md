@@ -87,18 +87,23 @@ await supabase.functions.invoke('delete-account', {
   falla si aparece `service_role` o una env `SUPABASE_*` sin prefijo `VITE_`.
 - La Edge Function vive en `supabase/functions/`, fuera del bundle del frontend.
 
-## `ocr-material` (SPEC 030, scaffold)
+## `ocr-material` (SPEC 034, server-owned)
 
-OCR/visión de **una página** de un PDF escaneado. El navegador renderiza la
-página a imagen (sin secretos) y delega aquí el reconocimiento; la función guarda
-la **clave del proveedor OCR/visión** como secreto de servidor. La clave **nunca**
-llega al frontend ni con prefijo `VITE_`.
+OCR de un PDF escaneado **íntegro en el servidor**. El navegador solo manda IDs de
+scope + reintento; la función descarga el PDF privado, lo renderiza página a página
+(MuPDF WASM) y lo lee con un modelo de visión, guardando la **clave del proveedor**
+como secreto de servidor (nunca en el frontend ni con prefijo `VITE_`).
 
-Contrato HTTP (alineado con `EdgeFunctionOcrProvider` en el backend):
+> El contrato anterior browser-image (`{ page_number, image_base64 }` +
+> `EdgeFunctionOcrProvider`) quedó **retirado** por SPEC 034.
+
+Contrato HTTP:
 
 ```text
-POST  { page_number: number, image_base64: string }
-200   { text: string, confidence: number | null, warnings: string[] }
+POST  { workspace_id, opposition_id, material_id, mode: "auto", force_retry? }
+200   { material_id, extraction_status, run_id, page_count, processed_pages,
+        failed_pages, average_confidence, warnings }
+501   { error: "OCR_PROVIDER_NOT_CONFIGURED", message }   // sin proveedor real
 ```
 
 ### Secreto del proveedor
