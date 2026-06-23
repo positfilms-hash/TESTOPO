@@ -621,3 +621,39 @@ describe('SPEC 028-E / Revision Codex - estados de generacion fiables', () => {
     expect(all.every((q) => q.status !== 'validated')).toBe(true);
   });
 });
+
+// --- Revision Codex (B1): sin proveedor IA real no se generan candidatas -------
+describe('SPEC 028-E / Revision Codex - IA no configurada', () => {
+  it('generateFromTopic se bloquea (AI_NOT_CONFIGURED) y no persiste nada con mock no permitido', async () => {
+    const ctx = await orgSetup();
+    const topicId = await seedAppliedTopic(ctx);
+
+    const blocked = new SourceGroundedQuestionGenerationService({
+      questionService: ctx.questions,
+      materials: ctx.materialRepo,
+      topics: ctx.topics,
+      retrieval: ctx.sourceRetrieval,
+      validationService: ctx.validation,
+      runRepository: new InMemoryGenerationRunRepository(),
+      allowMockProvider: false, // staging: el proveedor del navegador es el mock
+    });
+
+    let threw = false;
+    try {
+      await blocked.generateFromTopic({
+        opposition_id: ctx.opp.id,
+        topic_id: topicId,
+        difficulty: 'easy',
+        count: 2,
+      });
+    } catch (error) {
+      threw = true;
+      expect((error as { errors?: string[] }).errors).toContain(
+        'QUESTION_GENERATION_AI_NOT_CONFIGURED',
+      );
+    }
+    expect(threw).toBe(true);
+    // No se ha creado NINGUNA candidata ficticia.
+    expect(await ctx.questions.listQuestions()).toHaveLength(0);
+  });
+});

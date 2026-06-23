@@ -65,6 +65,12 @@ export interface SourceGroundedGenerationDeps {
   errorMemory?: AIErrorMemoryService;
   copyRiskThreshold?: number;
   lowQualityThreshold?: number;
+  /**
+   * Revision Codex (staging): si es `false`, NO se permite el proveedor MOCK
+   * como IA real (se bloquea con AI_NOT_CONFIGURED sin persistir nada). Por
+   * defecto `true` (tests/InMemory/demo); en Supabase la app lo pone a `false`.
+   */
+  allowMockProvider?: boolean;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -103,6 +109,7 @@ export class SourceGroundedQuestionGenerationService {
   private readonly errorMemory?: AIErrorMemoryService;
   private readonly copyRiskThreshold: number;
   private readonly lowQualityThreshold: number;
+  private readonly allowMockProvider: boolean;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -118,6 +125,7 @@ export class SourceGroundedQuestionGenerationService {
     this.errorMemory = deps.errorMemory;
     this.copyRiskThreshold = deps.copyRiskThreshold ?? COPY_RISK_THRESHOLD;
     this.lowQualityThreshold = deps.lowQualityThreshold ?? LOW_QUALITY_THRESHOLD;
+    this.allowMockProvider = deps.allowMockProvider ?? true;
     this.generateId = deps.generateId ?? (() => randomUUID());
     this.now = deps.now ?? (() => new Date());
   }
@@ -134,6 +142,13 @@ export class SourceGroundedQuestionGenerationService {
   async generateFromTopic(
     input: GenerateFromTopicInput,
   ): Promise<SourceGroundedResult> {
+    // Revision Codex (staging): sin proveedor de IA real no se generan candidatas
+    // con el mock como si fueran reales. Se bloquea ANTES de persistir nada.
+    if (!this.allowMockProvider && this.provider.name === 'mock') {
+      throw new QuestionGenerationError([
+        QuestionGenerationErrorCode.AI_NOT_CONFIGURED,
+      ]);
+    }
     if (!isNonEmptyString(input.topic_id)) {
       throw new QuestionGenerationError([
         QuestionGenerationErrorCode.TOPIC_REQUIRED,

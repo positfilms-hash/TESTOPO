@@ -65,6 +65,13 @@ export interface QuestionGenerationServiceOptions {
   feedbackService?: QuestionFeedbackService;
   /** Limites configurables (SPEC 018.4, 19). */
   config?: GenerationConfig;
+  /**
+   * Revision Codex (staging): si es `false`, NO se permite usar el proveedor
+   * MOCK como si fuera IA real (la generacion se bloquea con AI_NOT_CONFIGURED
+   * sin crear candidatas). Por defecto `true` (tests/InMemory/demo). En modo
+   * Supabase la app lo pone a `false`.
+   */
+  allowMockProvider?: boolean;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -83,6 +90,7 @@ export class QuestionGenerationService {
   private readonly validation?: QuestionValidationService;
   private readonly feedback?: QuestionFeedbackService;
   private readonly config: GenerationConfig;
+  private readonly allowMockProvider: boolean;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -95,6 +103,7 @@ export class QuestionGenerationService {
     this.validation = options.validationService;
     this.feedback = options.feedbackService;
     this.config = options.config ?? loadGenerationConfig();
+    this.allowMockProvider = options.allowMockProvider ?? true;
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
   }
@@ -140,6 +149,15 @@ export class QuestionGenerationService {
   }
 
   async generate(request: GenerateQuestionsRequest): Promise<GenerationResult> {
+    // Revision Codex (staging): sin proveedor de IA real configurado no se
+    // generan candidatas con el mock como si fueran reales. Se bloquea ANTES de
+    // crear nada, con un estado explicativo.
+    if (!this.allowMockProvider && this.provider.name === 'mock') {
+      throw new QuestionGenerationError([
+        QuestionGenerationErrorCode.AI_NOT_CONFIGURED,
+      ]);
+    }
+
     const paramErrors = validateGenerationRequest(
       request,
       this.config.max_question_count,

@@ -114,6 +114,30 @@ describe('QuestionGenerationService - generacion correcta', () => {
     expect(created.every((q) => q.status === 'pending_review')).toBe(true);
   });
 
+  it('bloquea la generacion si no hay proveedor IA real (mock no permitido, B1)', async () => {
+    const { materials, questions } = await makeSetup();
+    const material = await materialWithText(materials);
+    // En Supabase/staging el navegador no puede tener claves -> el proveedor es
+    // el mock; con allowMockProvider:false NO se generan candidatas ficticias.
+    const blocked = new QuestionGenerationService({
+      questionService: questions,
+      materialRepository: new InMemoryMaterialRepository(),
+      allowMockProvider: false,
+    });
+    await expectGenError(
+      () =>
+        blocked.generateFromExcerpt({
+          material_id: material.id,
+          excerpt: 'procedimiento administrativo',
+          difficulty: 'easy',
+          question_count: 2,
+        }),
+      QuestionGenerationErrorCode.AI_NOT_CONFIGURED,
+    );
+    // No se ha creado NINGUNA pregunta.
+    expect(await questions.listQuestions()).toHaveLength(0);
+  });
+
   it('rechaza un fragmento que NO pertenece al material (R1-B1)', async () => {
     const { materials, generation } = await makeSetup();
     const material = await materialWithText(materials);

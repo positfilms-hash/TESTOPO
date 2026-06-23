@@ -187,6 +187,9 @@ export function createAppStore(seed = true): AppStore {
     ocrRepository: core.materialOcr,
     renderService: new PlaceholderPdfPageRenderService(),
     provider: ocrProvider,
+    // Revision Codex (staging): en Supabase sin Edge Function de OCR real, el
+    // proveedor es el mock -> no se finge lectura (se bloquea con aviso).
+    allowMockProvider: !supabasePort,
   });
   const questions = new QuestionService(questionRepo, {
     resolveMaterialStatus: async (id) =>
@@ -218,6 +221,11 @@ export function createAppStore(seed = true): AppStore {
     feedbackService: feedback,
     // SPEC 023: el historial de generacion se persiste via el factory.
     runRepository: core.generationRuns,
+    // Revision Codex (staging): el navegador no puede tener claves de IA, asi que
+    // en Supabase el proveedor es el mock -> NO se generan candidatas ficticias
+    // como si fueran reales (se bloquea con AI_NOT_CONFIGURED). En demo/memoria
+    // (sin Supabase) el mock sigue permitido.
+    allowMockProvider: !supabasePort,
   });
   const review = new QuestionReviewService({
     questionService: questions,
@@ -309,6 +317,8 @@ export function createAppStore(seed = true): AppStore {
     runRepository: core.generationRuns,
     learning: core.examPatternLearning,
     errorMemory: aiErrorMemory,
+    // Revision Codex (staging): mismo gate que la generacion base (no mock real).
+    allowMockProvider: !supabasePort,
   });
   // SPEC 029: el flujo de ALUMNO (generar/responder) lee de una fuente SANEADA
   // (vistas sin solucion) en Supabase, para que el alumno no pueda leer

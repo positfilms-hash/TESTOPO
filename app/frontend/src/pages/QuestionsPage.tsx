@@ -17,6 +17,7 @@ import {
   Button,
   EmptyState,
   Field,
+  LoadingState,
   PageHeader,
   difficultyLabel,
 } from '../components/ui.js';
@@ -157,17 +158,25 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
   const [question, setQuestion] = useState<Question | null>(null);
   const [report, setReport] = useState<QuestionValidationResult | null>(null);
   const [pastFeedback, setPastFeedback] = useState<QuestionReviewFeedback[]>([]);
+  // Revision Codex (recomendado): mientras se carga la candidata desde Supabase
+  // NO debe mostrarse "no encontrada"; ese estado solo aplica al resultado nulo.
+  const [loading, setLoading] = useState(true);
   // La validacion (SPEC 005) decide si se puede aprobar.
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void (async () => {
-      const q = await store.questions.getQuestion(id);
-      const r = q ? await store.validation.validateQuestion(id) : null;
-      const f = q ? await store.review.listFeedback(id) : [];
-      if (!cancelled) {
-        setQuestion(q);
-        setReport(r);
-        setPastFeedback(f);
+      try {
+        const q = await store.questions.getQuestion(id);
+        const r = q ? await store.validation.validateQuestion(id) : null;
+        const f = q ? await store.review.listFeedback(id) : [];
+        if (!cancelled) {
+          setQuestion(q);
+          setReport(r);
+          setPastFeedback(f);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -193,6 +202,9 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
     return [...reasons].map((type) => ({ feedback_type: type, comment }));
   };
 
+  if (loading) {
+    return <LoadingState />;
+  }
   if (!question || !report) {
     return <EmptyState message="Pregunta no encontrada." />;
   }
@@ -481,18 +493,13 @@ function GenerateForm({ onBack }: { onBack: () => void }) {
         text: `Se han generado ${result.questions.length} preguntas pendientes de revision.`,
       });
     } catch (error) {
-      const codes =
-        error && typeof error === 'object' && Array.isArray((error as { errors?: unknown }).errors)
-          ? (error as { errors: string[] }).errors
-          : [];
-      let text = 'No se pudo generar.';
-      if (codes.some((c) => c.includes('EXCERPT_NOT_IN_SOURCE'))) {
-        text =
-          'El fragmento no pertenece al material seleccionado. Copia y pega un texto que aparezca en ese documento.';
-      } else if (error instanceof QuestionGenerationError) {
-        text = 'No se pudo generar: revisa el material (con texto y no obsoleto) y los parametros.';
-      }
-      setNotice({ type: 'error', text });
+      setNotice({
+        type: 'error',
+        text: generationErrorMessage(
+          error,
+          'No se pudo generar: revisa el material (con texto y no obsoleto) y los parametros.',
+        ),
+      });
     }
   };
 
@@ -635,11 +642,13 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
         text: `Se han generado ${result.questions.length} preguntas con fuente, pendientes de revision.`,
       });
     } catch (error) {
-      const text =
-        error instanceof QuestionGenerationError
-          ? 'No se pudo generar: el tema necesita documentos de estudio clasificados y seccionados con fuente.'
-          : 'No se pudo generar.';
-      setNotice({ type: 'error', text });
+      setNotice({
+        type: 'error',
+        text: generationErrorMessage(
+          error,
+          'No se pudo generar: el tema necesita documentos de estudio clasificados y seccionados con fuente.',
+        ),
+      });
     } finally {
       setBusy(false);
     }
@@ -717,4 +726,24 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
       )}
     </div>
   );
+}
+
+// Mensaje de usuario a partir de un error de generacion (SPEC 028-E / revision
+// Codex). `QuestionGenerationError` expone `.errors` (codigos). Distingue el caso
+// de IA no configurada (staging sin proveedor real) y el de fragmento ajeno.
+function generationErrorMessage(error: unknown, fallback: string): string {
+  const codes =
+    error && typeof error === 'object' && Array.isArray((error as { errors?: unknown }).errors)
+      ? (error as { errors: string[] }).errors
+      : [];
+  if (codes.some((c) => c.includes('AI_NOT_CONFIGURED'))) {
+    return 'La generación con IA no está configurada en este entorno: no se han creado preguntas. Configura el proveedor de IA en el servidor para generar candidatas reales.';
+  }
+  if (codes.some((c) => c.includes('EXCERPT_NOT_IN_SOURCE'))) {
+    return 'El fragmento no pertenece al material seleccionado. Copia y pega un texto que aparezca en ese documento.';
+  }
+  if (codes.length > 0) {
+    return fallback;
+  }
+  return 'No se pudo generar.';
 }

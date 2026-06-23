@@ -721,3 +721,24 @@ describe('SPEC 028 / Revision Codex - contador de importacion', () => {
     expect(items.filter((i) => i.status === 'imported')).toHaveLength(2);
   });
 });
+
+// --- Revision Codex (B2): la lista de material refleja la subida sin re-login ---
+describe('SPEC 028 / Revision Codex - lista visible tras subir', () => {
+  it('tras una importacion exitosa, listMaterials devuelve el material al instante', async () => {
+    const { platform, admin, opp } = await orgSetup();
+    const before = await platform.listMaterials(admin, opp.id);
+    expect(before).toHaveLength(0);
+
+    const { batch } = await platform.smartUpload(admin, {
+      opposition_id: opp.id,
+      upload_category: 'opposition_material',
+      source_type: 'multi_file',
+      files: [file('uno.pdf', pdfWithText('uno')), file('dos.pdf', pdfWithText('dos'))],
+    });
+    expect(batch.imported_files).toBe(2);
+
+    // Sin re-login ni cambio de oposicion: el material ya es visible.
+    const after = await platform.listMaterials(admin, opp.id);
+    expect(after).toHaveLength(2);
+  });
+});

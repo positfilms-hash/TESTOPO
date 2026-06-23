@@ -29,6 +29,9 @@ export enum QuestionGenerationErrorCode {
   // Revision Codex: una candidata no se pudo persistir/finalizar de forma fiable
   // (fallo parcial). Se registra en el run y la candidata nunca queda en `draft`.
   PERSIST_FAILED = 'QUESTION_GENERATION_PERSIST_FAILED',
+  // Revision Codex (staging): no hay proveedor de IA real configurado. NO se
+  // generan candidatas con el mock como si fueran reales; se bloquea con aviso.
+  AI_NOT_CONFIGURED = 'QUESTION_GENERATION_AI_NOT_CONFIGURED',
 }
 
 // Limites de numero de preguntas por solicitud (SPEC 004, 7 y 9.7).
