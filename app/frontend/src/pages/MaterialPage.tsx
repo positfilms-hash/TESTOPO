@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Material, MaterialType } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import {
+  shouldUseServerOcr,
+  runOcrViaEdgeFunction,
+  ServerOcrError,
+} from '../ocr/serverOcrMaterial.js';
+import {
   Badge,
   Button,
   EmptyState,
@@ -162,13 +167,40 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   };
 
-  // --- OCR de escaneados (SPEC 030, solo gestor). Lanza o reintenta el OCR. ---
+  // --- OCR de escaneados (SPEC 030/034, solo gestor). Lanza o reintenta el OCR. ---
   const runOcr = async (m: Material) => {
     if (!currentUser) return;
     setNotice(null);
     setBusy(true);
+    const first = ocrIsFirstRun(m.extraction_status);
     try {
-      const first = ocrIsFirstRun(m.extraction_status);
+      // SPEC 034: en modo Supabase el OCR REAL corre en la Edge Function
+      // autenticada `ocr-material` (el navegador solo manda IDs + reintento; jamas
+      // imagenes, texto OCR, prompts ni claves; el render del PDF es server-side).
+      if (shouldUseServerOcr()) {
+        if (!currentOpposition) return;
+        const summary = await runOcrViaEdgeFunction({
+          workspace_id: currentOpposition.workspace_id,
+          opposition_id: currentOpposition.id,
+          material_id: m.id,
+          force_retry: !first,
+        });
+        const ok =
+          summary.extraction_status === 'completed_ocr' ||
+          summary.extraction_status === 'completed_ocr_with_warnings';
+        setNotice(
+          ok
+            ? { type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' }
+            : { type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' },
+        );
+        const list = await loadMaterials();
+        setMaterials(list);
+        refresh();
+        return;
+      }
+
+      // InMemory/demo: servicio en proceso (mock bloqueado segun la revision de
+      // Codex en Supabase; aqui solo demo en memoria).
       const status = first
         ? await store.platform.startMaterialOcr(currentUser, m.id)
         : await store.platform.retryMaterialOcr(currentUser, m.id);
@@ -191,7 +223,10 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
       }
       refresh();
     } catch (err) {
-      setNotice({ type: 'error', text: ocrErrorMessage(err) });
+      // SPEC 034: el wrapper de servidor ya trae un mensaje seguro y humano.
+      const text =
+        err instanceof ServerOcrError ? err.message : ocrErrorMessage(err);
+      setNotice({ type: 'error', text });
     } finally {
       setBusy(false);
     }
