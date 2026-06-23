@@ -6,6 +6,7 @@
 // registrarse (ver supabase/migrations), asi el frontend no inserta perfiles ni
 // necesita permisos de escritura ampliados.
 
+import type { User } from '@backend';
 import { AuthError, AuthErrorCode } from './authErrors.js';
 import { getSupabase } from './supabaseClient.js';
 import {
@@ -19,6 +20,22 @@ export interface AuthProfile {
   name: string | null;
   role: 'admin' | 'student';
   status: 'active' | 'inactive' | 'blocked' | 'deleted';
+}
+
+// Mapea el perfil publico de Supabase al `User` de sesion que usa el resto de la
+// app (identidad real, dominio en memoria). Sin contrasena (la gestiona Supabase).
+// Centralizado aqui para reusarlo en el login y en la rehidratacion (SPEC 036).
+export function mapProfileToUser(profile: AuthProfile): User {
+  return {
+    id: profile.id,
+    name: profile.name ?? profile.email,
+    email: profile.email,
+    password_hash: '',
+    role: profile.role,
+    status: profile.status === 'deleted' ? 'inactive' : profile.status,
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
 }
 
 export interface RegisterParams {
