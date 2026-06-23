@@ -130,7 +130,6 @@ export * from './ocr/ocrConfig.js';
 export * from './ocr/ocrErrors.js';
 export * from './ocr/ocrProvider.js';
 export * from './ocr/mockOcrProvider.js';
-export * from './ocr/edgeFunctionOcrProvider.js';
 export * from './ocr/createOcrProvider.js';
 export * from './ocr/pdfPageRenderService.js';
 export * from './repository/materialOcrRepository.js';
