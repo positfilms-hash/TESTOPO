@@ -13,6 +13,11 @@ import {
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import {
+  shouldUseServerGeneration,
+  generateQuestionsViaEdgeFunction,
+  ServerGenerationError,
+} from '../generation/serverQuestionGeneration.js';
+import {
   Badge,
   Button,
   EmptyState,
@@ -628,27 +633,46 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
     if (!currentUser || !currentOpposition) return;
     setBusy(true);
     try {
-      const result = await store.platform.generateQuestionsFromTopic(currentUser, {
-        opposition_id: currentOpposition.id,
-        topic_id: topicId,
-        difficulty,
-        count,
-        use_style_profile: useStyleProfile,
-        use_error_memory: useErrorMemory,
-      });
+      // SPEC 033: en modo Supabase la generacion REAL corre en la Edge Function
+      // autenticada `generate-questions` (el navegador solo manda IDs/parametros;
+      // jamas texto, fuente, prompt ni claves). En memoria/demo se mantiene el
+      // servicio en proceso (mock bloqueado segun la revision de Codex).
+      let created: number;
+      if (shouldUseServerGeneration()) {
+        const summary = await generateQuestionsViaEdgeFunction({
+          workspace_id: currentOpposition.workspace_id,
+          opposition_id: currentOpposition.id,
+          topic_id: topicId,
+          difficulty,
+          question_count: count,
+        });
+        created = summary.created;
+      } else {
+        const result = await store.platform.generateQuestionsFromTopic(currentUser, {
+          opposition_id: currentOpposition.id,
+          topic_id: topicId,
+          difficulty,
+          count,
+          use_style_profile: useStyleProfile,
+          use_error_memory: useErrorMemory,
+        });
+        created = result.questions.length;
+      }
       refresh();
       setNotice({
         type: 'success',
-        text: `Se han generado ${result.questions.length} preguntas con fuente, pendientes de revision.`,
+        text: `Se han generado ${created} preguntas con fuente, pendientes de revision.`,
       });
     } catch (error) {
-      setNotice({
-        type: 'error',
-        text: generationErrorMessage(
-          error,
-          'No se pudo generar: el tema necesita documentos de estudio clasificados y seccionados con fuente.',
-        ),
-      });
+      // SPEC 033: el wrapper de servidor ya trae un mensaje seguro y humano.
+      const text =
+        error instanceof ServerGenerationError
+          ? error.message
+          : generationErrorMessage(
+              error,
+              'No se pudo generar: el tema necesita documentos de estudio clasificados y seccionados con fuente.',
+            );
+      setNotice({ type: 'error', text });
     } finally {
       setBusy(false);
     }

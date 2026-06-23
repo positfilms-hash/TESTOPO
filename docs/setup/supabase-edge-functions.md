@@ -1,14 +1,19 @@
-# Edge Functions de Supabase (SPEC 026 / 030)
+# Edge Functions de Supabase (SPEC 026 / 030 / 033)
 
 TESTOPO usa Edge Functions para operaciones que no pueden ejecutarse en el
 navegador: bien porque requieren la `service_role`, bien porque guardan una
-**clave de proveedor** que no debe llegar al frontend. Hoy hay dos:
+**clave de proveedor** que no debe llegar al frontend. Hoy hay tres:
 
 - `supabase/functions/delete-account` (SPEC 026) — eliminación segura de cuenta
   (ver [`../security/account-deletion.md`](../security/account-deletion.md)).
 - `supabase/functions/ocr-material` (SPEC 030, **scaffold**) — OCR/visión de una
   página de PDF escaneado. Guarda la clave del proveedor OCR como secreto de
   servidor (ver [`../architecture/ocr-scanned-pdfs.md`](../architecture/ocr-scanned-pdfs.md)).
+- `supabase/functions/generate-questions` (SPEC 033, **scaffold**) — generación de
+  preguntas anclada a fuentes en servidor. Guarda la clave del proveedor de IA
+  (`OPENAI_API_KEY`) como secreto de servidor (ver
+  [`../security/ai-provider-secrets.md`](../security/ai-provider-secrets.md) y
+  [`../architecture/server-side-question-generation.md`](../architecture/server-side-question-generation.md)).
 
 ## Requisitos
 
