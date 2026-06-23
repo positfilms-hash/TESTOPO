@@ -10,6 +10,7 @@ import { evaluateManagementAccess } from '../../../supabase/functions/_shared/au
 import {
   QG_ERROR,
   resolveProvider,
+  evaluateTopicSourceReference,
   isEligiblePrimarySection,
   isSecondaryStyleSection,
   buildOpenAIRequest,
@@ -55,6 +56,77 @@ describe('resolveProvider (OpenAI-only; corrige el bug de Anthropic)', () => {
     const r = resolveProvider({ AI_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-x' });
     expect(r).toMatchObject({ provider: 'openai', apiKey: 'sk-x' });
     expect(r?.model).toBeTruthy();
+  });
+});
+
+describe('evaluateTopicSourceReference (SPEC 033: valida la referencia de tema)', () => {
+  const okArgs = {
+    requestWorkspaceId: 'ws-1',
+    requestOppositionId: 'op-1',
+    refOppositionId: 'op-1',
+    material: {
+      workspace_id: 'ws-1',
+      opposition_id: 'op-1',
+      status: 'active',
+      extraction_status: 'completed',
+    },
+    classification: { classification: 'syllabus_material', needs_review: false },
+    hasValidConcretePointer: true,
+  };
+
+  it('acepta referencia primaria, del scope, legible y con puntero', () => {
+    expect(evaluateTopicSourceReference(okArgs)).toEqual({ ok: true });
+  });
+
+  it('rechaza foreign workspace y foreign opposition', () => {
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, material: { ...okArgs.material, workspace_id: 'ws-2' } }),
+    ).toMatchObject({ ok: false, reason: 'workspace_mismatch' });
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, material: { ...okArgs.material, opposition_id: 'op-2' } }),
+    ).toMatchObject({ ok: false, reason: 'opposition_mismatch' });
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, refOppositionId: 'op-2' }),
+    ).toMatchObject({ ok: false, reason: 'opposition_mismatch' });
+  });
+
+  it('rechaza material obsoleto y material inexistente', () => {
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, material: { ...okArgs.material, status: 'obsolete' } }),
+    ).toMatchObject({ ok: false, reason: 'material_obsolete' });
+    expect(evaluateTopicSourceReference({ ...okArgs, material: null })).toMatchObject({
+      ok: false,
+      reason: 'material_not_found',
+    });
+  });
+
+  it('rechaza material no legible (failed / ocr_failed)', () => {
+    for (const st of ['failed', 'ocr_failed']) {
+      expect(
+        evaluateTopicSourceReference({ ...okArgs, material: { ...okArgs.material, extraction_status: st } }),
+      ).toMatchObject({ ok: false, reason: 'material_unreadable' });
+    }
+  });
+
+  it('rechaza clasificaciones prohibidas y needs_review', () => {
+    for (const c of ['old_exam_or_test', 'irrelevant', 'not_analyzable', 'ambiguous']) {
+      expect(
+        evaluateTopicSourceReference({ ...okArgs, classification: { classification: c, needs_review: false } }),
+      ).toMatchObject({ ok: false, reason: 'classification_forbidden' });
+    }
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, classification: { classification: 'legal_text', needs_review: true } }),
+    ).toMatchObject({ ok: false, reason: 'classification_forbidden' });
+    expect(evaluateTopicSourceReference({ ...okArgs, classification: null })).toMatchObject({
+      ok: false,
+      reason: 'classification_forbidden',
+    });
+  });
+
+  it('rechaza si no hay puntero concreto valido', () => {
+    expect(
+      evaluateTopicSourceReference({ ...okArgs, hasValidConcretePointer: false }),
+    ).toMatchObject({ ok: false, reason: 'no_concrete_pointer' });
   });
 });
 

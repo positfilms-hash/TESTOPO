@@ -154,10 +154,10 @@ Deno.serve(async (req: Request) => {
     return fail(OCR_ERROR.PROVIDER_NOT_CONFIGURED, 501, OCR_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
 
-  // 5) Reintento: run NUEVO aislado (no reutiliza/mezcla paginas previas).
-  await userClient.from('material_ocr_pages').delete().eq('material_id', request.material_id);
-  await userClient.from('material_ocr_runs').delete().eq('material_id', request.material_id);
-
+  // 5) Reintento: se crea SIEMPRE un run NUEVO con su propio `ocr_run_id`, sin
+  //    reutilizar ni mezclar paginas de runs anteriores (las paginas se insertan
+  //    SOLO con este `runId`). Se CONSERVA el historial auditado de runs/paginas
+  //    previos (no se borra nada): la trazabilidad de OCR es acumulativa.
   const startedAt = new Date().toISOString();
   const runId = uuid();
   await userClient.from('material_ocr_runs').insert({

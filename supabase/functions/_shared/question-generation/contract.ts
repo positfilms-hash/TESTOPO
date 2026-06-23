@@ -477,6 +477,72 @@ export function resolveProvider(env: {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Validacion de una `topic_source_reference` ANTES de usarla como evidencia
+// factual (SPEC 033). El servidor resuelve el material, su clasificacion EFECTIVA
+// (document_classifications mas reciente, 028-B) y el puntero concreto, y solo
+// entonces se ancla la fuente. PURA y testeada en vitest.
+// ---------------------------------------------------------------------------
+
+// Estados de extraccion del material que lo hacen NO usable como fuente factual.
+export const FORBIDDEN_MATERIAL_EXTRACTION_STATES = new Set(['failed', 'ocr_failed']);
+
+export interface TopicReferenceMaterial {
+  workspace_id?: string | null;
+  opposition_id?: string | null;
+  status?: string | null; // materials.status (active/obsolete/...)
+  extraction_status?: string | null;
+}
+
+export interface EffectiveClassification {
+  classification?: string | null; // document_classifications.classification (028-B)
+  needs_review?: boolean | null;
+}
+
+export type RefEligibility = { ok: true } | { ok: false; reason: string };
+
+// Decide si una referencia de tema es evidencia PRIMARIA factual valida. Rechaza:
+// distinto workspace/oposicion, material inexistente/obsoleto/no legible
+// (failed/ocr_failed), clasificacion efectiva no permitida (irrelevant/
+// not_analyzable/ambiguous/old_exam_or_test) o marcada needs_review, y ausencia de
+// puntero concreto valido (seccion/referencia ya resuelta por el servidor).
+export function evaluateTopicSourceReference(args: {
+  requestWorkspaceId: string;
+  requestOppositionId: string;
+  refOppositionId?: string | null;
+  material: TopicReferenceMaterial | null | undefined;
+  classification: EffectiveClassification | null | undefined;
+  hasValidConcretePointer: boolean;
+}): RefEligibility {
+  if (args.refOppositionId && args.refOppositionId !== args.requestOppositionId) {
+    return { ok: false, reason: 'opposition_mismatch' };
+  }
+  const material = args.material;
+  if (!material) return { ok: false, reason: 'material_not_found' };
+  if (material.workspace_id !== args.requestWorkspaceId) {
+    return { ok: false, reason: 'workspace_mismatch' };
+  }
+  if (material.opposition_id !== args.requestOppositionId) {
+    return { ok: false, reason: 'opposition_mismatch' };
+  }
+  if (material.status === 'obsolete') return { ok: false, reason: 'material_obsolete' };
+  if (FORBIDDEN_MATERIAL_EXTRACTION_STATES.has(material.extraction_status ?? '')) {
+    return { ok: false, reason: 'material_unreadable' };
+  }
+  const cls = args.classification;
+  if (
+    !cls ||
+    !isEligiblePrimaryClass(cls.classification) ||
+    cls.needs_review === true
+  ) {
+    return { ok: false, reason: 'classification_forbidden' };
+  }
+  if (!args.hasValidConcretePointer) {
+    return { ok: false, reason: 'no_concrete_pointer' };
+  }
+  return { ok: true };
+}
+
 // material_sections.classification (028-C) -> elegibilidad como evidencia
 // PRIMARIA factual. `old_exam_content` solo aporta estilo/cobertura secundaria.
 export const ELIGIBLE_SECTION_CLASSIFICATIONS = [
