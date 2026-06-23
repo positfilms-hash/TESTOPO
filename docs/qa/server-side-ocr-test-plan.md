@@ -61,6 +61,16 @@ El alumno no puede invocar `ocr-material` (verify_jwt + checks de scope + RLS de
 `material_ocr_runs`/`material_ocr_pages`), ni ver controles de OCR (la UI los limita
 a `isAdmin`), ni runs/páginas/confianza/errores ni referencias internas de imagen.
 
+## 4b. Limitación del fixture `scanned-image.pdf`
+
+> **Importante.** El fixture actual `app/backend/tests/fixtures/scanned-image.pdf`
+> solo prueba la **detección de escaneo** (un PDF sin capa de texto se marca
+> `not_supported`/`scanned_detected`). **No** ejercita la **lectura OCR real**: el
+> fixture es una página vacía/sin texto visible, así que no hay nada que un OCR de
+> visión pueda transcribir. La lectura OCR real (render MuPDF + visión → texto) solo
+> se puede validar en **staging con un escaneo real con texto visible** y secretos
+> configurados; no se infiere de este fixture ni de los tests del repo.
+
 ## 5. Retest de staging (OBLIGATORIO; el `index.ts`/`pdfRender.ts` corren en Deno)
 
 > **El flujo real (`ocr-material/index.ts` + `pdfRender.ts`) NO lo ejecuta ningún

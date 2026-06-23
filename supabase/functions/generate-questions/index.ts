@@ -24,6 +24,7 @@ import {
   MAX_QUESTION_SOURCE_REFERENCES,
   validateGenerateRequest,
   resolveProvider,
+  evaluateTopicSourceReference,
   isEligiblePrimarySection,
   isSecondaryStyleSection,
   buildOpenAIRequest,
@@ -161,19 +162,93 @@ Deno.serve(async (req: Request) => {
   };
 
   // (a) topic_source_references: fuente concreta del tema aplicado (028-D / 030).
+  //     NO se añade directamente al prompt: para CADA referencia el servidor
+  //     resuelve y valida el material (mismo workspace/oposicion, activo, no
+  //     obsoleto, legible), su clasificacion EFECTIVA (document_classifications mas
+  //     reciente, debe ser primaria factual y no needs_review) y el puntero
+  //     concreto (seccion/referencia existente y del scope). Solo entonces se ancla.
   const { data: tsr } = await userClient
     .from('topic_source_references')
     .select('id, material_id, material_section_id, source_reference_id, excerpt, opposition_id')
     .eq('topic_id', request.topic_id);
-  for (const r of tsr ?? []) {
-    if (r.opposition_id && r.opposition_id !== request.opposition_id) continue;
-    pushSource({
-      material_id: r.material_id,
-      material_section_id: r.material_section_id ?? null,
-      source_reference_id: r.source_reference_id ?? null,
-      topic_source_reference_id: r.id,
-      excerpt: r.excerpt ?? '',
-    });
+  const tsrRows = tsr ?? [];
+  if (tsrRows.length > 0) {
+    const refMaterialIds = [...new Set(tsrRows.map((r) => r.material_id).filter(Boolean))];
+    const refSectionIds = [...new Set(tsrRows.map((r) => r.material_section_id).filter(Boolean))];
+    const refReferenceIds = [...new Set(tsrRows.map((r) => r.source_reference_id).filter(Boolean))];
+
+    const { data: refMaterials } = await userClient
+      .from('materials')
+      .select('id, workspace_id, opposition_id, status, extraction_status')
+      .in('id', refMaterialIds.length ? refMaterialIds : ['']);
+    const materialById = new Map((refMaterials ?? []).map((m) => [m.id, m]));
+
+    // Clasificacion EFECTIVA = la mas reciente por material (document_classifications).
+    const { data: classRows } = await userClient
+      .from('document_classifications')
+      .select('material_id, classification, needs_review, created_at')
+      .in('material_id', refMaterialIds.length ? refMaterialIds : [''])
+      .order('created_at', { ascending: false });
+    const classByMaterial = new Map<string, { classification: string; needs_review: boolean }>();
+    for (const c of classRows ?? []) {
+      if (!classByMaterial.has(c.material_id)) {
+        classByMaterial.set(c.material_id, {
+          classification: c.classification,
+          needs_review: c.needs_review === true,
+        });
+      }
+    }
+
+    const { data: refSections } = await userClient
+      .from('material_sections')
+      .select('id, material_id, status, opposition_id')
+      .in('id', refSectionIds.length ? refSectionIds : ['']);
+    const sectionById = new Map((refSections ?? []).map((s) => [s.id, s]));
+
+    const { data: refReferences } = await userClient
+      .from('source_references')
+      .select('id, material_id, opposition_id')
+      .in('id', refReferenceIds.length ? refReferenceIds : ['']);
+    const referenceById = new Map((refReferences ?? []).map((s) => [s.id, s]));
+
+    for (const r of tsrRows) {
+      // Puntero concreto VALIDO: seccion activa del mismo material, o referencia
+      // del mismo material/scope. Sin puntero resuelto no se ancla.
+      let hasValidConcretePointer = false;
+      if (r.material_section_id) {
+        const sec = sectionById.get(r.material_section_id);
+        hasValidConcretePointer =
+          !!sec &&
+          sec.status === 'active' &&
+          sec.material_id === r.material_id &&
+          (!sec.opposition_id || sec.opposition_id === request.opposition_id);
+      }
+      if (!hasValidConcretePointer && r.source_reference_id) {
+        const ref = referenceById.get(r.source_reference_id);
+        hasValidConcretePointer =
+          !!ref &&
+          ref.material_id === r.material_id &&
+          (!ref.opposition_id || ref.opposition_id === request.opposition_id);
+      }
+
+      const eligibility = evaluateTopicSourceReference({
+        requestWorkspaceId: request.workspace_id,
+        requestOppositionId: request.opposition_id,
+        refOppositionId: r.opposition_id,
+        material: materialById.get(r.material_id),
+        classification: classByMaterial.get(r.material_id),
+        hasValidConcretePointer,
+      });
+      if (!eligibility.ok) continue;
+
+      pushSource({
+        material_id: r.material_id,
+        material_section_id: r.material_section_id ?? null,
+        source_reference_id: r.source_reference_id ?? null,
+        topic_source_reference_id: r.id,
+        excerpt: r.excerpt ?? '',
+      });
+    }
   }
 
   // (b) Secciones elegibles de los materiales enlazados al tema (fallback).

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PdfJsTextExtractor,
   StubPdfTextExtractor,
+  type PdfTextExtractor,
   assessTextQuality,
   InMemoryMaterialRepository,
   InMemoryTopicRepository,
@@ -119,17 +120,22 @@ async function makeUploadSetup() {
   const storage = new InMemoryFileStorage();
   await oppositions.create(makeOpposition());
   let counter = 0;
-  const service = new PdfMaterialService({
-    materials,
-    topics: new InMemoryTopicRepository(),
-    topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
-    oppositions,
-    storage,
-    extractor: new PdfJsTextExtractor(),
-    generateId: () => `id-${++counter}`,
-    now: () => new Date('2026-01-02T00:00:00Z'),
-  });
-  return { service, materials };
+  // `buildService` permite construir varios servicios sobre los MISMOS repos/
+  // storage con distinto extractor (p. ej. stub rapido para la subida y PDF.js
+  // real solo para reextraer), evitando dos extracciones reales en un mismo test.
+  const buildService = (extractor: PdfTextExtractor) =>
+    new PdfMaterialService({
+      materials,
+      topics: new InMemoryTopicRepository(),
+      topicMaterialLinks: new InMemoryTopicMaterialLinkRepository(),
+      oppositions,
+      storage,
+      extractor,
+      generateId: () => `id-${++counter}`,
+      now: () => new Date('2026-01-02T00:00:00Z'),
+    });
+  const service = buildService(new PdfJsTextExtractor());
+  return { service, materials, buildService };
 }
 
 describe('PdfMaterialService con PdfJsTextExtractor', () => {
@@ -169,8 +175,13 @@ describe('PdfMaterialService con PdfJsTextExtractor', () => {
   });
 
   it('reextractMaterial reprocesa los bytes guardados y reescribe la extraccion', async () => {
-    const { service, materials } = await makeUploadSetup();
-    const uploaded = await service.uploadPdf({
+    // Solo UNA extraccion real (PDF.js) en este test: la subida usa el extractor
+    // stub (rapido, sin PDF.js) — sus bytes se guardan igual y el material se
+    // sobrescribe a `failed` justo despues —, y la reextraccion usa PDF.js real.
+    // Asi se evita el doble parseo que hacia superar el timeout estandar de 5 s.
+    const { materials, buildService } = await makeUploadSetup();
+    const uploadService = buildService(new StubPdfTextExtractor());
+    const uploaded = await uploadService.uploadPdf({
       opposition_id: 'opp-1',
       title: 'Constitucion',
       type: 'syllabus',
@@ -187,7 +198,7 @@ describe('PdfMaterialService con PdfJsTextExtractor', () => {
       extraction_status: 'failed',
       status: 'needs_review',
     });
-    const reprocessed = await service.reextractMaterial(uploaded.id);
+    const reprocessed = await buildService(new PdfJsTextExtractor()).reextractMaterial(uploaded.id);
     expect(reprocessed.extraction_status).toBe('completed');
     expect(reprocessed.status).toBe('active');
     expect(reprocessed.content_text).toContain('Constitucion espanola');
