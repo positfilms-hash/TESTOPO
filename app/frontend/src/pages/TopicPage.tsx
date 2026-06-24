@@ -19,6 +19,7 @@ import {
 } from '../components/ui.js';
 import { ProposalReview } from './SyllabusIndexPanel.js';
 import { StudyMaterialPanel } from './StudyMaterialPanel.js';
+import { GenerateFromStudiedMaterialPanel } from './GenerateFromStudiedMaterialPanel.js';
 
 // SPEC 032: Temario es una pantalla enfocada. Si la oposicion no tiene temario
 // aplicado, la experiencia principal es UNA accion: "Generar temario", que compone
@@ -133,6 +134,11 @@ export function TopicPage({ onNavigate }: { onNavigate?: (section: Section) => v
   return (
     <div>
       <StudyMaterialPanel materials={materials} onNavigate={onNavigate} />
+
+      {/* SPEC 039: tras el estudio, generar preguntas DIRECTO desde el material
+          estudiado (sin indice ni tema). El panel se autorregula: si no hay
+          material estudiado, invita a estudiarlo primero. */}
+      <GenerateFromStudiedMaterialPanel materials={materials} onNavigate={onNavigate} />
 
       {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
 

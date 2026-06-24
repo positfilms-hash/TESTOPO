@@ -86,6 +86,9 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     // SPEC 038: la accion PRIMARIA del analisis es "Estudiar material" (sin indice
     // visible obligatorio ni seleccion de tema).
     expect(await screen.findByText('Estudiar material')).toBeInTheDocument();
+    // SPEC 039: tras estudiar, el flujo directo "Generar preguntas" esta presente
+    // (sin tema ni indice); en demo sin material estudiado invita a estudiar antes.
+    expect(await screen.findByText('Generar preguntas')).toBeInTheDocument();
     // El temario clasico (indice de temas) sigue disponible como OPCIONAL, con el
     // arbol aplicado del demo dentro.
     expect(screen.getByText(/Temario clásico/)).toBeInTheDocument();

@@ -1,9 +1,9 @@
-# Activación de IA real en staging (SPEC 035)
+# Activación de IA real en staging (SPEC 035; ampliada por 038/039)
 
-Esta guía describe **cómo un operador autorizado** activa la IA real (OCR y
-generación de preguntas) en el proyecto Supabase de **staging**. No contiene
-claves ni valores de secretos: solo nombres de variables, comandos con
-**placeholders**, límites seguros, despliegue y rollback.
+Esta guía describe **cómo un operador autorizado** activa la IA real (OCR,
+estudio de material y generación de preguntas) en el proyecto Supabase de
+**staging**. No contiene claves ni valores de secretos: solo nombres de variables,
+comandos con **placeholders**, límites seguros, despliegue y rollback.
 
 > **Regla dura.** Claude/Codex **no** configuran secretos, **no** despliegan, y
 > **no** generan/recuperan/transmiten claves. El operador humano introduce los
@@ -74,16 +74,32 @@ supabase secrets set MAX_GENERATED_QUESTIONS=20 MAX_QUESTION_SOURCE_CHARS=20000 
 Supabase. Las funciones usan el **cliente del usuario** (RLS) para leer/escribir;
 no requieren service-role.
 
-## Despliegue (solo estas dos funciones)
+## Despliegue (funciones de IA)
 
 ```bash
 # Verificar que el project ref es STAGING ANTES de cada deploy:
 supabase projects list           # confirmar el ref de staging
 supabase functions deploy ocr-material
 supabase functions deploy generate-questions
+supabase functions deploy study-material                          # SPEC 038
+supabase functions deploy generate-questions-from-studied-material  # SPEC 039
 ```
 
-`verify_jwt` permanece activado: ambas exigen `Authorization`.
+`verify_jwt` permanece activado: todas exigen `Authorization`.
+
+### SPEC 038/039 (estudio + generación directa)
+
+- **Migraciones a aplicar** (aditivas, idempotentes; `docs/setup/migrations-runbook.md`):
+  `035_material_study.sql` (estudio) y `036_direct_question_generation.sql` (enlaces
+  estudio→pregunta). Aplicarlas **antes** de desplegar las funciones que las usan.
+- `study-material` (SPEC 038) usa los mismos secretos de proveedor; sin proveedor →
+  `501 MATERIAL_STUDY_PROVIDER_NOT_CONFIGURED`, cero escrituras.
+- `generate-questions-from-studied-material` (SPEC 039) reutiliza
+  `AI_PROVIDER`/`OPENAI_API_KEY`/`OPENAI_MODEL` y los mismos límites
+  (`MAX_GENERATED_QUESTIONS`, `MAX_QUESTION_SOURCE_CHARS`; opcional
+  `MAX_DIRECT_EVIDENCE_UNITS`, clampeado al máximo seguro 40). Sin proveedor →
+  `501 DIRECT_QG_PROVIDER_NOT_CONFIGURED`, cero escrituras. No requiere `topic_id`;
+  la evidencia procede solo de unidades/conceptos estudiados.
 
 ## Rollback (operacional, no fallback de frontend)
 
