@@ -40,7 +40,14 @@ import {
   loadDocumentGroundedIndexConfig,
   type DocumentGroundedIndexConfig,
 } from '../generation/documentGroundedIndexConfig.js';
-import { validateCompactIndex } from '../generation/validateCompactIndex.js';
+import {
+  validateCompactIndex,
+  validateCompactIndexFromNodes,
+} from '../generation/validateCompactIndex.js';
+import {
+  isEligibleSourceMaterial,
+  isValidConcretePointer,
+} from '../generation/topicSourceEligibility.js';
 import {
   SyllabusIndexError,
   SyllabusIndexErrorCode,
@@ -323,6 +330,22 @@ export class SyllabusIndexFromDocumentsService {
     }
 
     const allNodes = await this.repo.listNodesByProposal(proposalId);
+
+    // SPEC 037: una propuesta `needs_regeneration` (no compacta / transcripcion /
+    // sin fuente) NO puede aplicarse. Se revalida de forma determinista desde los
+    // nodos persistidos; si falla, se bloquea (hay que regenerar).
+    const nodeSourcesAll = await this.repo.listNodeSourcesByProposal(proposalId);
+    const compactCheck = validateCompactIndexFromNodes(
+      allNodes.map((n) => ({ id: n.id, parent_id: n.parent_id, title: n.title, order: n.order })),
+      nodeSourcesAll.map((s) => ({ node_id: s.node_id, material_id: s.material_id })),
+    );
+    if (compactCheck.status === 'needs_regeneration') {
+      throw new SyllabusIndexError(
+        [SyllabusIndexErrorCode.NEEDS_REGENERATION],
+        compactCheck.warnings.join('; '),
+      );
+    }
+
     const applicable = allNodes.filter((n) =>
       APPLICABLE_NODE_STATUSES.has(n.status),
     );
@@ -385,6 +408,7 @@ export class SyllabusIndexFromDocumentsService {
     // referencia). Asi `applyProposal` puede re-ejecutarse con seguridad mientras
     // la propuesta siga `approved`; solo al final se marca `applied`.
     let topicSourceRefs = 0;
+    const topicsWithEligibleSource = new Set<string>();
     for (const node of applicable) {
       const topicId = nodeToTopicId.get(node.id);
       if (!topicId) {
@@ -394,6 +418,30 @@ export class SyllabusIndexFromDocumentsService {
       const existingKeys = new Set(existingRefs.map(topicSourceRefKey));
       const sources = await this.repo.listNodeSourcesByNode(node.id);
       for (const source of sources) {
+        // SPEC 037: crear SOLO referencias ELEGIBLES (regla autoritativa, la misma
+        // que el servidor). Reaplicar deja referencias que generate-questions
+        // aceptara; una fuente no usable (material no legible/obsoleto, clase no
+        // primaria o con needs_review, o sin puntero concreto) NO se vincula.
+        const material = await this.materials.findById(source.material_id);
+        const classification = await this.classifier.getClassificationForMaterial(
+          source.material_id,
+        );
+        if (!isEligibleSourceMaterial({ material, classification })) {
+          continue;
+        }
+        const section = source.material_section_id
+          ? await this.sections.findById(source.material_section_id)
+          : null;
+        if (
+          !isValidConcretePointer({
+            materialId: source.material_id,
+            section,
+            sourceReferenceId: source.source_reference_id,
+          })
+        ) {
+          continue;
+        }
+        topicsWithEligibleSource.add(topicId);
         const key = topicSourceRefKey({
           material_id: source.material_id,
           material_section_id: source.material_section_id,
@@ -416,6 +464,15 @@ export class SyllabusIndexFromDocumentsService {
           updated_at: this.now(),
         });
         topicSourceRefs += 1;
+      }
+    }
+
+    // SPEC 037: temas NUEVOS que han quedado SIN fuente utilizable -> aviso claro
+    // (la UI debe mostrarlos "Sin fuentes suficientes" y desactivar generar).
+    for (const node of applicable) {
+      const topicId = nodeToTopicId.get(node.id);
+      if (topicId && createdTopicIds.includes(topicId) && !topicsWithEligibleSource.has(topicId)) {
+        warnings.push(`Tema sin fuentes utilizables: "${node.title}".`);
       }
     }
 

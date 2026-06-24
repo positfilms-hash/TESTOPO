@@ -232,6 +232,7 @@ export * from './service/syllabusIndexService.js';
 export * from './generation/documentGroundedIndexTypes.js';
 export * from './generation/documentGroundedIndexConfig.js';
 export * from './generation/validateCompactIndex.js';
+export * from './generation/topicSourceEligibility.js';
 export * from './generation/mockDocumentGroundedIndexProvider.js';
 export * from './generation/openAiDocumentGroundedIndexProvider.js';
 export * from './generation/createDocumentGroundedIndexProvider.js';

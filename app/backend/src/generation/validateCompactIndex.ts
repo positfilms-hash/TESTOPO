@@ -10,7 +10,11 @@
 //   - no dominado por nodos a nivel articulo/pagina/numeracion micro.
 //   - mapeo de fuente: al menos un nodo con fuente concreta (no todo sin fuente).
 
-import type { GroundedIndexOutput, GroundedTopicNode } from './documentGroundedIndexTypes.js';
+import type {
+  GroundedIndexOutput,
+  GroundedNodeSources,
+  GroundedTopicNode,
+} from './documentGroundedIndexTypes.js';
 
 export const COMPACT_INDEX_ROOT_TARGET_MIN = 5;
 export const COMPACT_INDEX_ROOT_TARGET_MAX = 15;
@@ -113,4 +117,44 @@ export function validateCompactIndex(output: GroundedIndexOutput): CompactIndexV
   }
 
   return { status, rootCount, totalNodes, maxDepth, microFraction, warnings };
+}
+
+// Reconstruye el arbol desde los NODOS persistidos de una propuesta y valida su
+// compacidad. La usan los servicios para BLOQUEAR el apply de una propuesta
+// `needs_regeneration` (SPEC 037). Cada nodo "tiene fuente" si existe al menos un
+// node_source con material para el.
+export function validateCompactIndexFromNodes(
+  nodes: ReadonlyArray<{ id: string; parent_id: string | null; title: string; order: number }>,
+  nodeSources: ReadonlyArray<{ node_id: string; material_id: string }>,
+): CompactIndexValidation {
+  const sourcesByNode = new Map<string, GroundedNodeSources[]>();
+  for (const s of nodeSources) {
+    const arr = sourcesByNode.get(s.node_id) ?? [];
+    arr.push({ material_id: s.material_id, section_ids: [], reference_ids: [] });
+    sourcesByNode.set(s.node_id, arr);
+  }
+  const byId = new Map<string, GroundedTopicNode>();
+  for (const n of nodes) {
+    byId.set(n.id, {
+      title: n.title,
+      order: n.order,
+      sources: sourcesByNode.get(n.id) ?? [],
+      children: [],
+    });
+  }
+  const roots: GroundedTopicNode[] = [];
+  for (const n of nodes) {
+    const node = byId.get(n.id) as GroundedTopicNode;
+    const parent = n.parent_id ? byId.get(n.parent_id) : undefined;
+    if (parent) (parent.children as GroundedTopicNode[]).push(node);
+    else roots.push(node);
+  }
+  return validateCompactIndex({
+    title: '',
+    summary: '',
+    topics: roots,
+    warnings: [],
+    provider: '',
+    model: null,
+  });
 }

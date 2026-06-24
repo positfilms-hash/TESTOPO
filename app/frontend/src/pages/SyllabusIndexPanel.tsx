@@ -121,6 +121,7 @@ export function ProposalReview({
   setNotice: (n: { type: 'error' | 'success'; text: string } | null) => void;
 }) {
   const { store, currentUser } = useStore();
+  const [busy, setBusy] = useState(false);
   const proposal = detail.proposal;
   const byId = new Map(detail.nodes.map((n) => [n.id, n]));
   const sourcesByNode = new Map<string, SyllabusIndexNodeSource[]>();
@@ -193,47 +194,12 @@ export function ProposalReview({
                     </span>
                   )}
                 </div>
+                {/* SPEC 037: revisión GLOBAL; no hay aceptar/rechazar por tema.
+                    Solo edición puntual del título (cambio soportado globalmente). */}
                 {isEditable && (
                   <div className="row">
                     <Button variant="secondary" small onClick={() => editNode(node)}>
                       Editar
-                    </Button>
-                    <Button
-                      small
-                      onClick={() =>
-                        currentUser &&
-                        act(
-                          () =>
-                            store.platform.setSyllabusNodeStatus(
-                              currentUser,
-                              proposal.id,
-                              node.id,
-                              'accepted',
-                            ),
-                          'Tema aceptado.',
-                        )
-                      }
-                    >
-                      Aceptar
-                    </Button>
-                    <Button
-                      variant="danger"
-                      small
-                      onClick={() =>
-                        currentUser &&
-                        act(
-                          () =>
-                            store.platform.setSyllabusNodeStatus(
-                              currentUser,
-                              proposal.id,
-                              node.id,
-                              'rejected',
-                            ),
-                          'Tema rechazado.',
-                        )
-                      }
-                    >
-                      Rechazar
                     </Button>
                   </div>
                 )}
@@ -253,41 +219,43 @@ export function ProposalReview({
         })
       )}
 
+      {/* SPEC 037: UNA sola acción explícita. "Aplicar índice completo" aprueba (si
+          hace falta) y aplica el índice entero de una vez; no hay paso de aprobar
+          por separado ni gate por tema. Si el índice no es compacto, el servidor
+          bloquea con needs_regeneration y se pide regenerar. */}
       <div className="row" style={{ marginTop: 12 }}>
-        {isEditable && (
-          <Button
-            onClick={() =>
-              currentUser &&
-              act(
-                () => store.platform.approveSyllabusProposal(currentUser, proposal.id),
-                'Propuesta aprobada. Ya puedes aplicarla al temario.',
-              )
-            }
-          >
-            Aprobar propuesta
-          </Button>
-        )}
         <Button
-          disabled={proposal.status !== 'approved'}
-          title={proposal.status !== 'approved' ? 'Aprueba la propuesta primero' : undefined}
+          disabled={busy || proposal.status === 'applied'}
           onClick={async () => {
             if (!currentUser) return;
+            setBusy(true);
             try {
+              if (proposal.status !== 'approved') {
+                await store.platform.approveSyllabusProposal(currentUser, proposal.id);
+              }
               const result = await store.platform.applySyllabusIndexFromDocuments(
                 currentUser,
                 proposal.id,
               );
               setNotice({
                 type: 'success',
-                text: `Indice aplicado: ${result.created_topic_ids.length} tema(s) creados, ${result.reused_topic_ids.length} reutilizados, ${result.topic_source_references} fuente(s) registradas.`,
+                text: `Índice aplicado: ${result.created_topic_ids.length} tema(s) creados, ${result.reused_topic_ids.length} reutilizados, ${result.topic_source_references} fuente(s) registradas.`,
               });
               onApplied();
-            } catch {
-              setNotice({ type: 'error', text: 'No se pudo aplicar la propuesta.' });
+            } catch (err) {
+              const codes = (err as { codes?: string[] })?.codes ?? [];
+              setNotice({
+                type: 'error',
+                text: codes.includes('SYLLABUS_INDEX_NEEDS_REGENERATION')
+                  ? 'El índice no es un temario de estudio compacto (parece una transcripción). Regenera el temario antes de aplicarlo.'
+                  : 'No se pudo aplicar el índice. Inténtalo de nuevo.',
+              });
+            } finally {
+              setBusy(false);
             }
           }}
         >
-          Aplicar al temario
+          {busy ? 'Aplicando…' : 'Aplicar índice completo'}
         </Button>
       </div>
     </div>
