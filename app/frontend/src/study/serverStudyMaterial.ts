@@ -11,6 +11,7 @@ import { getSupabase, isSupabaseConfigured } from '../auth/supabaseClient.js';
 import { requestedPersistenceMode } from '../store/supabaseGateway.js';
 import {
   STUDY_ERROR,
+  STUDY_INELIGIBLE_REASON,
   validateStudyRequest,
 } from '../../../../supabase/functions/_shared/material-study/contract';
 
@@ -26,21 +27,48 @@ export interface ServerStudyInput {
   force_retry?: boolean;
 }
 
+// Motivo exacto por el que un material legible NO se estudió (lo decide el
+// servidor tras autoclasificar). Permite a la UI explicar el bloqueo real.
+export interface StudyIneligibleDetail {
+  material_id: string;
+  reason: string;
+}
+
 export interface ServerStudySummary {
   run_id: string | null;
   materials: number;
   studied: number;
   units: number;
   warnings: string[];
+  ineligible: StudyIneligibleDetail[];
 }
 
 export class ServerStudyError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly ineligible: StudyIneligibleDetail[] = [],
   ) {
     super(message);
     this.name = 'ServerStudyError';
+  }
+}
+
+// Mensaje humano EXACTO por motivo de inelegibilidad (codigos del contrato).
+export function studyIneligibleReasonMessage(reason: string): string {
+  switch (reason) {
+    case STUDY_INELIGIBLE_REASON.OBSOLETE:
+      return 'El documento está marcado como obsoleto.';
+    case STUDY_INELIGIBLE_REASON.NOT_READABLE:
+      return 'El documento aún no se ha leído por completo (extracción u OCR pendiente).';
+    case STUDY_INELIGIBLE_REASON.UNCLASSIFIED:
+      return 'No se ha podido determinar el tipo de documento.';
+    case STUDY_INELIGIBLE_REASON.NEEDS_REVIEW:
+      return 'El tipo de documento es dudoso y necesita revisión manual antes de estudiarlo.';
+    case STUDY_INELIGIBLE_REASON.NOT_PRIMARY:
+      return 'El documento no es material de estudio (p. ej. examen antiguo, índice o contenido no apto como fuente factual).';
+    default:
+      return 'El documento no es apto para estudiar.';
   }
 }
 
@@ -81,8 +109,8 @@ export async function studyMaterialViaEdgeFunction(
   const supabase = getSupabase();
   const { data, error } = await supabase.functions.invoke('study-material', { body });
   if (error) {
-    const code = await readErrorCode(error);
-    throw new ServerStudyError(code ?? 'UNKNOWN', safeMessage(code));
+    const parsed = await readErrorBody(error);
+    throw new ServerStudyError(parsed.code ?? 'UNKNOWN', safeMessage(parsed.code), parsed.ineligible);
   }
   const summary = (data ?? {}) as Partial<ServerStudySummary>;
   return {
@@ -91,18 +119,31 @@ export async function studyMaterialViaEdgeFunction(
     studied: typeof summary.studied === 'number' ? summary.studied : 0,
     units: typeof summary.units === 'number' ? summary.units : 0,
     warnings: Array.isArray(summary.warnings) ? summary.warnings.map(String) : [],
+    ineligible: normalizeIneligible(summary.ineligible),
   };
 }
 
-async function readErrorCode(error: unknown): Promise<string | undefined> {
+function normalizeIneligible(value: unknown): StudyIneligibleDetail[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is StudyIneligibleDetail => !!v && typeof v === 'object')
+    .map((v) => ({
+      material_id: String((v as StudyIneligibleDetail).material_id ?? ''),
+      reason: String((v as StudyIneligibleDetail).reason ?? ''),
+    }));
+}
+
+async function readErrorBody(
+  error: unknown,
+): Promise<{ code?: string; ineligible: StudyIneligibleDetail[] }> {
   try {
     const ctx = (error as { context?: Response }).context;
     if (ctx && typeof ctx.json === 'function') {
-      const payload = (await ctx.json()) as { error?: string };
-      return payload?.error;
+      const payload = (await ctx.json()) as { error?: string; ineligible?: unknown };
+      return { code: payload?.error, ineligible: normalizeIneligible(payload?.ineligible) };
     }
   } catch {
     // cuerpo no JSON
   }
-  return undefined;
+  return { ineligible: [] };
 }

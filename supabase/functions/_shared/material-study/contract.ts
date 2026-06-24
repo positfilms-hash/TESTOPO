@@ -197,22 +197,237 @@ export const STUDY_ELIGIBLE_CLASSES = new Set([
   'index_or_table_of_contents',
 ]);
 
+// Motivos ESTABLES (seguros para el cliente) por los que un material legible no se
+// estudia. La UI los mapea a un mensaje exacto (SPEC 038, fix staging).
+export const STUDY_INELIGIBLE_REASON = {
+  OBSOLETE: 'material_obsolete',
+  NOT_READABLE: 'material_not_readable',
+  UNCLASSIFIED: 'classification_unresolved',
+  NEEDS_REVIEW: 'classification_needs_review',
+  NOT_PRIMARY: 'classification_not_primary',
+} as const;
+export type StudyIneligibleReason =
+  (typeof STUDY_INELIGIBLE_REASON)[keyof typeof STUDY_INELIGIBLE_REASON];
+
+export type StudyEligibility =
+  | { eligible: true; ocrWarnings: boolean }
+  | { eligible: false; reason: StudyIneligibleReason };
+
+// Decide la elegibilidad de un material para estudiar y, si NO es elegible, el
+// MOTIVO exacto. Fail-closed: sin clasificacion resuelta -> no elegible (la Edge
+// Function debe resolver la clasificacion antes; este modulo no inventa estado).
+export function evaluateStudyEligibility(args: {
+  material: { status?: string | null; extraction_status?: string | null } | null | undefined;
+  classification: { classification?: string | null; needs_review?: boolean | null } | null | undefined;
+}): StudyEligibility {
+  const m = args.material;
+  if (!m) return { eligible: false, reason: STUDY_INELIGIBLE_REASON.NOT_READABLE };
+  if (m.status === 'obsolete') return { eligible: false, reason: STUDY_INELIGIBLE_REASON.OBSOLETE };
+  if (!STUDY_READABLE_EXTRACTION.has(m.extraction_status ?? '')) {
+    return { eligible: false, reason: STUDY_INELIGIBLE_REASON.NOT_READABLE };
+  }
+  const c = args.classification;
+  if (!c || !isNonEmptyString(c.classification)) {
+    return { eligible: false, reason: STUDY_INELIGIBLE_REASON.UNCLASSIFIED };
+  }
+  if (c.needs_review === true) {
+    return { eligible: false, reason: STUDY_INELIGIBLE_REASON.NEEDS_REVIEW };
+  }
+  if (!STUDY_ELIGIBLE_CLASSES.has(c.classification)) {
+    return { eligible: false, reason: STUDY_INELIGIBLE_REASON.NOT_PRIMARY };
+  }
+  return { eligible: true, ocrWarnings: materialHasOcrWarnings(m.extraction_status) };
+}
+
 export function isStudyEligibleMaterial(args: {
   material: { status?: string | null; extraction_status?: string | null } | null | undefined;
   classification: { classification?: string | null; needs_review?: boolean | null } | null | undefined;
 }): boolean {
-  const m = args.material;
-  if (!m) return false;
-  if (m.status === 'obsolete') return false;
-  if (!STUDY_READABLE_EXTRACTION.has(m.extraction_status ?? '')) return false;
-  const c = args.classification;
-  if (!c) return false;
-  if (c.needs_review === true) return false;
-  return STUDY_ELIGIBLE_CLASSES.has(c.classification ?? '');
+  return evaluateStudyEligibility(args).eligible;
 }
 
 export function materialHasOcrWarnings(extractionStatus: string | null | undefined): boolean {
   return extractionStatus === 'completed_ocr_with_warnings';
+}
+
+// ---------------------------------------------------------------------------
+// Clasificador documental HEURISTICO determinista (portado de
+// app/backend/src/classification/heuristicDocumentClassifier.ts). PURO y sin red:
+// permite que "Estudiar material" sea AUTOSUFICIENTE — si un material legible no
+// tiene clasificacion previa, la Edge Function la resuelve internamente y la
+// persiste de forma trazable, sin depender de que el usuario haya ejecutado antes
+// "Analizar material"/indice. NO es un mock de IA: es una clasificacion real por
+// senales de texto/nombre. Fail-closed: ante senales ambiguas -> needs_review.
+// ---------------------------------------------------------------------------
+export type StudyDocumentClass =
+  | 'syllabus_material'
+  | 'old_exam_or_test'
+  | 'legal_text'
+  | 'notes_or_summary'
+  | 'index_or_table_of_contents'
+  | 'irrelevant'
+  | 'not_analyzable'
+  | 'ambiguous';
+
+// Umbral de confianza por debajo del cual se marca needs_review (igual que el
+// backend: DEFAULT_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.75).
+export const STUDY_CLASSIFY_CONFIDENCE_THRESHOLD = 0.75;
+const STUDY_CLASSIFY_ALWAYS_REVIEW = new Set<StudyDocumentClass>([
+  'not_analyzable',
+  'ambiguous',
+  'irrelevant',
+]);
+const STUDY_CLASSIFY_MIN_CHARS = 20;
+const STUDY_CLASSIFY_PRIORITY: StudyDocumentClass[] = [
+  'old_exam_or_test',
+  'index_or_table_of_contents',
+  'legal_text',
+  'notes_or_summary',
+  'irrelevant',
+  'syllabus_material',
+];
+
+export interface StudyAutoClassification {
+  classification: StudyDocumentClass;
+  confidence: number;
+  reason: string;
+  needs_review: boolean;
+  warnings: string[];
+}
+
+function classifyNormalize(value: string): string {
+  return Array.from(value.normalize('NFD'))
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 0x300 || code > 0x36f;
+    })
+    .join('')
+    .toLowerCase();
+}
+function countOptionLines(text: string): number {
+  let count = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\(?[a-dA-D]\)|^\s*[a-dA-D][).\-]\s+/.test(line)) count += 1;
+  }
+  return count;
+}
+function countTemaLines(text: string): number {
+  let count = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*tema\s+\d+/i.test(line)) count += 1;
+  }
+  return count;
+}
+function isMostlyShortLines(text: string): boolean {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return false;
+  const shortLines = lines.filter((l) => l.trim().length <= 60).length;
+  return shortLines / lines.length >= 0.7;
+}
+
+// Clasifica un documento a partir de su texto (y opcionalmente nombre/categoria).
+// El texto lo recupera el SERVIDOR de las secciones del material; el navegador
+// nunca aporta texto.
+export function classifyStudyDocument(input: {
+  text?: string | null;
+  filename?: string | null;
+  detected_category?: string | null;
+}): StudyAutoClassification {
+  const text = input.text ?? '';
+  if (text.trim().length < STUDY_CLASSIFY_MIN_CHARS) {
+    return {
+      classification: 'not_analyzable',
+      confidence: 0.9,
+      reason: 'No hay texto extraible suficiente para analizar el documento.',
+      needs_review: true,
+      warnings: [],
+    };
+  }
+  const nameHay = classifyNormalize(input.filename ?? '');
+  const textHay = classifyNormalize(text);
+  const hay = `${nameHay} ${textHay}`;
+  const scores: Record<StudyDocumentClass, number> = {
+    syllabus_material: 0,
+    old_exam_or_test: 0,
+    legal_text: 0,
+    notes_or_summary: 0,
+    index_or_table_of_contents: 0,
+    irrelevant: 0,
+    not_analyzable: 0,
+    ambiguous: 0,
+  };
+
+  if (countOptionLines(text) >= 3) scores.old_exam_or_test += 3;
+  if (/\b(test|examen|examenes|simulacro|convocatoria|pregunta)\b/.test(hay)) scores.old_exam_or_test += 2;
+  if (/respuestas?\s+correctas?|plantilla de respuestas/.test(hay)) scores.old_exam_or_test += 2;
+  if (input.detected_category === 'old_tests') scores.old_exam_or_test += 1;
+
+  if (/\bley\s+\d+\/\d+/.test(hay)) scores.legal_text += 3;
+  if (/\b(ley|real decreto|constitucion|estatuto|reglamento|normativa|boe|articulo)\b/.test(hay)) {
+    scores.legal_text += 2;
+  }
+
+  if (/\b(indice|programa|temario oficial|distribucion de temas|tabla de contenidos)\b/.test(nameHay)) {
+    scores.index_or_table_of_contents += 2;
+  }
+  if (countTemaLines(text) >= 4 && isMostlyShortLines(text)) scores.index_or_table_of_contents += 2;
+
+  if (/\b(resumen|esquema|cuadro|apuntes|chuleta|comparativa)\b/.test(nameHay)) scores.notes_or_summary += 2;
+
+  if (/\btema\s+\d+/.test(hay)) scores.syllabus_material += 2;
+  if (text.trim().length > 400 && !isMostlyShortLines(text)) scores.syllabus_material += 1;
+  if (input.detected_category === 'opposition_material') scores.syllabus_material += 1;
+
+  if (/\b(publicidad|oferta|descuento|matriculate|promocion|academia .* matricula)\b/.test(hay)) {
+    scores.irrelevant += 3;
+  }
+
+  let best: StudyDocumentClass | null = null;
+  let bestScore = 0;
+  for (const cls of STUDY_CLASSIFY_PRIORITY) {
+    if (scores[cls] > bestScore) {
+      best = cls;
+      bestScore = scores[cls];
+    }
+  }
+  if (best === null) {
+    return {
+      classification: 'ambiguous',
+      confidence: 0.4,
+      reason: 'No se han detectado senales claras para clasificar el documento.',
+      needs_review: true,
+      warnings: ['Clasificacion incierta; revisar manualmente.'],
+    };
+  }
+  const confidence = Math.min(0.95, 0.55 + 0.1 * bestScore);
+  const needsReview =
+    confidence < STUDY_CLASSIFY_CONFIDENCE_THRESHOLD || STUDY_CLASSIFY_ALWAYS_REVIEW.has(best);
+  return {
+    classification: best,
+    confidence,
+    reason: studyClassReason(best),
+    needs_review: needsReview,
+    warnings: [],
+  };
+}
+
+function studyClassReason(cls: StudyDocumentClass): string {
+  switch (cls) {
+    case 'old_exam_or_test':
+      return 'Contiene preguntas con opciones o senales de examen/test.';
+    case 'legal_text':
+      return 'Contiene referencias normativas (ley, decreto, articulo).';
+    case 'index_or_table_of_contents':
+      return 'Parece un indice o programa con lista de temas.';
+    case 'notes_or_summary':
+      return 'Parece apuntes, resumen o esquema.';
+    case 'syllabus_material':
+      return 'Contiene desarrollo teorico de temario.';
+    case 'irrelevant':
+      return 'Parece contenido comercial/publicitario ajeno al estudio.';
+    default:
+      return 'Clasificado por heuristica.';
+  }
 }
 
 // ---------------------------------------------------------------------------

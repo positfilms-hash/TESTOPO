@@ -12,6 +12,9 @@ import {
   resolveStudyLimits,
   validateStudyRequest,
   isStudyEligibleMaterial,
+  evaluateStudyEligibility,
+  classifyStudyDocument,
+  STUDY_INELIGIBLE_REASON,
   resolveStudyProvider,
   parseProviderUnits,
   validateStudyUnit,
@@ -62,6 +65,95 @@ describe('isStudyEligibleMaterial', () => {
     expect(isStudyEligibleMaterial({ ...ok, classification: { classification: 'syllabus_material', needs_review: true } })).toBe(false);
     expect(isStudyEligibleMaterial({ ...ok, classification: { classification: 'old_exam_or_test', needs_review: false } })).toBe(false);
     expect(isStudyEligibleMaterial({ ...ok, classification: null })).toBe(false);
+  });
+});
+
+describe('evaluateStudyEligibility (motivo EXACTO de inelegibilidad)', () => {
+  const m = { status: 'active', extraction_status: 'completed' };
+  it('devuelve el motivo por el que un material legible no se estudia', () => {
+    expect(
+      evaluateStudyEligibility({ material: { status: 'obsolete', extraction_status: 'completed' }, classification: null }),
+    ).toMatchObject({ eligible: false, reason: STUDY_INELIGIBLE_REASON.OBSOLETE });
+    expect(
+      evaluateStudyEligibility({ material: { status: 'active', extraction_status: 'ocr_failed' }, classification: null }),
+    ).toMatchObject({ eligible: false, reason: STUDY_INELIGIBLE_REASON.NOT_READABLE });
+    // Legible pero SIN clasificacion resuelta -> fail-closed (no se inventa estado).
+    expect(evaluateStudyEligibility({ material: m, classification: null })).toMatchObject({
+      eligible: false,
+      reason: STUDY_INELIGIBLE_REASON.UNCLASSIFIED,
+    });
+    expect(
+      evaluateStudyEligibility({ material: m, classification: { classification: 'syllabus_material', needs_review: true } }),
+    ).toMatchObject({ eligible: false, reason: STUDY_INELIGIBLE_REASON.NEEDS_REVIEW });
+    expect(
+      evaluateStudyEligibility({ material: m, classification: { classification: 'old_exam_or_test', needs_review: false } }),
+    ).toMatchObject({ eligible: false, reason: STUDY_INELIGIBLE_REASON.NOT_PRIMARY });
+    expect(
+      evaluateStudyEligibility({ material: m, classification: { classification: 'syllabus_material', needs_review: false } }),
+    ).toMatchObject({ eligible: true });
+  });
+});
+
+// Reproduce el BUG BLOQUEANTE de staging: un material LEGIBLE que la UI muestra como
+// "listo" pero que la Function rechazaba con NO_ELIGIBLE_MATERIAL por exigir una
+// document_classifications primaria sin needs_review ejecutada antes por el usuario.
+// El fix hace "Estudiar material" AUTOSUFICIENTE: el servidor clasifica internamente
+// (classifyStudyDocument) y entonces el material es elegible — sin indice/temario.
+describe('autosuficiencia: clasificacion interna desacopla el estudio del indice', () => {
+  const readable = { status: 'active', extraction_status: 'completed' };
+  const SYLLABUS_TEXT = [
+    'TEMA 1 - La organizacion administrativa del sector publico.',
+    'La Administracion General del Estado se ordena en organos superiores y',
+    'directivos. El desarrollo de este tema abarca los principios de jerarquia,',
+    'competencia y coordinacion, asi como la distribucion territorial y la',
+    'estructura de los departamentos y sus unidades administrativas inferiores.',
+  ].join('\n');
+
+  it('BUG: material legible SIN clasificacion previa NO era elegible (coupling)', () => {
+    // Asi fallaba en staging: sin clasificacion -> no elegible -> NO_ELIGIBLE_MATERIAL.
+    expect(isStudyEligibleMaterial({ material: readable, classification: undefined })).toBe(false);
+    expect(evaluateStudyEligibility({ material: readable, classification: undefined })).toMatchObject({
+      eligible: false,
+      reason: STUDY_INELIGIBLE_REASON.UNCLASSIFIED,
+    });
+  });
+
+  it('FIX: el servidor clasifica el texto y el material pasa a elegible', () => {
+    const auto = classifyStudyDocument({ text: SYLLABUS_TEXT, filename: 'tema-1.pdf' });
+    expect(auto.classification).toBe('syllabus_material');
+    expect(auto.needs_review).toBe(false);
+    expect(evaluateStudyEligibility({ material: readable, classification: auto })).toMatchObject({
+      eligible: true,
+    });
+  });
+
+  it('FAIL-CLOSED: examen antiguo -> no primaria; texto ambiguo -> needs_review', () => {
+    const examText = [
+      '1. La capital de Espana es:',
+      'a) Madrid',
+      'b) Barcelona',
+      'c) Sevilla',
+      'd) Valencia',
+      'Pregunta de examen. Respuestas correctas al final.',
+    ].join('\n');
+    const exam = classifyStudyDocument({ text: examText, filename: 'examen-2019.pdf' });
+    expect(exam.classification).toBe('old_exam_or_test');
+    expect(evaluateStudyEligibility({ material: readable, classification: exam })).toMatchObject({
+      eligible: false,
+      reason: STUDY_INELIGIBLE_REASON.NOT_PRIMARY,
+    });
+
+    const ambiguous = classifyStudyDocument({ text: 'Texto cualquiera sin senales claras de tipo.', filename: 'x.pdf' });
+    expect(ambiguous.needs_review).toBe(true);
+    expect(evaluateStudyEligibility({ material: readable, classification: ambiguous })).toMatchObject({
+      eligible: false,
+      reason: STUDY_INELIGIBLE_REASON.NEEDS_REVIEW,
+    });
+
+    // Sin texto extraible -> not_analyzable (needs_review) -> no se estudia.
+    const empty = classifyStudyDocument({ text: '   ', filename: 'scan.pdf' });
+    expect(empty.classification).toBe('not_analyzable');
+    expect(empty.needs_review).toBe(true);
   });
 });
 
