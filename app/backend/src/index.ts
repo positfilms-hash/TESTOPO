@@ -251,3 +251,4 @@ export * from './repository/inMemoryExamPatternLearningRepository.js';
 export * from './repository/supabase/supabaseExamPatternLearningRepository.js';
 export * from './service/examPatternAnalysisService.js';
 export * from './service/aiErrorMemoryService.js';
+export * from './service/reliabilityMetricsService.js';

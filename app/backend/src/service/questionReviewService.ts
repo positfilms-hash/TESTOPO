@@ -25,10 +25,12 @@ import type {
   QuestionReviewFeedback,
 } from '../models/questionReviewFeedback.js';
 import { resolveFeedbackSeverity } from '../models/questionReviewFeedback.js';
+import { avoidInstructionFor } from '../../../../supabase/functions/_shared/reliability/contract';
 import type { MaterialRepository } from '../repository/materialRepository.js';
 import type { TopicRepository } from '../repository/topicRepository.js';
 import type { QuestionReviewRepository } from '../repository/questionReviewRepository.js';
 import type { QuestionReviewFeedbackRepository } from '../repository/questionReviewFeedbackRepository.js';
+import type { ExamPatternLearningRepository } from '../repository/examPatternLearningRepository.js';
 import { InMemoryQuestionReviewRepository } from '../repository/inMemoryQuestionReviewRepository.js';
 import { formalFindings } from '../quality/qualityChecks.js';
 import {
@@ -71,6 +73,9 @@ export interface ReviewFeedbackInput {
   feedback_type: FeedbackType;
   severity?: FeedbackSeverity;
   comment?: string | null;
+  /** Correccion sugerida y tipo de problema de fuente (SPEC 040, opcionales). */
+  suggested_fix?: string | null;
+  source_issue?: string | null;
   created_by?: string | null;
 }
 
@@ -100,6 +105,14 @@ export interface QuestionReviewServiceOptions {
    * feedback en una accion lanza error en vez de perderlo silenciosamente.
    */
   feedbackRepository?: QuestionReviewFeedbackRepository;
+  /**
+   * Memoria de errores IA (SPEC 040). Si se inyecta, cada feedback estructurado de
+   * una accion de revision hace UPSERT de memoria por workspace+oposicion+tipo+
+   * ambito (la memoria se PUEBLA POR REVISION, no por la siguiente generacion).
+   */
+  errorMemoryRepository?: ExamPatternLearningRepository;
+  /** Resuelve el workspace de una oposicion (aislamiento de feedback/memoria). */
+  resolveWorkspaceId?: (oppositionId: string) => Promise<string | null>;
   generateId?: () => string;
   now?: () => Date;
 }
@@ -111,6 +124,8 @@ export class QuestionReviewService {
   private readonly topics: TopicRepository;
   private readonly reviews: QuestionReviewRepository;
   private readonly feedbackRepository?: QuestionReviewFeedbackRepository;
+  private readonly errorMemory?: ExamPatternLearningRepository;
+  private readonly resolveWorkspaceId?: (oppositionId: string) => Promise<string | null>;
   private readonly generateId: () => string;
   private readonly now: () => Date;
 
@@ -122,6 +137,8 @@ export class QuestionReviewService {
     this.reviews =
       options.reviewRepository ?? new InMemoryQuestionReviewRepository();
     this.feedbackRepository = options.feedbackRepository;
+    this.errorMemory = options.errorMemoryRepository;
+    this.resolveWorkspaceId = options.resolveWorkspaceId;
     this.generateId = options.generateId ?? (() => randomUUID());
     this.now = options.now ?? (() => new Date());
   }
@@ -188,7 +205,7 @@ export class QuestionReviewService {
     const question = await this.questions.changeStatus(questionId, newStatus);
 
     const { review, feedback } = await this.recordReview(
-      questionId,
+      question,
       'edit',
       previousStatus,
       newStatus,
@@ -216,7 +233,7 @@ export class QuestionReviewService {
 
     const question = await this.questions.changeStatus(questionId, 'validated');
     const { review, feedback } = await this.recordReview(
-      questionId,
+      question,
       'approve',
       existing.status,
       'validated',
@@ -271,7 +288,7 @@ export class QuestionReviewService {
       'pending_review',
     );
     const { review, feedback } = await this.recordReview(
-      questionId,
+      question,
       'return_to_pending_review',
       existing.status,
       'pending_review',
@@ -296,7 +313,7 @@ export class QuestionReviewService {
     this.assertTransition(existing.status, newStatus);
     const question = await this.questions.changeStatus(questionId, newStatus);
     const { review, feedback } = await this.recordReview(
-      questionId,
+      question,
       action,
       existing.status,
       newStatus,
@@ -321,7 +338,7 @@ export class QuestionReviewService {
   }
 
   private async recordReview(
-    questionId: string,
+    question: Question,
     action: ReviewAction,
     previousStatus: QuestionStatus,
     newStatus: QuestionStatus,
@@ -330,7 +347,7 @@ export class QuestionReviewService {
   ): Promise<{ review: QuestionReview; feedback: QuestionReviewFeedback[] }> {
     const review = await this.reviews.create({
       id: this.generateId(),
-      question_id: questionId,
+      question_id: question.id,
       action,
       previous_status: previousStatus,
       new_status: newStatus,
@@ -339,14 +356,16 @@ export class QuestionReviewService {
       validation_result_id: validationResultId,
       created_at: this.now(),
     });
-    const feedback = await this.persistFeedback(review.id, questionId, input);
+    const feedback = await this.persistFeedback(review.id, question, input);
     return { review, feedback };
   }
 
-  // Persiste los motivos estructurados ligados a la revision (SPEC 018.4, 12).
+  // Persiste los motivos estructurados ligados a la revision (SPEC 018.4, 12) y
+  // PUEBLA la memoria de errores por revision (SPEC 040): feedback SCOPED por
+  // workspace+oposicion + upsert de memoria por (workspace, oposicion, tipo, ambito).
   private async persistFeedback(
     reviewId: string,
-    questionId: string,
+    question: Question,
     input: ReviewActionInput,
   ): Promise<QuestionReviewFeedback[]> {
     const entries = input.feedback ?? [];
@@ -358,20 +377,54 @@ export class QuestionReviewService {
         'Se indico feedback de revision pero no hay feedbackRepository configurado',
       );
     }
+    // Scope del aislamiento: oposicion de la pregunta + su workspace resuelto.
+    const oppositionId = question.opposition_id;
+    const workspaceId = this.resolveWorkspaceId
+      ? await this.resolveWorkspaceId(oppositionId)
+      : null;
+    // El enlace al run de generacion vive en el JSONB de metadata (flujo server);
+    // el modelo de dominio no lo tipa, asi que se lee de forma defensiva.
+    const generationRunId =
+      (question.generation_metadata as { generation_run_id?: string } | null | undefined)
+        ?.generation_run_id ?? null;
+
     const created: QuestionReviewFeedback[] = [];
     for (const entry of entries) {
+      const severity = resolveFeedbackSeverity(entry.feedback_type, entry.severity);
       created.push(
         await this.feedbackRepository.create({
           id: this.generateId(),
-          question_id: questionId,
+          question_id: question.id,
           review_id: reviewId,
+          workspace_id: workspaceId,
+          opposition_id: oppositionId,
           feedback_type: entry.feedback_type,
-          severity: resolveFeedbackSeverity(entry.feedback_type, entry.severity),
+          severity,
           comment: entry.comment ?? null,
+          generation_run_id: generationRunId,
+          suggested_fix: entry.suggested_fix ?? null,
+          source_issue: entry.source_issue ?? null,
           created_by: entry.created_by ?? null,
           created_at: this.now(),
         }),
       );
+
+      // UPSERT de memoria POR REVISION (SPEC 040): aislada por workspace+oposicion.
+      if (this.errorMemory) {
+        await this.errorMemory.upsertErrorMemory({
+          workspace_id: workspaceId,
+          opposition_id: oppositionId,
+          type: entry.feedback_type,
+          scope: 'opposition',
+          difficulty: null,
+          severity,
+          summary: `${entry.feedback_type} (severidad ${severity}) marcado en revision.`,
+          avoid_instruction: avoidInstructionFor(entry.feedback_type),
+          source: 'review_feedback',
+          topic_id: question.topic_id ?? null,
+          example_question_id: question.id,
+        });
+      }
     }
     return created;
   }

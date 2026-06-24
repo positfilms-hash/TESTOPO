@@ -137,10 +137,14 @@ describe('SPEC 023 - validation report / review / feedback / generation run', ()
     const repo = new SupabaseQuestionReviewFeedbackRepository(new InMemorySupabasePort());
     await repo.create({
       id: 'f1', question_id: 'q1', review_id: 'r1',
-      feedback_type: 'weak_explanation', severity: 'medium',
-      comment: 'mejorar', created_by: null, created_at: NOW,
+      workspace_id: 'ws-1', opposition_id: 'op-1',
+      feedback_type: 'explanation_weak', severity: 'medium',
+      comment: 'mejorar', generation_run_id: null, suggested_fix: null,
+      source_issue: null, created_by: null, created_at: NOW,
     });
-    expect((await repo.findByQuestion('q1'))[0]?.feedback_type).toBe('weak_explanation');
+    const fb = (await repo.findByQuestion('q1'))[0];
+    expect(fb?.feedback_type).toBe('explanation_weak');
+    expect(fb?.opposition_id).toBe('op-1'); // scope persistido (SPEC 040)
   });
 
   it('generation run: crea, busca por id y lista', async () => {

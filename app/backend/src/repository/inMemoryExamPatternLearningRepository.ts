@@ -1,14 +1,20 @@
 // Almacen en memoria del aprendizaje de patrones de examen (SPEC 028-F).
 // Implementacion de referencia (tests/demo); la real es Supabase.
 
+import { randomUUID } from 'node:crypto';
 import type {
   AIErrorMemory,
   AIQuestionQualityScore,
+  ErrorMemoryUpsertInput,
   ExamPatternAnalysisRun,
   QuestionStyleProfile,
   TopicExamPattern,
 } from '../models/examPatternLearning.js';
 import type { ExamPatternLearningRepository } from './examPatternLearningRepository.js';
+
+function severityRank(severity: string): number {
+  return { low: 0, medium: 1, high: 2, critical: 3 }[severity] ?? 0;
+}
 
 export class InMemoryExamPatternLearningRepository
   implements ExamPatternLearningRepository
@@ -114,6 +120,53 @@ export class InMemoryExamPatternLearningRepository
   async updateErrorMemory(entry: AIErrorMemory): Promise<AIErrorMemory> {
     this.errorMemories.set(entry.id, clone(entry));
     return clone(entry);
+  }
+
+  // UPSERT por clave de agregacion (SPEC 040): poblado de memoria POR REVISION.
+  async upsertErrorMemory(input: ErrorMemoryUpsertInput): Promise<AIErrorMemory> {
+    const now = new Date();
+    const existing = [...this.errorMemories.values()].find(
+      (e) =>
+        e.workspace_id === input.workspace_id &&
+        e.opposition_id === input.opposition_id &&
+        e.type === input.type &&
+        e.scope === input.scope &&
+        (e.difficulty ?? null) === (input.difficulty ?? null),
+    );
+    if (existing) {
+      existing.occurrences += 1;
+      if (severityRank(input.severity) > severityRank(existing.severity)) {
+        existing.severity = input.severity;
+      }
+      existing.avoid_instruction = input.avoid_instruction;
+      existing.summary = input.summary;
+      existing.last_seen_at = now;
+      existing.updated_at = now;
+      if (input.example_question_id) existing.example_question_id = input.example_question_id;
+      this.errorMemories.set(existing.id, existing);
+      return clone(existing);
+    }
+    const created: AIErrorMemory = {
+      id: randomUUID(),
+      workspace_id: input.workspace_id,
+      opposition_id: input.opposition_id,
+      topic_id: input.topic_id ?? null,
+      material_id: input.material_id ?? null,
+      type: input.type,
+      severity: input.severity,
+      summary: input.summary,
+      avoid_instruction: input.avoid_instruction,
+      source: input.source,
+      occurrences: 1,
+      scope: input.scope,
+      difficulty: input.difficulty,
+      last_seen_at: now,
+      example_question_id: input.example_question_id ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.errorMemories.set(created.id, created);
+    return clone(created);
   }
 
   async listErrorMemoriesByOpposition(

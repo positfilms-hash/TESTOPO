@@ -6,6 +6,7 @@
 import type {
   AIErrorMemory,
   AIQuestionQualityScore,
+  ErrorMemoryUpsertInput,
   ExamPatternAnalysisRun,
   QuestionStyleProfile,
   TopicExamPattern,
@@ -40,6 +41,14 @@ export interface ExamPatternLearningRepository {
   // --- AI error memory ---
   createErrorMemory(entry: AIErrorMemory): Promise<AIErrorMemory>;
   updateErrorMemory(entry: AIErrorMemory): Promise<AIErrorMemory>;
+  /**
+   * UPSERT por clave de agregacion (workspace + oposicion + tipo + ambito +
+   * dificultad). Si existe, incrementa `occurrences`, refresca severidad (max),
+   * `last_seen_at`, `avoid_instruction` y `example_question_id`; si no, crea con
+   * `occurrences = 1`. Es el mecanismo de poblado de memoria POR REVISION
+   * (SPEC 040): la memoria no depende de la siguiente generacion.
+   */
+  upsertErrorMemory(input: ErrorMemoryUpsertInput): Promise<AIErrorMemory>;
   listErrorMemoriesByOpposition(
     oppositionId: string,
   ): Promise<AIErrorMemory[]>;
