@@ -54,13 +54,14 @@ export class ServerGenerationError extends Error {
 
 // Mensajes SEGUROS y humanos por codigo (sin filtrar prompts ni internals).
 const MESSAGES: Record<string, string> = {
+  // SPEC 037: mensajes seguros, en español y orientados a la accion.
   [QG_ERROR.AUTH_REQUIRED]: 'Tu sesión ha caducado. Vuelve a iniciar sesión.',
-  [QG_ERROR.ACCESS_DENIED]: 'No tienes permisos para generar en esta oposición.',
+  [QG_ERROR.ACCESS_DENIED]: 'No tienes permisos para generar preguntas en esta oposición.',
   [QG_ERROR.TOPIC_NOT_FOUND]: 'El tema seleccionado no existe en esta oposición.',
   [QG_ERROR.TOPIC_NOT_APPLIED]:
-    'El tema no está aplicado. Aplica el índice de temario antes de generar.',
+    'Este tema todavía no está aplicado. Aplica el índice antes de generar preguntas.',
   [QG_ERROR.NO_SOURCES]:
-    'Este tema no tiene fuentes elegibles. Clasifica y secciona el material de estudio primero.',
+    'Este tema no tiene fuentes asociadas y utilizables. Regenera o reaplica el temario para vincularlo al material.',
   [QG_ERROR.SOURCE_REQUIRED]: 'No se puede generar sin una fuente concreta.',
   [QG_ERROR.ARBITRARY_TEXT_FORBIDDEN]:
     'Petición no válida: no se permite enviar texto o fuentes desde el navegador.',
@@ -77,7 +78,10 @@ const MESSAGES: Record<string, string> = {
 };
 
 function safeMessage(code: string | undefined): string {
-  return (code && MESSAGES[code]) || 'No se pudo generar. Inténtalo de nuevo.';
+  return (
+    (code && MESSAGES[code]) ||
+    'No se pudieron generar preguntas. Revisa que el tema tenga fuentes válidas e inténtalo de nuevo.'
+  );
 }
 
 // Llama a la Edge Function autenticada. Construye el body SOLO con campos
