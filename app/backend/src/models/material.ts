@@ -88,6 +88,15 @@ export interface Material {
   ocr_processed_pages?: number | null;
   ocr_failed_pages?: number | null;
   ocr_warning_count?: number | null;
+  // --- Estado de estudio interno (SPEC 038). Aditivo/nullable. `studied` solo tras
+  // un run de estudio con unidades usables; OCR con avisos -> studied_with_warnings. ---
+  study_status?:
+    | 'not_studied'
+    | 'studying'
+    | 'studied'
+    | 'studied_with_warnings'
+    | 'study_failed'
+    | null;
   /** Usuario que subio el archivo. */
   uploaded_by?: string | null;
   created_at: Date;

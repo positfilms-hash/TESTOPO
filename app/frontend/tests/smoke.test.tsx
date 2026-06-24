@@ -77,21 +77,20 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     expect(screen.queryByRole('button', { name: 'Pegar texto' })).toBeNull();
   });
 
-  it('admin: Temario aplicado muestra el arbol y permite regenerar/anadir (SPEC 032)', async () => {
+  it('admin: Temario primario = "Estudiar material"; indice clasico opcional con el arbol (SPEC 038)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
       within(screen.getByLabelText('Navegacion principal')).getByText('Temario'),
     );
-    // Con temario ya aplicado (demo), el Topic Map es el contenido principal.
-    expect(await screen.findByText('Temas')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Añadir tema' })).toBeInTheDocument();
-    // SPEC 032: regenerar el temario desde el material es la accion principal.
-    expect(
-      screen.getByRole('button', { name: 'Regenerar temario' }),
-    ).toBeInTheDocument();
-    // El arbol muestra los temas aplicados; ya no hay subida/importacion por-tema.
+    // SPEC 038: la accion PRIMARIA del analisis es "Estudiar material" (sin indice
+    // visible obligatorio ni seleccion de tema).
+    expect(await screen.findByText('Estudiar material')).toBeInTheDocument();
+    // El temario clasico (indice de temas) sigue disponible como OPCIONAL, con el
+    // arbol aplicado del demo dentro.
+    expect(screen.getByText(/Temario clásico/)).toBeInTheDocument();
     expect(screen.getByText(/Tema 1 - Constitucion/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Añadir tema' })).toBeInTheDocument();
     expect(screen.queryByText('Importar ZIP')).toBeNull();
   });
 
