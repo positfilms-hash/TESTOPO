@@ -18,6 +18,11 @@ import {
   ServerGenerationError,
 } from '../generation/serverQuestionGeneration.js';
 import {
+  RELIABILITY_SEVERITIES,
+  computeReliabilityMetrics,
+  type ReliabilitySeverity,
+} from '../../../../supabase/functions/_shared/reliability/contract';
+import {
   Badge,
   Button,
   EmptyState,
@@ -95,6 +100,15 @@ function QuestionsList({
   }, [store, currentOpposition, version]);
   const questions = tab === 'pending' ? all.filter((q) => PENDING.includes(q.status)) : all;
 
+  // SPEC 040: metricas basicas de fiabilidad por oposicion (bajo demanda, sin
+  // dashboard). Solo gestion; el alumno no ve esta pantalla.
+  const metrics = computeReliabilityMetrics({
+    generated_count: all.length,
+    validated_count: all.filter((q) => q.status === 'validated').length,
+    rejected_count: all.filter((q) => q.status === 'rejected').length,
+    needs_fix_count: all.filter((q) => q.status === 'needs_fix').length,
+  });
+
   return (
     <div>
       <PageHeader
@@ -117,6 +131,14 @@ function QuestionsList({
           Todas
         </button>
       </div>
+
+      {all.length > 0 && (
+        <p className="muted small" style={{ marginTop: 4 }}>
+          Fiabilidad · Banco: {metrics.generated_count} · Validadas: {metrics.validated_count} (
+          {Math.round(metrics.validation_rate * 100)}%) · Para corregir: {metrics.needs_fix_count} ·
+          Rechazadas: {metrics.rejected_count}
+        </p>
+      )}
 
       {questions.length === 0 ? (
         <EmptyState
@@ -159,6 +181,8 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
   // Motivos estructurados para corregir/rechazar (SPEC 018.4, 17).
   const [reasons, setReasons] = useState<Set<FeedbackType>>(new Set());
   const [reasonComment, setReasonComment] = useState('');
+  // SPEC 040: severidad obligatoria al rechazar (motivo estructurado + severidad).
+  const [severity, setSeverity] = useState<ReliabilitySeverity>('high');
 
   const [question, setQuestion] = useState<Question | null>(null);
   const [report, setReport] = useState<QuestionValidationResult | null>(null);
@@ -201,10 +225,12 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
     });
   };
 
-  // Construye el feedback estructurado a registrar con la accion (SPEC 018.4).
+  // Construye el feedback estructurado a registrar con la accion (SPEC 018.4 +
+  // SPEC 040: severidad incluida). El catalogo canonico vive en el contrato
+  // compartido de fiabilidad; la severidad se valida en servidor y cliente.
   const buildFeedback = () => {
     const comment = reasonComment.trim() || null;
-    return [...reasons].map((type) => ({ feedback_type: type, comment }));
+    return [...reasons].map((type) => ({ feedback_type: type, severity, comment }));
   };
 
   if (loading) {
@@ -316,6 +342,15 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
             </label>
           ))}
         </div>
+        <Field label="Severidad (obligatoria al rechazar)">
+          <select value={severity} onChange={(e) => setSeverity(e.target.value as ReliabilitySeverity)}>
+            {RELIABILITY_SEVERITIES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Comentario (opcional)">
           <textarea
             value={reasonComment}
@@ -357,6 +392,8 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
         </Button>
         <Button
           variant="danger"
+          disabled={reasons.size === 0}
+          title={reasons.size === 0 ? 'Marca al menos un motivo para rechazar' : undefined}
           onClick={() =>
             act(
               () =>
@@ -374,6 +411,11 @@ function QuestionReview({ id, onBack }: { id: string; onBack: () => void }) {
           Rechazar
         </Button>
       </div>
+      {reasons.size === 0 && (
+        <p className="muted small">
+          Para rechazar, marca al menos un motivo estructurado y una severidad (SPEC 040).
+        </p>
+      )}
       {hasErrors && (
         <p className="muted small">
           No se puede aprobar mientras haya errores criticos. Edita o marca para corregir.
