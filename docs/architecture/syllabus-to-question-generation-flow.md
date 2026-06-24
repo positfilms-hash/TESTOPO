@@ -11,6 +11,15 @@ PDF nativo legible / OCR usable
 El temario es un **índice de bloques de estudio**, no una transcripción del PDF ni
 un mapa artículo por artículo.
 
+> **Transición (SPEC 038).** La dependencia del **índice VISIBLE** descrita aquí
+> queda **superada** por SPEC 038 (estudio interno del material sin índice público
+> ni `topic_id`): ver [`material-study-flow.md`](./material-study-flow.md). El
+> índice/Topics/propuestas **siguen existiendo** como compatibilidad/historial (no
+> se borran) y este flujo legacy sigue funcionando, pero **no** es el camino
+> primario para preparar material nuevo. Las bases de **seguridad** (SPEC 035,
+> secretos solo de servidor / no-mock) y de **sesión** (SPEC 036) **no** quedan
+> obsoletas: siguen vigentes.
+
 ## Diagnóstico del desajuste de fuentes (P0 observado)
 
 Síntoma en staging:
