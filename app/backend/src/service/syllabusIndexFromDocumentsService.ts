@@ -40,6 +40,7 @@ import {
   loadDocumentGroundedIndexConfig,
   type DocumentGroundedIndexConfig,
 } from '../generation/documentGroundedIndexConfig.js';
+import { validateCompactIndex } from '../generation/validateCompactIndex.js';
 import {
   SyllabusIndexError,
   SyllabusIndexErrorCode,
@@ -172,6 +173,23 @@ export class SyllabusIndexFromDocumentsService {
         [SyllabusIndexErrorCode.INVALID_OUTPUT],
         errors.join('; '),
       );
+    }
+
+    // SPEC 037: el indice debe ser COMPACTO (bloques de estudio), no una
+    // transcripcion. Validacion DETERMINISTA de forma: si es needs_regeneration
+    // (demasiados temas raiz / demasiado profundo / sin titulos / dominado por
+    // articulos-paginas / sin fuente), se AVISA claramente y NO se aplica en
+    // silencio (la propuesta queda pending_review con el aviso visible para que el
+    // gestor regenere). No bloquea la persistencia de la propuesta revisable.
+    const compact = validateCompactIndex(output);
+    if (compact.status === 'needs_regeneration') {
+      output.warnings = [
+        'El índice propuesto necesita regenerarse: no es un índice de estudio compacto.',
+        ...compact.warnings,
+        ...output.warnings,
+      ];
+    } else if (compact.warnings.length > 0) {
+      output.warnings = [...output.warnings, ...compact.warnings];
     }
 
     const proposal = await this.repo.createProposal({

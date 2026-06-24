@@ -18,12 +18,24 @@ todo el trabajo previo por ti, en un único flujo:
 3. La app, por debajo: clasifica tus documentos, crea sus secciones y propone un
    índice con **fuentes**. Verás un progreso sencillo (*Analizando material… ·
    Generando índice…*).
-4. Revisa la propuesta: cada tema muestra su **confianza** y sus **fuentes** (de qué
-   documento y fragmento sale). Puedes **editar** el título, **aceptar** o
-   **rechazar** temas.
-5. Cuando estés conforme, pulsa **Aprobar propuesta**.
-6. Pulsa **Aplicar al temario**: se crean los temas (o se reutilizan los que ya
-   existan con el mismo nombre, sin duplicar) y se guarda la **fuente** de cada uno.
+4. Revisa la propuesta **completa de una vez** (no hace falta aprobar tema por
+   tema): verás el árbol, los **avisos** y las **fuentes** de cada tema.
+5. Cuando estés conforme, pulsa **Aplicar índice completo**: con un solo clic se
+   crean los temas (o se reutilizan los que ya existan, **sin duplicar**) y se
+   guarda la **fuente** real de cada uno.
+
+## Cómo es el índice (compacto)
+
+El temario es un **índice de bloques de estudio**, no una copia del PDF:
+
+- entre **5 y 15 temas raíz** (como mucho 20), con **1–2 niveles**;
+- títulos **semánticos** (p. ej. *Derechos y deberes fundamentales*), **no**
+  *Artículo 14* ni *Página 12*; los artículos se **agrupan** bajo bloques y siguen
+  siendo la evidencia, no el título.
+
+Si la propuesta parece una **transcripción** (demasiados temas, demasiado profunda,
+o un nodo por artículo/página), aparece un aviso de **regenerar**: pulsa
+**Regenerar temario** antes de aplicar.
 
 Una vez aplicado, *Temario* muestra tu **árbol de temas**. Puedes **Regenerar
 temario** (crea una propuesta nueva para revisar, sin borrar la anterior ni el

@@ -88,9 +88,35 @@ secretos ni detalles internos.
 - Retest real de generación (proveedor) queda para staging (SPEC 035); no se afirma
   éxito real del proveedor sin ese retest.
 
-## Pendiente de SPEC 037 (fuera de esta reparación de readiness)
+## Índice compacto (SPEC 037, fase 2)
 
-El endurecimiento del **índice compacto** (prompt/validación: 5–15 temas raíz, tope
-20, profundidad 1–2, sin nodos artículo/página) y la revisión/aplicación **global**
-del índice se abordan como continuación; esta entrega corrige el desajuste de
-readiness observado y los mensajes, que era el bloqueante reportado.
+El temario propuesto es un **índice de bloques de estudio**, no una transcripción.
+
+- **Config** (`documentGroundedIndexConfig`): por defecto `max_topics = 60`,
+  `max_depth = 3` (antes 100/4). El prompt del proveedor (OpenAI/mock) pide 5–15
+  temas raíz (tope 20), 1–2 niveles, y agrupar artículos/epígrafes bajo bloques
+  semánticos (los artículos son evidencia, no títulos de tema).
+- **Validación determinista** (`validateCompactIndex`, pura y testeada) tras
+  generar: marca `needs_regeneration` si la propuesta tiene **> 20 temas raíz**,
+  **profundidad > 3**, **títulos vacíos**, está **dominada por nodos
+  artículo/página/numeración micro** (transcripción) o **ningún tema tiene
+  fuente**. En ese caso el servicio añade un aviso claro y la propuesta queda
+  `pending_review` **sin aplicarse en silencio** (el gestor regenera). Si las
+  raíces están fuera de 5–15 pero el resto es válido, se avisa sin bloquear.
+
+## Revisión y aplicación global
+
+El flujo de gestor ya es: `Generar temario` → una propuesta revisable
+(`pending_review`) → revisión **global** → `applyProposal` aplica **todo** el
+índice de una vez (no hay aprobación por tema). `applyProposal`
+**crea/reutiliza** `topics` activos del scope correcto y persiste
+`topic_source_references` reales, **sin duplicar** temas equivalentes al reaplicar
+(reutiliza el existente con un aviso) y sin borrar el mapa aplicado sin la
+confirmación segura existente.
+
+## Verificación (fase 2)
+
+- `app/backend/tests/validateCompactIndex.test.ts`: tope 20, profundidad, títulos
+  vacíos, dominación por artículos/páginas, sin fuente, y el aviso de objetivo.
+- Regresión `syllabusIndexFromDocuments`/`syllabusIndexPlatform`/
+  `supabaseSyllabusIndex` verde con la config más estricta.

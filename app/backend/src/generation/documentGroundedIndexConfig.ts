@@ -7,8 +7,11 @@ import type { EnvLike } from './generationConfig.js';
 
 export const DEFAULT_MAX_INDEX_INPUT_CHARS = 80000;
 export const DEFAULT_MAX_INDEX_SECTIONS = 200;
-export const DEFAULT_MAX_INDEX_TOPICS = 100;
-export const DEFAULT_MAX_INDEX_DEPTH = 4;
+// SPEC 037: indice COMPACTO de bloques de estudio. Objetivo 5-15 temas raiz, tope
+// duro 20 (lo verifica la validacion determinista). El presupuesto total de temas
+// se acota para que la propuesta no sea una transcripcion; profundidad 1-2 normal.
+export const DEFAULT_MAX_INDEX_TOPICS = 60;
+export const DEFAULT_MAX_INDEX_DEPTH = 3;
 
 export interface DocumentGroundedIndexConfig {
   max_input_chars: number;
