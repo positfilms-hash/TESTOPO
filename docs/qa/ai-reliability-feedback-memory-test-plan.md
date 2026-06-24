@@ -31,6 +31,21 @@ vitest.
 - **Métricas** (`computeReliabilityMetrics`): tasas, media de tiempo, top de errores,
   sin división por cero.
 
+### Backend — `app/backend/tests/reliabilityMemoryFlow.test.ts` (E2E de dominio)
+
+- **Revisión → feedback → memoria → prompt aislado:** rechazar dos candidatas del
+  mismo tipo en la oposición A persiste feedback **scoped** (`workspace_id`/
+  `opposition_id`) e **incrementa** una única memoria (`occurrences = 2`, severidad
+  máxima); una candidata de la oposición B crea su propia memoria. La selección para
+  la siguiente generación de A (`selectErrorMemories` + `formatAvoidBlock`) incluye
+  **solo** la memoria de A/ws-1 y **no** la de B/ws-2.
+- `needs_fix` con feedback puebla memoria; sin feedback no crea memoria.
+
+### Backend — `app/backend/tests/examPatternLearning.test.ts`
+
+- `upsertErrorMemory` por clave de agregación incrementa `occurrences` y sube la
+  severidad (InMemory + Supabase).
+
 ### Frontend — `app/frontend/tests/reviewFeedback.test.tsx`
 
 - **Reject exige motivo + severidad:** el botón "Rechazar" está deshabilitado sin
@@ -50,7 +65,7 @@ vitest.
 | 1. Reject exige tipo/severidad y persiste feedback scoped | `validateReviewFeedback` + UI reject + flujo `reject(feedback)` |
 | 2. Needs fix/edit/validate registran señales; validar sin cambios no obliga feedback | `validateReviewFeedback` + `classifyValidationOutcome` |
 | 3. Tipos/severidades inválidos, Student/revocado/cross-scope rechazados | contrato + `evaluateManagementAccess` (Edge) + RLS gestión |
-| 4. Feedback crítico/repetido crea/actualiza memoria e incrementa ocurrencias | pipeline 028-F + columnas 037 (`occurrences`/`last_seen_at`) |
+| 4. Feedback crítico/repetido crea/actualiza memoria e incrementa ocurrencias | `QuestionReviewService` upsert POR REVISIÓN + `reliabilityMemoryFlow` e2e |
 | 5. Memorias/métricas no se mezclan entre scopes | `selectErrorMemories` aislamiento + query por workspace+opposition |
 | 6. La generación recupera solo memoria del mismo scope como calidad, no fuente | Edge Function 6b + `formatAvoidBlock` separado |
 | 7. Sin memoria sigue funcionando; sin fuente sigue bloqueada | inyección opcional + `NO_EVIDENCE` (SPEC 039) |

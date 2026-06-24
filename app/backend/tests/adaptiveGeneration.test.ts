@@ -22,8 +22,8 @@ describe('AIErrorMemoryService', () => {
     const repository = new InMemoryExamPatternLearningRepository();
     const feedback = {
       getFeedbackSummaryForGeneration: async () => [
-        { feedback_type: 'style_mismatch', count: 3, severity: 'low' },
-        { feedback_type: 'missing_source', count: 1, severity: 'critical' },
+        { feedback_type: 'not_exam_style', count: 3, severity: 'low' },
+        { feedback_type: 'source_missing', count: 1, severity: 'critical' },
       ],
     } as unknown as QuestionFeedbackService;
     const service = new AIErrorMemoryService({ repository, feedback, now: () => now });
@@ -43,11 +43,11 @@ describe('AIErrorMemoryService', () => {
     } as unknown as QuestionFeedbackService;
     const service = new AIErrorMemoryService({ repository, feedback, now: () => now });
     await service.refreshForOpposition('opp-1');
-    summary = [{ feedback_type: 'off_topic', count: 2, severity: 'high' }];
+    summary = [{ feedback_type: 'source_mismatch', count: 2, severity: 'high' }];
     await service.refreshForOpposition('opp-1');
     const list = await service.list('opp-1');
     expect(list).toHaveLength(1);
-    expect(list[0].type).toBe('off_topic');
+    expect(list[0].type).toBe('source_mismatch');
   });
 });
 
@@ -149,7 +149,7 @@ describe('SourceGroundedQuestionGenerationService (028-F adaptativo)', () => {
     await repository.createProfile(makeProfile(['otra cosa']));
     const feedback = {
       getFeedbackSummaryForGeneration: async () => [
-        { feedback_type: 'style_mismatch', count: 2, severity: 'low' },
+        { feedback_type: 'not_exam_style', count: 2, severity: 'low' },
       ],
     } as unknown as QuestionFeedbackService;
     const errorMemory = new AIErrorMemoryService({ repository, feedback, now: () => now });

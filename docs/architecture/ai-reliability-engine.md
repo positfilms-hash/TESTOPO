@@ -32,7 +32,10 @@ embeddings ni RAG avanzado.
 ## Catálogo único (contrato compartido)
 
 `supabase/functions/_shared/reliability/contract.ts` es la **única fuente de verdad**
-(pura, usada por la Edge Function y por backend/frontend):
+(pura). **UI, `QuestionReviewService`, repositorios y memoria usan EXACTAMENTE este
+catálogo:** `app/backend/src/models/questionReviewFeedback.ts` lo **re-exporta** (no
+hay catálogo legacy paralelo) y `QuestionsPage` toma de él los tipos y severidades.
+Es usado por la Edge Function y por backend/frontend:
 
 - `RELIABILITY_FEEDBACK_TYPES` (23 tipos) + `RELIABILITY_SEVERITIES`
   (`low|medium|high|critical`) + severidad por defecto por tipo.
@@ -43,15 +46,27 @@ embeddings ni RAG avanzado.
   `validated_with_minor_changes`, `validated_after_major_edit`.
 - `avoidInstructionFor(type)`: instrucción NO factual de "evitar" por tipo.
 
-## Memoria de errores aislada
+## Memoria poblada POR REVISIÓN (no por la generación)
+
+La memoria se crea/actualiza en el **flujo de revisión humana**, no de forma perezosa
+en la siguiente generación. En `QuestionReviewService`, al **rechazar / marcar
+needs_fix / editar-validar** con feedback estructurado:
+
+1. Se persiste `question_review_feedback` **scoped** (`workspace_id` + `opposition_id`
+   resueltos de la pregunta) con `generation_run_id`/`suggested_fix`/`source_issue`.
+2. Se hace **upsert** de `ai_error_memories` por clave de agregación
+   (`workspace_id` + `opposition_id` + `type` + `scope` [+ `difficulty`]):
+   incrementa `occurrences`, sube la severidad al máximo observado, refresca
+   `last_seen_at`, `avoid_instruction` y `example_question_id`
+   (`ExamPatternLearningRepository.upsertErrorMemory`, InMemory + Supabase).
 
 `ai_error_memories` guarda solo contenido **NO factual** (tipo, severidad, resumen,
 `avoid_instruction`, `occurrences`, `scope`, `difficulty`). Nunca fuentes, extractos,
-prompts, claves ni datos de otro cliente. Feedback crítico/repetido crea/actualiza la
-entrada e incrementa `occurrences`. El feedback de un workspace/oposición **no** se
-lee, agrega ni influye en ningún otro (aislamiento reforzado también en el código
+prompts, claves ni datos de otro cliente. El feedback de un workspace/oposición **no**
+se lee, agrega ni influye en ningún otro (aislamiento reforzado también en el código
 puro: `selectErrorMemories` descarta cualquier registro de otro scope aunque llegara
-en la lista).
+en la lista). La Edge Function de la generación directa **lee** esta memoria ya
+poblada; si está vacía, se comporta como SPEC 039.
 
 ## Integración server-side en la generación directa (SPEC 039)
 
@@ -81,11 +96,14 @@ alumno sigue usando **solo** preguntas validadas por humanos.
 
 ## Métricas básicas
 
-`computeReliabilityMetrics` (puro) calcula bajo demanda por workspace/oposición:
-`generated/validated/rejected/needs_fix_count`, sus tasas, `average_review_time_ms`
-(cuando haya datos) y los tipos de error más frecuentes. Se muestra una franja
-compacta en la pantalla de gestión de Preguntas (sin dashboard). El Student no ve
-métricas, feedback, memorias, runs, fuentes internas ni candidatas no validadas.
+`ReliabilityMetricsService.getMetrics(oppositionId)` calcula bajo demanda con datos
+**reales**: cuenta estados de las preguntas de la oposición, agrega los **tipos de
+error más frecuentes** del feedback **scoped** y el **tiempo medio de revisión**
+(creación de la pregunta → primera decisión terminal de su review). La aritmética vive
+en `computeReliabilityMetrics` (contrato compartido); el servicio aporta los datos.
+Se muestra una franja compacta en la pantalla de gestión de Preguntas (sin
+dashboard). El Student no ve métricas, feedback, memorias, runs, fuentes internas ni
+candidatas no validadas.
 
 ## Fallback InMemory
 

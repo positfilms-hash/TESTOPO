@@ -292,14 +292,14 @@ describe('SPEC 018.4 - feedback de revision', () => {
 
     const result = await s.review.markNeedsFix(question.id, {
       feedback: [
-        { feedback_type: 'weak_explanation', comment: 'Explicacion floja' },
+        { feedback_type: 'explanation_weak', comment: 'Explicacion floja' },
       ],
     });
 
     expect(result.feedback).toHaveLength(1);
     const stored = await s.review.listFeedback(question.id);
     expect(stored).toHaveLength(1);
-    expect(stored[0].feedback_type).toBe('weak_explanation');
+    expect(stored[0].feedback_type).toBe('explanation_weak');
     expect(stored[0].severity).toBe('medium'); // por defecto del tipo
     expect(stored[0].review_id).toBe(result.review.id);
   });
@@ -321,11 +321,11 @@ describe('SPEC 018.4 - feedback de revision', () => {
       });
 
     await s.review.reject(created[0].id, {
-      feedback: [{ feedback_type: 'missing_source' }],
+      feedback: [{ feedback_type: 'source_missing' }],
     });
 
     const stored = await s.review.listFeedback(created[0].id);
-    expect(stored[0].feedback_type).toBe('missing_source');
+    expect(stored[0].feedback_type).toBe('source_missing');
     expect(stored[0].severity).toBe('critical');
   });
 
@@ -346,17 +346,17 @@ describe('SPEC 018.4 - feedback de revision', () => {
       });
 
     await s.review.markNeedsFix(created[0].id, {
-      feedback: [{ feedback_type: 'ambiguous_statement', comment: 'Ambigua' }],
+      feedback: [{ feedback_type: 'ambiguous_question', comment: 'Ambigua' }],
     });
     await s.review.markNeedsFix(created[1].id, {
-      feedback: [{ feedback_type: 'ambiguous_statement' }],
+      feedback: [{ feedback_type: 'ambiguous_question' }],
     });
 
     const summary = await s.feedbackService.getFeedbackSummaryForGeneration({
       opposition_id: TEST_OPPOSITION_ID,
     });
     expect(summary).toHaveLength(1);
-    expect(summary[0].feedback_type).toBe('ambiguous_statement');
+    expect(summary[0].feedback_type).toBe('ambiguous_question');
     expect(summary[0].count).toBe(2);
     expect(summary[0].example_comments).toEqual(['Ambigua']);
   });
@@ -472,7 +472,7 @@ describe('SPEC 018.4 - proveedor configurable', () => {
       count: 1,
       topic_title: 'Tema 1',
       previous_feedback: [
-        { feedback_type: 'ambiguous_statement', count: 2, severity: 'high' },
+        { feedback_type: 'ambiguous_question', count: 2, severity: 'high' },
       ],
     });
 
@@ -484,7 +484,7 @@ describe('SPEC 018.4 - proveedor configurable', () => {
     expect(candidates[0].options.filter((o) => o.is_correct)).toHaveLength(1);
     expect(candidates[0].source_excerpt).toBe('Fragmento exacto citado por la IA.');
     expect(candidates[0].source_reference).toBe('Articulo 1.2');
-    expect(capturedBody).toContain('ambiguous_statement');
+    expect(capturedBody).toContain('ambiguous_question');
     expect(capturedBody).toContain('source_excerpt');
   });
 

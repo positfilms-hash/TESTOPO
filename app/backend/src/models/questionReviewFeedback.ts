@@ -1,90 +1,58 @@
-// Feedback de revision humana sobre una pregunta (SPEC 018.4, 12-14).
+// Feedback de revision humana sobre una pregunta (SPEC 018.4, 12-14; SPEC 040).
 //
-// Es aditivo al registro de revision (SPEC 006, `QuestionReview`): mientras
-// `QuestionReview` guarda la accion y la transicion de estado, este modelo
-// captura el MOTIVO estructurado del rechazo/correccion para poder aprender de
-// el (resumen de feedback que alimenta futuras generaciones IA).
+// FUENTE UNICA DE VERDAD del catalogo de tipos/severidades: el contrato compartido
+// `supabase/functions/_shared/reliability/contract.ts`. Este modulo lo RE-EXPORTA
+// con los nombres historicos del dominio para que UI, QuestionReviewService,
+// repositorios y memoria usen EXACTAMENTE el mismo catalogo (no hay un catalogo
+// legacy paralelo). `QuestionReview` guarda la accion; este modelo el MOTIVO
+// estructurado (tipo + severidad) que alimenta la memoria de errores.
 
-// Tipos de motivo de feedback (SPEC 018.4, 13). Los valores de cadena son
-// contractuales: se usan como clave de agrupacion en el resumen.
-export const FEEDBACK_TYPES = [
-  'ambiguous_statement',
-  'multiple_correct_answers',
-  'wrong_correct_answer',
-  'weak_explanation',
-  'missing_source',
-  'bad_source_excerpt',
-  'too_easy',
-  'too_hard',
-  'duplicated_question',
-  'off_topic',
-  'invented_content',
-  'bad_options',
-  'unclear_wording',
-  'needs_legal_precision',
-  // SPEC 028-F: motivos para el aprendizaje adaptativo (estilo/cobertura/copia).
-  'style_mismatch',
-  'difficulty_mismatch',
-  'coverage_mismatch',
-  'source_mismatch',
-  'copying_risk',
-  'other',
-] as const;
-export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+import {
+  RELIABILITY_FEEDBACK_TYPES,
+  RELIABILITY_SEVERITIES,
+  SEVERITY_RANK as RELIABILITY_SEVERITY_RANK,
+  DEFAULT_FEEDBACK_SEVERITY as RELIABILITY_DEFAULT_SEVERITY,
+  isReliabilityFeedbackType,
+  isReliabilitySeverity,
+  resolveSeverity,
+  type ReliabilityFeedbackType,
+  type ReliabilitySeverity,
+} from '../../../../supabase/functions/_shared/reliability/contract';
 
-// Severidad del feedback (SPEC 018.4, 14).
-export const FEEDBACK_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
-export type FeedbackSeverity = (typeof FEEDBACK_SEVERITIES)[number];
+// Catalogo canonico (re-exportado del contrato compartido).
+export const FEEDBACK_TYPES = RELIABILITY_FEEDBACK_TYPES;
+export type FeedbackType = ReliabilityFeedbackType;
 
-// Orden de severidad (mayor = mas grave). Se usa para resumir el feedback
-// quedandose con la severidad mas alta observada por tipo.
-export const SEVERITY_RANK: Record<FeedbackSeverity, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  critical: 3,
-};
+export const FEEDBACK_SEVERITIES = RELIABILITY_SEVERITIES;
+export type FeedbackSeverity = ReliabilitySeverity;
 
-// Severidad por defecto de cada tipo (SPEC 018.4, 14, ejemplos). Se aplica
-// cuando quien registra el feedback no indica una severidad explicita.
-export const DEFAULT_FEEDBACK_SEVERITY: Record<FeedbackType, FeedbackSeverity> = {
-  ambiguous_statement: 'high',
-  multiple_correct_answers: 'critical',
-  wrong_correct_answer: 'critical',
-  weak_explanation: 'medium',
-  missing_source: 'critical',
-  bad_source_excerpt: 'medium',
-  too_easy: 'low',
-  too_hard: 'low',
-  duplicated_question: 'high',
-  off_topic: 'high',
-  invented_content: 'critical',
-  bad_options: 'high',
-  unclear_wording: 'medium',
-  needs_legal_precision: 'high',
-  style_mismatch: 'low',
-  difficulty_mismatch: 'low',
-  coverage_mismatch: 'medium',
-  source_mismatch: 'critical',
-  copying_risk: 'critical',
-  other: 'low',
-};
+export const SEVERITY_RANK: Record<FeedbackSeverity, number> = RELIABILITY_SEVERITY_RANK;
+export const DEFAULT_FEEDBACK_SEVERITY: Record<FeedbackType, FeedbackSeverity> =
+  RELIABILITY_DEFAULT_SEVERITY;
 
 export interface QuestionReviewFeedback {
   id: string;
   question_id: string;
   /** Revision (SPEC 006) que origino el feedback, si aplica. */
   review_id: string | null;
+  /** Scope obligatorio para el aislamiento workspace/oposicion (SPEC 040). */
+  workspace_id: string | null;
+  opposition_id: string | null;
   feedback_type: FeedbackType;
   severity: FeedbackSeverity;
   comment: string | null;
+  /** Run de generacion que produjo la candidata (trazabilidad, SPEC 040). */
+  generation_run_id: string | null;
+  /** Correccion sugerida por el revisor (opcional, SPEC 040). */
+  suggested_fix: string | null;
+  /** Tipo de problema de fuente (opcional, SPEC 040). */
+  source_issue: string | null;
   /** Autor del feedback (usuario revisor). Opcional en el MVP. */
   created_by: string | null;
   created_at: Date;
 }
 
 // Resumen agregado de feedback para alimentar una generacion (SPEC 018.4, 16).
-// Se mantiene en snake_case por coherencia con el resto del dominio.
 export interface QuestionGenerationFeedbackSummary {
   feedback_type: FeedbackType;
   count: number;
@@ -94,11 +62,11 @@ export interface QuestionGenerationFeedbackSummary {
 }
 
 export function isFeedbackType(value: unknown): value is FeedbackType {
-  return FEEDBACK_TYPES.includes(value as FeedbackType);
+  return isReliabilityFeedbackType(value);
 }
 
 export function isFeedbackSeverity(value: unknown): value is FeedbackSeverity {
-  return FEEDBACK_SEVERITIES.includes(value as FeedbackSeverity);
+  return isReliabilitySeverity(value);
 }
 
 // Severidad efectiva: la indicada o, en su defecto, la del catalogo por tipo.
@@ -106,5 +74,5 @@ export function resolveFeedbackSeverity(
   feedbackType: FeedbackType,
   severity?: FeedbackSeverity | null,
 ): FeedbackSeverity {
-  return severity ?? DEFAULT_FEEDBACK_SEVERITY[feedbackType];
+  return resolveSeverity(feedbackType, severity ?? undefined);
 }

@@ -67,12 +67,23 @@ describe('SupabaseExamPatternLearningRepository', () => {
     const repo = new SupabaseExamPatternLearningRepository(new InMemorySupabasePort());
     const entry: AIErrorMemory = {
       id: 'mem-1', workspace_id: 'ws-1', opposition_id: 'opp-1', topic_id: null,
-      material_id: null, type: 'style_mismatch', severity: 'low',
+      material_id: null, type: 'not_exam_style', severity: 'low',
       summary: 'estilo poco formal', avoid_instruction: 'usa registro formal',
-      source: 'review_feedback', occurrences: 2, created_at: now, updated_at: now,
+      source: 'review_feedback', occurrences: 2, scope: 'opposition', difficulty: null,
+      last_seen_at: now, example_question_id: null, created_at: now, updated_at: now,
     };
     await repo.createErrorMemory(entry);
     expect(await repo.listErrorMemoriesByOpposition('opp-1')).toHaveLength(1);
+
+    // SPEC 040: upsert por clave de agregacion incrementa occurrences.
+    const up = await repo.upsertErrorMemory({
+      workspace_id: 'ws-1', opposition_id: 'opp-1', type: 'not_exam_style',
+      scope: 'opposition', difficulty: null, severity: 'high',
+      summary: 's', avoid_instruction: 'i', source: 'review_feedback',
+    });
+    expect(up.occurrences).toBe(3);
+    expect(up.severity).toBe('high');
+
     await repo.deleteErrorMemoriesByOpposition('opp-1');
     expect(await repo.listErrorMemoriesByOpposition('opp-1')).toHaveLength(0);
   });

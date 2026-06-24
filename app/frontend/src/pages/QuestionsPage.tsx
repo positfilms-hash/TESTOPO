@@ -19,8 +19,8 @@ import {
 } from '../generation/serverQuestionGeneration.js';
 import {
   RELIABILITY_SEVERITIES,
-  computeReliabilityMetrics,
   type ReliabilitySeverity,
+  type ReliabilityMetrics,
 } from '../../../../supabase/functions/_shared/reliability/contract';
 import {
   Badge,
@@ -41,16 +41,25 @@ type View =
 
 const PENDING = ['draft', 'pending_review', 'needs_fix'];
 
-// Motivos de rechazo/correccion ofrecidos en revision (SPEC 018.4, 17).
+// Motivos de rechazo/correccion ofrecidos en revision (catalogo UNICO de
+// reliability/contract.ts; SPEC 040).
 const REASON_OPTIONS: { type: FeedbackType; label: string }[] = [
-  { type: 'ambiguous_statement', label: 'Ambigua' },
+  { type: 'ambiguous_question', label: 'Ambigua' },
   { type: 'multiple_correct_answers', label: 'Varias respuestas correctas' },
   { type: 'wrong_correct_answer', label: 'Respuesta correcta incorrecta' },
-  { type: 'weak_explanation', label: 'Explicacion insuficiente' },
-  { type: 'missing_source', label: 'Fuente insuficiente' },
-  { type: 'off_topic', label: 'Fuera de tema' },
-  { type: 'invented_content', label: 'Contenido inventado' },
-  { type: 'bad_options', label: 'Opciones mal planteadas' },
+  { type: 'weak_distractors', label: 'Distractores débiles' },
+  { type: 'explanation_weak', label: 'Explicación insuficiente' },
+  { type: 'explanation_missing', label: 'Sin explicación' },
+  { type: 'source_insufficient', label: 'Fuente insuficiente' },
+  { type: 'source_missing', label: 'Sin fuente' },
+  { type: 'source_mismatch', label: 'Fuente incorrecta' },
+  { type: 'hallucinated_content', label: 'Contenido inventado' },
+  { type: 'copied_old_exam', label: 'Copia de examen antiguo' },
+  { type: 'difficulty_mismatch', label: 'Dificultad no acorde' },
+  { type: 'bad_wording', label: 'Mal redactada' },
+  { type: 'not_exam_style', label: 'No estilo examen' },
+  { type: 'duplicate_question', label: 'Duplicada' },
+  { type: 'format_error', label: 'Formato incorrecto' },
   { type: 'other', label: 'Otro' },
 ];
 
@@ -100,14 +109,23 @@ function QuestionsList({
   }, [store, currentOpposition, version]);
   const questions = tab === 'pending' ? all.filter((q) => PENDING.includes(q.status)) : all;
 
-  // SPEC 040: metricas basicas de fiabilidad por oposicion (bajo demanda, sin
-  // dashboard). Solo gestion; el alumno no ve esta pantalla.
-  const metrics = computeReliabilityMetrics({
-    generated_count: all.length,
-    validated_count: all.filter((q) => q.status === 'validated').length,
-    rejected_count: all.filter((q) => q.status === 'rejected').length,
-    needs_fix_count: all.filter((q) => q.status === 'needs_fix').length,
-  });
+  // SPEC 040: metricas REALES de fiabilidad por oposicion (estados + tipos de error
+  // del feedback scoped + tiempo medio de revision), calculadas bajo demanda en el
+  // servicio (no dashboard). Solo gestion; el alumno no ve esta pantalla.
+  const [metrics, setMetrics] = useState<ReliabilityMetrics | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentOpposition?.id) {
+      setMetrics(null);
+      return;
+    }
+    void store.reliabilityMetrics.getMetrics(currentOpposition.id).then((m) => {
+      if (!cancelled) setMetrics(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentOpposition, version]);
 
   return (
     <div>
@@ -132,11 +150,17 @@ function QuestionsList({
         </button>
       </div>
 
-      {all.length > 0 && (
+      {metrics && metrics.generated_count > 0 && (
         <p className="muted small" style={{ marginTop: 4 }}>
           Fiabilidad · Banco: {metrics.generated_count} · Validadas: {metrics.validated_count} (
           {Math.round(metrics.validation_rate * 100)}%) · Para corregir: {metrics.needs_fix_count} ·
           Rechazadas: {metrics.rejected_count}
+          {metrics.top_error_types.length > 0
+            ? ` · Top motivo: ${metrics.top_error_types[0].type} (${metrics.top_error_types[0].count})`
+            : ''}
+          {metrics.average_review_time_ms != null
+            ? ` · Tiempo medio: ${Math.round(metrics.average_review_time_ms / 1000)}s`
+            : ''}
         </p>
       )}
 

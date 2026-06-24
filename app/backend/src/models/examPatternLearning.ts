@@ -128,6 +128,11 @@ export const AI_ERROR_MEMORY_SOURCES = [
 ] as const;
 export type AIErrorMemorySource = (typeof AI_ERROR_MEMORY_SOURCES)[number];
 
+// Ambito de agregacion de la memoria (SPEC 040). `opposition` = general de la
+// oposicion; `difficulty` = acotada por dificultad.
+export const AI_ERROR_MEMORY_SCOPES = ['opposition', 'difficulty'] as const;
+export type AIErrorMemoryScope = (typeof AI_ERROR_MEMORY_SCOPES)[number];
+
 export interface AIErrorMemory {
   id: string;
   workspace_id: string | null;
@@ -143,8 +148,33 @@ export interface AIErrorMemory {
   source: AIErrorMemorySource;
   /** Numero de observaciones que respaldan la entrada. */
   occurrences: number;
+  /** Ambito de agregacion (SPEC 040). */
+  scope: AIErrorMemoryScope;
+  /** Dificultad acotada cuando scope = 'difficulty'. */
+  difficulty: string | null;
+  /** Ultima vez observada (recencia para la seleccion). */
+  last_seen_at: Date | null;
+  /** Una pregunta de ejemplo que origino la memoria (trazabilidad). */
+  example_question_id: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+// Clave de agregacion de la memoria (SPEC 040): workspace + oposicion + tipo +
+// ambito (+ dificultad). El upsert incrementa `occurrences` por esta clave.
+export interface ErrorMemoryUpsertInput {
+  workspace_id: string | null;
+  opposition_id: string;
+  type: string;
+  scope: AIErrorMemoryScope;
+  difficulty: string | null;
+  severity: string;
+  summary: string;
+  avoid_instruction: string;
+  source: AIErrorMemorySource;
+  topic_id?: string | null;
+  material_id?: string | null;
+  example_question_id?: string | null;
 }
 
 // =====================================================================

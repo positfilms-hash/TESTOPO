@@ -22,6 +22,7 @@ import {
   QuestionValidationService,
   QuestionReviewService,
   QuestionFeedbackService,
+  ReliabilityMetricsService,
   SyllabusIndexService,
   DocumentClassificationService,
   createDocumentClassificationProvider,
@@ -75,6 +76,8 @@ export interface AppStore {
   review: QuestionReviewService;
   /** Resumen de feedback de revision (SPEC 018.4). */
   feedback: QuestionFeedbackService;
+  /** Metricas de fiabilidad por oposicion (SPEC 040). */
+  reliabilityMetrics: ReliabilityMetricsService;
   /** Indice de temario con IA (SPEC 019). */
   syllabus: SyllabusIndexService;
   /** Clasificacion documental e inventario (SPEC 028-B). */
@@ -203,6 +206,13 @@ export function createAppStore(seed = true): AppStore {
     feedbackRepository: feedbackRepo,
     questionService: questions,
   });
+  // SPEC 040: metricas de fiabilidad reales (estados + tipos de error del feedback
+  // scoped + tiempo medio de revision), por oposicion.
+  const reliabilityMetrics = new ReliabilityMetricsService({
+    questionService: questions,
+    reviewRepository: core.questionReviews,
+    feedbackRepository: feedbackRepo,
+  });
   // Generacion IA (SPEC 018.4): valida cada borrador y usa el feedback previo.
   // El proveedor se queda en mock en el navegador (sin claves en el bundle).
   const generation = new QuestionGenerationService({
@@ -227,6 +237,12 @@ export function createAppStore(seed = true): AppStore {
     feedbackRepository: feedbackRepo,
     // SPEC 023: el historial de revision se persiste via el factory.
     reviewRepository: core.questionReviews,
+    // SPEC 040: la memoria de errores se PUEBLA POR REVISION (upsert por
+    // workspace+oposicion+tipo+ambito), aislada por scope. No depende de la
+    // siguiente generacion.
+    errorMemoryRepository: core.examPatternLearning,
+    resolveWorkspaceId: async (oppositionId: string) =>
+      (await oppositionRepo.findById(oppositionId))?.workspace_id ?? null,
   });
   // Indice de temario con IA (SPEC 019): proveedor mock en el navegador. El repo
   // se comparte con el indice anclado a documentos (SPEC 028-D) y, desde la
@@ -388,6 +404,7 @@ export function createAppStore(seed = true): AppStore {
     validation,
     review,
     feedback,
+    reliabilityMetrics,
     syllabus,
     documentClassification,
     materialSections,

@@ -2,10 +2,12 @@
 // Persiste las 5 entidades en sus tablas. Arrays y `rules` como JSONB. Mismo
 // patron que el resto de repos Supabase del dominio.
 
+import { randomUUID } from 'node:crypto';
 import type {
   AIErrorMemory,
   AIErrorMemorySource,
   AIQuestionQualityScore,
+  ErrorMemoryUpsertInput,
   ExamPatternAnalysisRun,
   ExamPatternRunStatus,
   QuestionStyleProfile,
@@ -133,6 +135,58 @@ export class SupabaseExamPatternLearningRepository
     const row = await this.port
       .table(ERROR_MEMORIES)
       .updateById(entry.id, errorMemoryToRow(entry));
+    return toErrorMemory(row);
+  }
+
+  // UPSERT por clave de agregacion (SPEC 040). Lee la entrada existente del scope y
+  // la actualiza (occurrences + severidad max + recencia), o la crea.
+  async upsertErrorMemory(input: ErrorMemoryUpsertInput): Promise<AIErrorMemory> {
+    const rows = await this.port.table(ERROR_MEMORIES).selectMatch({
+      workspace_id: input.workspace_id,
+      opposition_id: input.opposition_id,
+      type: input.type,
+      scope: input.scope,
+      difficulty: input.difficulty,
+    });
+    const now = new Date();
+    const existing = rows.length > 0 ? toErrorMemory(rows[0]) : null;
+    if (existing) {
+      const merged: AIErrorMemory = {
+        ...existing,
+        occurrences: existing.occurrences + 1,
+        severity:
+          severityRank(input.severity) > severityRank(existing.severity)
+            ? input.severity
+            : existing.severity,
+        summary: input.summary,
+        avoid_instruction: input.avoid_instruction,
+        last_seen_at: now,
+        updated_at: now,
+        example_question_id: input.example_question_id ?? existing.example_question_id,
+      };
+      const row = await this.port.table(ERROR_MEMORIES).updateById(merged.id, errorMemoryToRow(merged));
+      return toErrorMemory(row);
+    }
+    const created: AIErrorMemory = {
+      id: randomUUID(),
+      workspace_id: input.workspace_id,
+      opposition_id: input.opposition_id,
+      topic_id: input.topic_id ?? null,
+      material_id: input.material_id ?? null,
+      type: input.type,
+      severity: input.severity,
+      summary: input.summary,
+      avoid_instruction: input.avoid_instruction,
+      source: input.source,
+      occurrences: 1,
+      scope: input.scope,
+      difficulty: input.difficulty,
+      last_seen_at: now,
+      example_question_id: input.example_question_id ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+    const row = await this.port.table(ERROR_MEMORIES).insert(errorMemoryToRow(created));
     return toErrorMemory(row);
   }
 
@@ -311,6 +365,10 @@ function toTopicPattern(row: SupabaseRow): TopicExamPattern {
   };
 }
 
+function severityRank(severity: string): number {
+  return { low: 0, medium: 1, high: 2, critical: 3 }[severity] ?? 0;
+}
+
 function errorMemoryToRow(e: AIErrorMemory): SupabaseRow {
   return {
     id: e.id,
@@ -324,6 +382,10 @@ function errorMemoryToRow(e: AIErrorMemory): SupabaseRow {
     avoid_instruction: e.avoid_instruction,
     source: e.source,
     occurrences: e.occurrences,
+    scope: e.scope,
+    difficulty: e.difficulty,
+    last_seen_at: e.last_seen_at ? iso(e.last_seen_at) : null,
+    example_question_id: e.example_question_id,
     created_at: iso(e.created_at),
     updated_at: iso(e.updated_at),
   };
@@ -342,6 +404,10 @@ function toErrorMemory(row: SupabaseRow): AIErrorMemory {
     avoid_instruction: String(row.avoid_instruction ?? ''),
     source: (row.source as AIErrorMemorySource) ?? 'review_feedback',
     occurrences: asNumber(row.occurrences),
+    scope: (asNullableString(row.scope) as AIErrorMemory['scope']) ?? 'opposition',
+    difficulty: asNullableString(row.difficulty),
+    last_seen_at: row.last_seen_at ? parseDate(row.last_seen_at) : null,
+    example_question_id: asNullableString(row.example_question_id),
     created_at: parseDate(row.created_at),
     updated_at: parseDate(row.updated_at),
   };
