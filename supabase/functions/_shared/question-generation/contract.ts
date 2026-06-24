@@ -472,6 +472,103 @@ export function mapRunStatus(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Ciclo de vida del RUN + persistencia (SPEC 033, P0). Orquestador PURO con un
+// `port` inyectable (la Edge Function lo implementa sobre Supabase; los tests con
+// un fake). Garantiza:
+//   - el run se CREA antes de persistir ninguna candidata (ninguna candidata
+//     queda con un generation_run_id sin run);
+//   - si el proveedor/parsing falla, el run queda failed y 0 candidatas;
+//   - `created` solo cuenta candidatas COMPLETAMENTE persistidas;
+//   - el run se finaliza a completed/partial/failed de forma coherente;
+//   - se comprueba el error tanto al crear como al finalizar el run.
+// El CHECK de 023 solo admite completed/partial/failed: el run se crea con
+// 'failed' (estado honesto de un run en curso/incompleto) y se PROMUEVE al final.
+// ---------------------------------------------------------------------------
+export interface QuestionRunPort {
+  // Crea el run (status 'failed' placeholder). false si la escritura falla.
+  createRun(): Promise<boolean>;
+  // Persiste UNA candidata (pregunta + opciones + informe) de forma atomica:
+  // comprueba el error de cada tabla y COMPENSA la pregunta incompleta. ok?
+  saveCandidate(candidate: ValidatedCandidate): Promise<boolean>;
+  // Actualiza el run ya creado a su estado terminal. false si la escritura falla.
+  finalizeRun(status: RunDbStatus, createdCount: number, errors: string[]): Promise<boolean>;
+}
+
+export interface ProducedCandidates {
+  ok: boolean;
+  code?: QgErrorCode; // proveedor/parsing fallo (ok=false)
+  candidates: ValidatedCandidate[];
+}
+
+export interface RunResult {
+  ok: boolean;
+  code?: QgErrorCode;
+  httpStatus: number;
+  created: number;
+}
+
+export async function runGroundedGeneration(args: {
+  port: QuestionRunPort;
+  requested: number;
+  // Llamada al proveedor + parsing + validacion (sin tocar la BD). Devuelve las
+  // candidatas YA validadas o un codigo de fallo de proveedor/parsing.
+  produce: () => Promise<ProducedCandidates>;
+}): Promise<RunResult> {
+  // 1) Crear el run ANTES de cualquier candidata.
+  const runCreated = await args.port.createRun();
+  if (!runCreated) {
+    return { ok: false, code: QG_ERROR.SAVE_FAILED, httpStatus: 502, created: 0 };
+  }
+
+  // 2) Proveedor + validacion. Si falla, el run queda failed y 0 candidatas.
+  const produced = await args.produce();
+  if (!produced.ok) {
+    const code = produced.code ?? QG_ERROR.PROVIDER_FAILED;
+    await args.port.finalizeRun('failed', 0, [code]);
+    return {
+      ok: false,
+      code,
+      httpStatus: code === QG_ERROR.PROVIDER_FAILED ? 502 : 422,
+      created: 0,
+    };
+  }
+
+  // 3) Persistencia trazable: `created` solo cuenta candidatas completas.
+  let created = 0;
+  let hadErrors = false;
+  const errors: string[] = [];
+  for (const candidate of produced.candidates) {
+    if (created >= args.requested) break;
+    const saved = await args.port.saveCandidate(candidate);
+    if (saved) {
+      created += 1;
+    } else {
+      hadErrors = true;
+      if (!errors.includes(QG_ERROR.SAVE_FAILED)) errors.push(QG_ERROR.SAVE_FAILED);
+    }
+  }
+
+  // 4) Finalizar el run de forma coherente.
+  if (created === 0) {
+    await args.port.finalizeRun('failed', 0, errors);
+    const saveFailed = errors.includes(QG_ERROR.SAVE_FAILED);
+    return {
+      ok: false,
+      code: saveFailed ? QG_ERROR.SAVE_FAILED : QG_ERROR.NO_VALID_CANDIDATES,
+      httpStatus: saveFailed ? 502 : 422,
+      created: 0,
+    };
+  }
+  const status = mapRunStatus({ created, requested: args.requested, hadErrors });
+  const finalized = await args.port.finalizeRun(status, created, errors);
+  if (!finalized) {
+    // El run ya existe (placeholder 'failed'); reportamos el fallo honestamente.
+    return { ok: false, code: QG_ERROR.SAVE_FAILED, httpStatus: 502, created };
+  }
+  return { ok: true, httpStatus: 200, created };
+}
+
+// ---------------------------------------------------------------------------
 // SPEC 033 (flujo real): resolucion de proveedor, elegibilidad de secciones,
 // construccion de la peticion al proveedor, parseo de salida y constructores de
 // filas de persistencia. Todo PURO (sin red ni Supabase) y testeado en vitest.
