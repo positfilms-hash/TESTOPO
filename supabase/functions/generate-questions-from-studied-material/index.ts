@@ -21,6 +21,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { evaluateManagementAccess } from '../_shared/authz/management.ts';
 import {
+  resolveMemoryLimits,
+  selectErrorMemories,
+  formatAvoidBlock,
+  type ErrorMemoryRecord,
+} from '../_shared/reliability/contract.ts';
+import {
   DQG_ERROR,
   DQG_PROVIDER_NOT_CONFIGURED_MESSAGE,
   resolveDirectLimits,
@@ -293,6 +299,33 @@ Deno.serve(async (req: Request) => {
     return fail(DQG_ERROR.PROVIDER_NOT_CONFIGURED, 501, DQG_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
 
+  // 6b) SPEC 040: memoria de errores AISLADA (mismo workspace + oposicion). Se lee
+  //     con el cliente del usuario (RLS de gestion); se SELECCIONA y ACOTA en el
+  //     contrato puro (≤10 entradas / ≤3000 chars) y se inyecta como bloque de
+  //     "errores a evitar" SEPARADO de la evidencia factual. Sin memoria, la
+  //     generacion se comporta igual que SPEC 039. La memoria NUNCA es fuente.
+  const memoryLimits = resolveMemoryLimits({
+    MAX_ERROR_MEMORIES_IN_PROMPT: Deno.env.get('MAX_ERROR_MEMORIES_IN_PROMPT'),
+    MAX_ERROR_MEMORY_CHARS: Deno.env.get('MAX_ERROR_MEMORY_CHARS'),
+  });
+  let avoidBlock: string | null = null;
+  try {
+    const { data: memoryRows } = await userClient
+      .from('ai_error_memories')
+      .select('workspace_id, opposition_id, type, severity, summary, avoid_instruction, occurrences, difficulty, last_seen_at')
+      .eq('workspace_id', request.workspace_id)
+      .eq('opposition_id', request.opposition_id);
+    const difficultyHint = request.difficulty !== 'mixed' ? request.difficulty : null;
+    const selected = selectErrorMemories(
+      (memoryRows ?? []) as ErrorMemoryRecord[],
+      { workspace_id: request.workspace_id, opposition_id: request.opposition_id, difficulty: difficultyHint },
+      memoryLimits,
+    );
+    avoidBlock = formatAvoidBlock(selected, memoryLimits.maxChars);
+  } catch {
+    avoidBlock = null; // la memoria es opcional: nunca bloquea la generacion.
+  }
+
   // 7) Run + proveedor + validacion + persistencia via el ORQUESTADOR del ciclo de
   //    vida. El run se crea ANTES de cualquier candidata; proveedor/parsing/
   //    persistencia fallidos -> failed/partial coherente. Logica testeada en
@@ -418,6 +451,7 @@ Deno.serve(async (req: Request) => {
               difficulty: request.difficulty,
               question_count: questionCount,
               units: promptUnits,
+              avoidBlock,
             }),
           ),
         });

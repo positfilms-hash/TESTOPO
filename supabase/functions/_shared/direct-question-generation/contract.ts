@@ -679,6 +679,10 @@ export function buildOpenAIRequest(args: {
   difficulty: RequestDifficulty;
   question_count: number;
   units: ReadonlyArray<PromptUnit>;
+  // SPEC 040: bloque OPCIONAL de "errores a evitar" (consejos de calidad de
+  // revisiones humanas previas). NO es evidencia factual: va SEPARADO de las
+  // unidades y nunca debe usarse como dato. Si es null/ausente -> SPEC 039 igual.
+  avoidBlock?: string | null;
 }): Record<string, unknown> {
   const unitBlock = args.units
     .map(
@@ -691,7 +695,13 @@ export function buildOpenAIRequest(args: {
     `Numero de preguntas: ${args.question_count}`,
     'Genera preguntas SOLO desde estas unidades de estudio, citando el material_study_unit_id exacto:',
     unitBlock,
-  ].join('\n\n');
+    // El bloque de calidad va al FINAL y claramente marcado como no factual.
+    typeof args.avoidBlock === 'string' && args.avoidBlock.trim().length > 0
+      ? args.avoidBlock.trim()
+      : null,
+  ]
+    .filter((x): x is string => typeof x === 'string')
+    .join('\n\n');
 
   return {
     model: args.model,
