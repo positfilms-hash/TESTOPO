@@ -27,6 +27,7 @@ import {
   validateDirectGenerateRequest,
   isStudyRunReady,
   isUsableStudiedMaterial,
+  evaluateSelectionScope,
   resolveProvider,
   buildOpenAIRequest,
   parseProviderCandidates,
@@ -37,6 +38,7 @@ import {
   buildOptionRows,
   buildValidationRow,
   type DirectEvidenceScope,
+  type AvailableEvidenceIds,
   type StudyUnitPointer,
   type PromptUnit,
   type DqgErrorCode,
@@ -173,45 +175,61 @@ Deno.serve(async (req: Request) => {
     .from('material_study_units')
     .select('id, workspace_id, opposition_id, run_id, material_id, material_section_id, source_reference_id, title, summary, excerpt')
     .eq('run_id', studyRunId);
-  let units = (allUnits ?? []).filter((u) => u.opposition_id === request.opposition_id);
+  // Unidades del run acotadas a workspace + oposicion (verdad de la evidencia).
+  const runUnits = (allUnits ?? []).filter(
+    (u) =>
+      u.opposition_id === request.opposition_id &&
+      (!u.workspace_id || u.workspace_id === request.workspace_id),
+  );
 
-  // Mapa unit_id -> concept_id si la evidencia procede de conceptos seleccionados.
-  const conceptByUnit = new Map<string, string>();
-
-  if (request.scope === 'selected_materials') {
-    const wanted = new Set(request.material_ids);
-    const present = new Set(units.map((u) => u.material_id));
-    // Si NINGUN material seleccionado existe entre las unidades del run -> rechazo.
-    if (![...wanted].some((id) => present.has(id))) {
-      return fail(DQG_ERROR.SELECTION_FORBIDDEN, 403);
-    }
-    units = units.filter((u) => wanted.has(u.material_id));
-  } else if (request.scope === 'selected_units') {
-    const wanted = new Set(request.material_study_unit_ids);
-    const present = new Set(units.map((u) => u.id));
-    if (![...wanted].some((id) => present.has(id))) {
-      return fail(DQG_ERROR.SELECTION_FORBIDDEN, 403);
-    }
-    units = units.filter((u) => wanted.has(u.id));
-  } else if (request.scope === 'selected_concepts') {
+  // Conceptos del run (solo si el alcance es por conceptos) para validar y mapear.
+  let runConcepts: { id: string; unit_id: string | null }[] = [];
+  if (request.scope === 'selected_concepts') {
     const { data: concepts } = await userClient
       .from('material_study_concepts')
-      .select('id, unit_id, opposition_id, run_id')
-      .in('id', request.material_study_concept_ids.length ? request.material_study_concept_ids : ['']);
-    const validConcepts = (concepts ?? []).filter(
-      (c) => c.run_id === studyRunId && c.opposition_id === request.opposition_id,
-    );
-    if (validConcepts.length === 0) {
-      return fail(DQG_ERROR.SELECTION_FORBIDDEN, 403);
-    }
+      .select('id, unit_id, workspace_id, opposition_id, run_id')
+      .eq('run_id', studyRunId);
+    runConcepts = (concepts ?? [])
+      .filter(
+        (c) =>
+          c.opposition_id === request.opposition_id &&
+          (!c.workspace_id || c.workspace_id === request.workspace_id),
+      )
+      .map((c) => ({ id: c.id, unit_id: c.unit_id ?? null }));
+  }
+
+  // SPEC 039 P1: la seleccion del cliente se valida ENTERA contra workspace +
+  // oposicion + study run. Si UN SOLO id (material/unidad/concepto) no pertenece,
+  // se rechaza TODA la peticion; nunca se descartan ids ajenos en silencio.
+  const available: AvailableEvidenceIds = {
+    materialIds: new Set(runUnits.map((u) => u.material_id).filter(Boolean)),
+    unitIds: new Set(runUnits.map((u) => u.id)),
+    conceptIds: new Set(runConcepts.map((c) => c.id)),
+  };
+  const selectionCheck = evaluateSelectionScope(request, available);
+  if (!selectionCheck.ok) {
+    return fail(selectionCheck.code, 403);
+  }
+
+  // Acota las unidades de evidencia segun el alcance YA validado.
+  const conceptByUnit = new Map<string, string>();
+  let units = runUnits;
+  if (request.scope === 'selected_materials') {
+    const wanted = new Set(request.material_ids);
+    units = runUnits.filter((u) => wanted.has(u.material_id));
+  } else if (request.scope === 'selected_units') {
+    const wanted = new Set(request.material_study_unit_ids);
+    units = runUnits.filter((u) => wanted.has(u.id));
+  } else if (request.scope === 'selected_concepts') {
+    const wanted = new Set(request.material_study_concept_ids);
     const unitIdsFromConcepts = new Set<string>();
-    for (const c of validConcepts) {
-      if (c.unit_id) {
+    for (const c of runConcepts) {
+      if (wanted.has(c.id) && c.unit_id) {
         unitIdsFromConcepts.add(c.unit_id);
         if (!conceptByUnit.has(c.unit_id)) conceptByUnit.set(c.unit_id, c.id);
       }
     }
-    units = units.filter((u) => unitIdsFromConcepts.has(u.id));
+    units = runUnits.filter((u) => unitIdsFromConcepts.has(u.id));
   }
 
   // Materiales del scope para comprobar legibilidad/no-obsoletos.

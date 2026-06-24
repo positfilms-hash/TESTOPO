@@ -14,6 +14,7 @@ import {
   isSelectionCoherent,
   isStudyRunReady,
   isUsableStudiedMaterial,
+  evaluateSelectionScope,
   validateDirectCandidate,
   candidateStatus,
   mapRunStatus,
@@ -168,6 +169,58 @@ describe('elegibilidad de estudio y material', () => {
     expect(isUsableStudiedMaterial({ ...ok, opposition_id: 'op-2' }, scope)).toBe(false);
     expect(isUsableStudiedMaterial({ ...ok, status: 'obsolete' }, scope)).toBe(false);
     expect(isUsableStudiedMaterial({ ...ok, extraction_status: 'ocr_failed' }, scope)).toBe(false);
+  });
+});
+
+describe('evaluateSelectionScope (P1: validar la seleccion ENTERA contra el scope)', () => {
+  const available = {
+    materialIds: new Set(['mat-1', 'mat-2']),
+    unitIds: new Set(['u-1', 'u-2']),
+    conceptIds: new Set(['c-1', 'c-2']),
+  };
+  const req = (over: Partial<Parameters<typeof evaluateSelectionScope>[0]>) => ({
+    scope: 'all_studied_material' as const,
+    material_ids: [],
+    material_study_unit_ids: [],
+    material_study_concept_ids: [],
+    ...over,
+  });
+
+  it('all_studied_material no necesita seleccion', () => {
+    expect(evaluateSelectionScope(req({}), available).ok).toBe(true);
+  });
+
+  it('materiales: solo propios -> ok; mixto propio+ajeno -> RECHAZO', () => {
+    expect(evaluateSelectionScope(req({ scope: 'selected_materials', material_ids: ['mat-1', 'mat-2'] }), available).ok).toBe(true);
+    // payload MIXTO valido + ajeno: un solo id ajeno rechaza toda la peticion.
+    expect(
+      evaluateSelectionScope(req({ scope: 'selected_materials', material_ids: ['mat-1', 'mat-ajeno'] }), available),
+    ).toMatchObject({ ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN });
+    expect(
+      evaluateSelectionScope(req({ scope: 'selected_materials', material_ids: ['ajeno'] }), available).ok,
+    ).toBe(false);
+  });
+
+  it('unidades: solo propias -> ok; mixto propio+ajeno -> RECHAZO', () => {
+    expect(evaluateSelectionScope(req({ scope: 'selected_units', material_study_unit_ids: ['u-1'] }), available).ok).toBe(true);
+    expect(
+      evaluateSelectionScope(req({ scope: 'selected_units', material_study_unit_ids: ['u-1', 'u-otra'] }), available),
+    ).toMatchObject({ ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN });
+  });
+
+  it('conceptos: solo propios -> ok; mixto propio+ajeno -> RECHAZO', () => {
+    expect(
+      evaluateSelectionScope(req({ scope: 'selected_concepts', material_study_concept_ids: ['c-1', 'c-2'] }), available).ok,
+    ).toBe(true);
+    expect(
+      evaluateSelectionScope(req({ scope: 'selected_concepts', material_study_concept_ids: ['c-1', 'c-otro'] }), available),
+    ).toMatchObject({ ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN });
+  });
+
+  it('pool vacio (study run sin esa evidencia) -> RECHAZO de cualquier seleccion', () => {
+    const empty = { materialIds: new Set<string>(), unitIds: new Set<string>(), conceptIds: new Set<string>() };
+    expect(evaluateSelectionScope(req({ scope: 'selected_materials', material_ids: ['mat-1'] }), empty).ok).toBe(false);
+    expect(evaluateSelectionScope(req({ scope: 'selected_units', material_study_unit_ids: ['u-1'] }), empty).ok).toBe(false);
   });
 });
 
