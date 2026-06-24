@@ -264,13 +264,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       void Promise.all([
         store.workspaces.getMemberRole(currentUser.id, currentWorkspace.id),
         store.oppositions.hasStudyAccess(currentUser, currentWorkspace.id),
-      ]).then(([role, study]) => {
-        if (!cancelled) {
-          setWorkspaceRole(role);
-          setCanStudy(study);
-          setAccessReady(true);
-        }
-      });
+      ])
+        .then(([role, study]) => {
+          if (!cancelled) {
+            setWorkspaceRole(role);
+            setCanStudy(study);
+            setAccessReady(true);
+          }
+        })
+        .catch(() => {
+          // SPEC 036: si falla la resolucion de rol/acceso, NO dejar loading
+          // infinito: cerrar el estado de carga y mostrar un error claro.
+          if (!cancelled) {
+            setWorkspaceRole(null);
+            setCanStudy(false);
+            setAccessReady(true);
+            setBootError(true);
+          }
+        });
     } else {
       setWorkspaceRole(null);
       setCanStudy(false);

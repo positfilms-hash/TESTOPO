@@ -166,7 +166,9 @@ Deno.serve(async (req: Request) => {
   //    previos (no se borra nada): la trazabilidad de OCR es acumulativa.
   const startedAt = new Date().toISOString();
   const runId = uuid();
-  await userClient.from('material_ocr_runs').insert({
+  // Cada escritura es FALIBLE: se comprueba su error. Si no se puede crear el run,
+  // no hay nada que actualizar: se deja el material en estado fallido honesto.
+  const { error: runInsertErr } = await userClient.from('material_ocr_runs').insert({
     id: runId,
     workspace_id: request.workspace_id,
     opposition_id: request.opposition_id,
@@ -184,10 +186,30 @@ Deno.serve(async (req: Request) => {
     created_at: startedAt,
     updated_at: startedAt,
   });
-  await userClient
+  if (runInsertErr) {
+    await userClient
+      .from('materials')
+      .update({
+        extraction_status: 'ocr_failed',
+        status: 'needs_review',
+        ocr_status: 'failed',
+        extraction_error: 'No se pudo iniciar el OCR.',
+      })
+      .eq('id', request.material_id);
+    return fail(OCR_ERROR.SAVE_FAILED, 502, 'No se pudo guardar el OCR.');
+  }
+  const { error: procErr } = await userClient
     .from('materials')
     .update({ extraction_status: 'ocr_processing', ocr_status: 'processing' })
     .eq('id', request.material_id);
+  if (procErr) {
+    return await failRun(userClient, runId, request.material_id, material, {
+      runStatus: 'failed',
+      extractionStatus: 'ocr_failed',
+      errorCode: OCR_ERROR.SAVE_FAILED,
+      errorText: 'No se pudo guardar el OCR.',
+    });
+  }
 
   // 5a) Descarga privada del PDF (Storage; RLS de bucket exige owner/admin).
   const { data: file, error: dlErr } = await userClient.storage
@@ -223,6 +245,7 @@ Deno.serve(async (req: Request) => {
   const warnings: string[] = [];
   let processed = 0;
   let failed = 0;
+  let saveFailed = false;
 
   for (const page of pages) {
     let result = { text: '', confidence: null as number | null, warnings: [] as string[] };
@@ -258,7 +281,7 @@ Deno.serve(async (req: Request) => {
       for (const w of result.warnings) warnings.push(w);
     }
 
-    await userClient.from('material_ocr_pages').insert({
+    const { error: pageErr } = await userClient.from('material_ocr_pages').insert({
       id: uuid(),
       workspace_id: request.workspace_id,
       opposition_id: request.opposition_id,
@@ -272,6 +295,21 @@ Deno.serve(async (req: Request) => {
       warnings: result.warnings,
       errors: band === 'failed' ? ['Confianza insuficiente o sin texto.'] : [],
     });
+    if (pageErr) {
+      saveFailed = true;
+      break; // no seguir procesando si la persistencia de paginas falla.
+    }
+  }
+
+  // Si alguna pagina no se pudo guardar, NO hay resultado fiable: run/material
+  // fallidos honestos y OCR_SAVE_FAILED (nunca completed_ocr).
+  if (saveFailed) {
+    return await failRun(userClient, runId, request.material_id, material, {
+      runStatus: 'failed',
+      extractionStatus: 'ocr_failed',
+      errorCode: OCR_ERROR.SAVE_FAILED,
+      errorText: 'No se pudo guardar el OCR.',
+    });
   }
 
   // 6) Agregacion ordenada + estados HONESTOS.
@@ -284,7 +322,7 @@ Deno.serve(async (req: Request) => {
   });
   const finishedAt = new Date().toISOString();
 
-  await userClient
+  const { error: runUpdateErr } = await userClient
     .from('material_ocr_runs')
     .update({
       status: outcome.run_status,
@@ -296,6 +334,14 @@ Deno.serve(async (req: Request) => {
       updated_at: finishedAt,
     })
     .eq('id', runId);
+  if (runUpdateErr) {
+    return await failRun(userClient, runId, request.material_id, material, {
+      runStatus: 'failed',
+      extractionStatus: 'ocr_failed',
+      errorCode: OCR_ERROR.SAVE_FAILED,
+      errorText: 'No se pudo guardar el OCR.',
+    });
+  }
 
   // Un fallo total NO sobreescribe buen texto nativo: solo se escribe content_text
   // cuando hay texto OCR utilizable.
@@ -315,7 +361,20 @@ Deno.serve(async (req: Request) => {
     materialUpdate.content_text = aggregated;
     materialUpdate.extraction_method = 'ocr';
   }
-  await userClient.from('materials').update(materialUpdate).eq('id', request.material_id);
+  // Si la actualizacion del material falla, NO se puede devolver completed_ocr:
+  // se revierte el run a fallido y se reporta OCR_SAVE_FAILED (estado honesto).
+  const { error: matUpdateErr } = await userClient
+    .from('materials')
+    .update(materialUpdate)
+    .eq('id', request.material_id);
+  if (matUpdateErr) {
+    return await failRun(userClient, runId, request.material_id, material, {
+      runStatus: 'failed',
+      extractionStatus: 'ocr_failed',
+      errorCode: OCR_ERROR.SAVE_FAILED,
+      errorText: 'No se pudo guardar el OCR.',
+    });
+  }
 
   return json({
     material_id: request.material_id,

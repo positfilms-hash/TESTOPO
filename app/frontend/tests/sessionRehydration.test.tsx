@@ -9,6 +9,7 @@ import { render, screen } from '@testing-library/react';
 import type { AuthProfile } from '../src/auth/authService.js';
 
 let mockProfile: AuthProfile | null = null;
+let mockProfileThrows = false;
 
 vi.mock('../src/auth/supabaseClient.js', () => ({
   isSupabaseConfigured: () => true,
@@ -24,7 +25,10 @@ vi.mock('../src/auth/authService.js', async (importActual) => {
   const actual = await importActual<typeof import('../src/auth/authService.js')>();
   return {
     ...actual,
-    getCurrentProfile: async () => mockProfile,
+    getCurrentProfile: async () => {
+      if (mockProfileThrows) throw new Error('profile-unavailable');
+      return mockProfile;
+    },
     logout: async () => undefined,
   };
 });
@@ -51,6 +55,7 @@ const validProfile: AuthProfile = {
 beforeEach(() => {
   localStorage.clear();
   mockProfile = null;
+  mockProfileThrows = false;
 });
 
 describe('SPEC 036 - rehidratacion de sesion', () => {
@@ -74,6 +79,14 @@ describe('SPEC 036 - rehidratacion de sesion', () => {
     mockProfile = { ...validProfile, status: 'deleted' };
     renderApp();
     expect(await screen.findByText('Email')).toBeInTheDocument();
+    expect(screen.queryByText('Mis espacios')).toBeNull();
+  });
+
+  it('perfil ausente/ilegible -> estado de error claro (no student silencioso)', async () => {
+    mockProfileThrows = true;
+    renderApp();
+    expect(await screen.findByText(/No se pudo cargar tu sesión/i)).toBeInTheDocument();
+    // No se inventa un usuario student: nunca aparece el shell ni el selector.
     expect(screen.queryByText('Mis espacios')).toBeNull();
   });
 });

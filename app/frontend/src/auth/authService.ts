@@ -72,7 +72,10 @@ export async function logout(): Promise<void> {
   }
 }
 
-// Usuario actual: null si no hay sesion; si hay, lee su perfil publico.
+// Usuario actual: null si NO hay sesion. Si hay sesion pero el perfil publico no
+// se puede leer (fila ausente/trigger pendiente/RLS/red), NO se inventa un perfil
+// `student` activo (eso ocultaria un fallo): se lanza PROFILE_UNAVAILABLE para que
+// la UI muestre un estado de error claro (SPEC 036).
 export async function getCurrentProfile(): Promise<AuthProfile | null> {
   const supabase = getSupabase();
   const { data: sessionData } = await supabase.auth.getSession();
@@ -80,22 +83,15 @@ export async function getCurrentProfile(): Promise<AuthProfile | null> {
   if (!user) {
     return null;
   }
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from('profiles')
     .select('id, email, name, role, status')
     .eq('id', user.id)
-    .single();
-  if (profile) {
-    return profile as AuthProfile;
+    .maybeSingle();
+  if (error || !profile) {
+    throw new AuthError([AuthErrorCode.PROFILE_UNAVAILABLE]);
   }
-  // Sin fila de perfil aun (trigger pendiente): perfil minimo desde la sesion.
-  return {
-    id: user.id,
-    email: user.email ?? '',
-    name: (user.user_metadata?.name as string | undefined) ?? null,
-    role: 'student',
-    status: 'active',
-  };
+  return profile as AuthProfile;
 }
 
 export async function hasSession(): Promise<boolean> {
