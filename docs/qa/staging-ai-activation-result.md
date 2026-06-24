@@ -8,15 +8,55 @@ sin proveedor.
 
 ---
 
-## Estado actual: `BLOCKED` (pendiente de activación por operador)
+## Estado actual: `BLOCKED` (luz verde dada; ejecución pendiente del operador)
 
-**Fecha:** 2026-06-24 · **Autor del preparado:** Claude (implementación)
+**Fecha:** 2026-06-24 · **Commit objetivo a desplegar:** `b1ee773` (y sus padres).
 
-**Motivo del BLOCKED:** la activación real requiere que un **operador autorizado**
-configure los secretos del proveedor directamente en el proyecto Supabase de
-staging y despliegue las funciones. En este paso **no** se han configurado
-secretos ni desplegado nada (ni autorizado). Por tanto **no** existe aún un retest
-real con proveedor.
+**Luz verde recibida** para desplegar `b1ee773` en staging (no producción). Sin
+embargo, el despliegue + smoke **no se han ejecutado** porque deben hacerlos un
+**operador autorizado**: requieren la configuración de secretos reales y acceso al
+proyecto de staging que, por diseño de SPEC 035, **no** corresponden a Claude/Codex.
+
+**Por qué Claude no puede ejecutarlo desde su entorno (evidencia, solo lectura):**
+
+- la CLI `supabase` **no está instalada** en el entorno de trabajo;
+- **no hay proyecto vinculado** (`supabase/.temp` ausente) → no se puede **confirmar
+  el project ref de staging**, requisito previo a cada operación;
+- **sin `SUPABASE_ACCESS_TOKEN`** → no se puede autenticar un `functions deploy`;
+- **sin `OPENAI_API_KEY`** (correcto: el operador la introduce directamente; Claude
+  no debe poseerla, generarla ni transmitirla);
+- **sin navegador/sesión** → no se puede subir un PDF escaneado real, recorrer el
+  flujo de UI ni capturar a 1366×900 / 390×844.
+
+No se ha configurado ningún secreto, no se ha desplegado nada y **no** se inventa
+ningún resultado de smoke (PASS/FAIL/IDs/capturas). Estado: **BLOCKED** hasta que el
+operador ejecute el runbook.
+
+**Runbook que debe ejecutar el operador** (confirmando el ref de staging ANTES de
+cada operación; ver [`../setup/staging-ai-activation.md`](../setup/staging-ai-activation.md)
+y el smoke en [`staging-ai-activation-smoke-test.md`](./staging-ai-activation-smoke-test.md)):
+
+```bash
+# 0) Confirmar que el proyecto vinculado es STAGING (no produccion):
+supabase projects list            # anotar el ref de staging
+supabase link --project-ref <STAGING_REF>   # si no esta vinculado
+# 1) Secretos (valores reales introducidos por el operador; nunca en repo/logs/PR):
+supabase secrets set AI_PROVIDER=openai OCR_PROVIDER=openai
+supabase secrets set OPENAI_API_KEY=<...> OPENAI_MODEL=<...> OCR_MODEL=<...>
+supabase secrets set MAX_GENERATED_QUESTIONS=20 MAX_QUESTION_SOURCE_CHARS=20000 \
+  OCR_MAX_PAGES_PER_DOCUMENT=300 OCR_MAX_CONCURRENT_PAGES=3 OCR_PAGE_TIMEOUT_SECONDS=60
+# 2) Desplegar SOLO estas dos funciones (re-confirmar ref staging antes):
+supabase functions deploy ocr-material
+supabase functions deploy generate-questions
+# 3) Ejecutar el smoke aislado (pasos 1-9) y volcar el resultado abajo.
+```
+
+Tras ejecutarlo, rellenar la tabla de resultado con PASS/FAIL/BLOCKED, el commit
+desplegado, IDs/contadores/estados y capturas seguras (sin secretos, prompts, texto
+OCR completo ni URLs firmadas).
+
+**Motivo histórico del BLOCKED previo:** la activación real requiere que un
+operador autorizado configure los secretos directamente en staging y despliegue.
 
 **Preparado y verificado en este paso (sin staging):**
 
