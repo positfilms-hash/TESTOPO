@@ -2,14 +2,20 @@ import { useEffect, useState } from 'react';
 import type { Workspace } from '@backend';
 import { useStore } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import {
+  shouldUseServerWorkspaceCreate,
+  createWorkspaceViaRpc,
+  ServerWorkspaceError,
+  slugifyName,
+} from '../workspaces/serverWorkspaceBootstrap.js';
 
 export function WorkspacesGate() {
   const { store, currentUser, selectWorkspace, logout, refresh, version } =
     useStore();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
   const [type, setType] = useState<'personal' | 'organization'>('personal');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -28,24 +34,44 @@ export function WorkspacesGate() {
   }, [store, currentUser, version]);
 
   const create = async () => {
-    if (!currentUser) return;
+    if (!currentUser || busy) return;
     setError(null);
+    if (!name.trim()) {
+      setError('Introduce un nombre para el espacio.');
+      return;
+    }
+    setBusy(true);
     try {
-      const ws =
-        type === 'organization'
-          ? await store.workspaces.createOrganizationWorkspace(currentUser, { name, slug })
-          : await store.workspaces.createPersonalWorkspace(currentUser, {
-              name,
-              slug,
-              plan: 'premium',
-            });
+      // Modo Supabase: la creacion del PRIMER workspace + membership owner es
+      // ATOMICA via RPC (la RLS no permite el bootstrap por pasos). El slug es
+      // interno (autogenerado, no editable). InMemory/demo: servicio en proceso.
+      let ws: Workspace;
+      if (shouldUseServerWorkspaceCreate()) {
+        ws = await createWorkspaceViaRpc({ name, type });
+      } else {
+        const slug = slugifyName(name);
+        ws =
+          type === 'organization'
+            ? await store.workspaces.createOrganizationWorkspace(currentUser, { name, slug })
+            : await store.workspaces.createPersonalWorkspace(currentUser, {
+                name,
+                slug,
+                plan: 'premium',
+              });
+      }
       refresh();
       setCreating(false);
       setName('');
-      setSlug('');
       selectWorkspace(ws);
-    } catch {
-      setError('Revisa el nombre y el slug (debe ser unico).');
+    } catch (err) {
+      // Mensaje ESPECIFICO; nunca "slug duplicado" ante un fallo de RLS/otro.
+      setError(
+        err instanceof ServerWorkspaceError
+          ? err.message
+          : 'No se pudo crear el espacio. Inténtalo de nuevo.',
+      );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -63,13 +89,21 @@ export function WorkspacesGate() {
 
       <div style={{ marginBottom: 16 }}>
         {creating ? (
-          <div className="card">
+          <form
+            className="card"
+            onSubmit={(e) => {
+              e.preventDefault(); // Enter envia el formulario
+              void create();
+            }}
+          >
             {error && <div className="notice error">{error}</div>}
             <Field label="Nombre">
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Mi preparacion personal" />
-            </Field>
-            <Field label="Slug (unico)">
-              <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="mi-preparacion-personal" />
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Mi preparacion personal"
+              />
             </Field>
             <Field label="Tipo">
               <select value={type} onChange={(e) => setType(e.target.value as 'personal' | 'organization')}>
@@ -78,12 +112,14 @@ export function WorkspacesGate() {
               </select>
             </Field>
             <div className="row">
-              <Button onClick={create}>Crear espacio</Button>
-              <Button variant="secondary" onClick={() => setCreating(false)}>
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Creando…' : 'Crear espacio'}
+              </Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => setCreating(false)}>
                 Cancelar
               </Button>
             </div>
-          </div>
+          </form>
         ) : (
           <Button onClick={() => setCreating(true)}>Crear espacio</Button>
         )}
