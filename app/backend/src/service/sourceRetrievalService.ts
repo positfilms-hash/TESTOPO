@@ -97,6 +97,19 @@ export class SourceRetrievalService {
       if (!eligible) {
         return false;
       }
+      // SPEC 037: la readiness DEBE coincidir con la elegibilidad del servidor
+      // (`evaluateTopicSourceReference`): exige un PUNTERO CONCRETO valido (una
+      // seccion ACTIVA del mismo material, o una referencia de fuente). Un row
+      // meramente vinculado pero sin puntero usable NO cuenta como fuente.
+      const hasActiveSection =
+        section != null &&
+        section.status === 'active' &&
+        section.material_id === source.material_id;
+      const hasValidConcretePointer =
+        hasActiveSection || source.source_reference_id != null;
+      if (!hasValidConcretePointer) {
+        return false;
+      }
       seenSections.add(key);
       primary.push({
         material_id: source.material_id,
@@ -245,8 +258,11 @@ export class SourceRetrievalService {
     return { primary, secondary, strategy, warnings };
   }
 
-  // Material elegible como fuente primaria: existe, activo, misma oposicion, y su
-  // clasificacion vigente es primaria (SPEC 028-E §49-72).
+  // Material elegible como fuente primaria. SPEC 037: MISMA regla autoritativa que
+  // el servidor (`evaluateTopicSourceReference`), para que la readiness visible no
+  // pueda contradecir la elegibilidad del Edge Function. Exige: existe, misma
+  // oposicion, NO obsoleto, LEGIBLE (extraction_status no failed/ocr_failed/
+  // not_supported), clasificacion vigente PRIMARIA y SIN `needs_review`.
   private async isEligibleMaterial(
     materialId: string,
     oppositionId: string,
@@ -255,12 +271,25 @@ export class SourceRetrievalService {
     if (!material || material.opposition_id !== oppositionId) {
       return null;
     }
-    if (material.status !== 'active') {
+    // No obsoleto (el servidor excluye obsolete; OCR-con-advertencias deja el
+    // material en `needs_review`, que SI es elegible).
+    if (material.status === 'obsolete') {
+      return null;
+    }
+    // Material LEGIBLE: se excluye lo no leido/ilegible (failed/ocr_failed/
+    // not_supported). El texto nativo `completed` y el OCR usable si valen.
+    const ext = material.extraction_status;
+    if (ext === 'failed' || ext === 'ocr_failed' || ext === 'not_supported') {
       return null;
     }
     const classification =
       await this.deps.documentClassification.getClassificationForMaterial(materialId);
     if (!classification) {
+      return null;
+    }
+    // Clasificacion pendiente de revision (ambigua/no corregida): el servidor la
+    // RECHAZA -> aqui tampoco cuenta (alinea readiness con el Edge).
+    if (classification.needs_review) {
       return null;
     }
     const cls = classification.classification;
