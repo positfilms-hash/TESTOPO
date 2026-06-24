@@ -19,8 +19,135 @@ import {
   buildQuestionRow,
   buildOptionRows,
   buildValidationRow,
+  runGroundedGeneration,
   type ValidatedCandidate,
+  type QuestionRunPort,
 } from '../../../supabase/functions/_shared/question-generation/contract';
+
+describe('runGroundedGeneration (SPEC 033 P0: ciclo de vida del run)', () => {
+  function vc(): ValidatedCandidate {
+    return {
+      statement: '¿x?',
+      options: [
+        { text: 'a', is_correct: true },
+        { text: 'b', is_correct: false },
+      ],
+      explanation: 'e',
+      difficulty: 'easy',
+      topic_id: 'tp-1',
+      material_id: 'mat-1',
+      material_section_id: 'sec-1',
+      source_reference_id: null,
+      source_excerpt: 'ev',
+      warnings: [],
+    };
+  }
+
+  function makePort(over: {
+    createRunOk?: boolean;
+    saveResults?: boolean[];
+    finalizeOk?: boolean;
+  }) {
+    const calls = {
+      createRun: 0,
+      save: 0,
+      finalize: [] as { status: string; created: number; errs: string[] }[],
+    };
+    const saveResults = over.saveResults ?? [];
+    const port: QuestionRunPort = {
+      async createRun() {
+        calls.createRun += 1;
+        return over.createRunOk ?? true;
+      },
+      async saveCandidate() {
+        const r = saveResults[calls.save] ?? true;
+        calls.save += 1;
+        return r;
+      },
+      async finalizeRun(status, created, errs) {
+        calls.finalize.push({ status, created, errs });
+        return over.finalizeOk ?? true;
+      },
+    };
+    return { port, calls };
+  }
+
+  it('(1) fallo al crear el run inicial -> SAVE_FAILED y CERO candidatas', async () => {
+    const { port, calls } = makePort({ createRunOk: false });
+    let produced = 0;
+    const r = await runGroundedGeneration({
+      port,
+      requested: 3,
+      produce: async () => {
+        produced += 1;
+        return { ok: true, candidates: [vc(), vc()] };
+      },
+    });
+    expect(r).toMatchObject({ ok: false, code: QG_ERROR.SAVE_FAILED, httpStatus: 502, created: 0 });
+    expect(produced).toBe(0); // ni siquiera se llama al proveedor
+    expect(calls.save).toBe(0);
+    expect(calls.finalize).toHaveLength(0);
+  });
+
+  it('(3) fallo de proveedor -> run failed y CERO candidatas falsas', async () => {
+    const { port, calls } = makePort({});
+    const r = await runGroundedGeneration({
+      port,
+      requested: 3,
+      produce: async () => ({ ok: false, code: QG_ERROR.PROVIDER_FAILED, candidates: [] }),
+    });
+    expect(r).toMatchObject({ ok: false, code: QG_ERROR.PROVIDER_FAILED, httpStatus: 502, created: 0 });
+    expect(calls.createRun).toBe(1);
+    expect(calls.save).toBe(0);
+    expect(calls.finalize).toEqual([{ status: 'failed', created: 0, errs: [QG_ERROR.PROVIDER_FAILED] }]);
+  });
+
+  it('(2) fallo al finalizar el run -> SAVE_FAILED con estado coherente (run ya creado)', async () => {
+    const { port, calls } = makePort({ finalizeOk: false, saveResults: [true, true] });
+    const r = await runGroundedGeneration({
+      port,
+      requested: 2,
+      produce: async () => ({ ok: true, candidates: [vc(), vc()] }),
+    });
+    expect(r).toMatchObject({ ok: false, code: QG_ERROR.SAVE_FAILED, httpStatus: 502, created: 2 });
+    expect(calls.createRun).toBe(1);
+    expect(calls.finalize).toHaveLength(1);
+  });
+
+  it('camino feliz -> run completed, created = requested', async () => {
+    const { port, calls } = makePort({ saveResults: [true, true] });
+    const r = await runGroundedGeneration({
+      port,
+      requested: 2,
+      produce: async () => ({ ok: true, candidates: [vc(), vc()] }),
+    });
+    expect(r).toMatchObject({ ok: true, created: 2 });
+    expect(calls.finalize[0]).toMatchObject({ status: 'completed', created: 2 });
+  });
+
+  it('fallo parcial de guardado -> partial; solo cuenta candidatas completas', async () => {
+    const { port, calls } = makePort({ saveResults: [true, false, true] });
+    const r = await runGroundedGeneration({
+      port,
+      requested: 3,
+      produce: async () => ({ ok: true, candidates: [vc(), vc(), vc()] }),
+    });
+    expect(r).toMatchObject({ ok: true, created: 2 });
+    expect(calls.finalize[0].status).toBe('partial');
+    expect(calls.finalize[0].errs).toContain(QG_ERROR.SAVE_FAILED);
+  });
+
+  it('sin candidatas validas (proveedor ok, 0 salidas) -> NO_VALID_CANDIDATES, run failed', async () => {
+    const { port, calls } = makePort({});
+    const r = await runGroundedGeneration({
+      port,
+      requested: 3,
+      produce: async () => ({ ok: true, candidates: [] }),
+    });
+    expect(r).toMatchObject({ ok: false, code: QG_ERROR.NO_VALID_CANDIDATES, httpStatus: 422, created: 0 });
+    expect(calls.finalize).toEqual([{ status: 'failed', created: 0, errs: [] }]);
+  });
+});
 
 describe('evaluateManagementAccess (guarda explicita, no solo RLS)', () => {
   const owner = { role: 'owner', status: 'active' };

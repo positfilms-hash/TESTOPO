@@ -31,13 +31,14 @@ import {
   parseProviderCandidates,
   validateCandidate,
   candidateStatus,
-  mapRunStatus,
+  runGroundedGeneration,
   buildQuestionRow,
   buildOptionRows,
   buildValidationRow,
   type EvidenceScope,
   type PromptSource,
   type QgErrorCode,
+  type QuestionRunPort,
   type ValidatedCandidate,
 } from '../_shared/question-generation/contract.ts';
 
@@ -312,200 +313,175 @@ Deno.serve(async (req: Request) => {
     return fail(QG_ERROR.PROVIDER_NOT_CONFIGURED, 501, PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
 
-  // 6) Llamada real a OpenAI (salida estructurada). Solo IDs/excerpts del servidor.
-  let content: string | null = null;
-  try {
-    const body = buildOpenAIRequest({
-      model: provider.model,
-      topic_title: topic.title,
-      difficulty: request.difficulty,
-      question_count: questionCount,
-      sources: promptSources,
-      style_note: styleNote,
-    });
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      return fail(QG_ERROR.PROVIDER_FAILED, 502);
-    }
-    const data = (await resp.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    content = data.choices?.[0]?.message?.content ?? null;
-  } catch {
-    return fail(QG_ERROR.PROVIDER_FAILED, 502);
-  }
-
-  const parseRes = parseProviderCandidates(content);
-  if (!parseRes.ok) {
-    return fail(parseRes.code, 422);
-  }
-
-  // 7) Validacion de salida + persistencia trazable (RLS exige can_manage).
-  const evidenceText = promptSources.map((s) => s.excerpt).join('\n\n');
+  // 6) Run + proveedor + validacion + persistencia via el ORQUESTADOR del ciclo de
+  //    vida (SPEC 033, P0). El run se crea ANTES de cualquier candidata; si
+  //    proveedor/parsing/persistencia falla, queda failed/partial; ninguna
+  //    candidata queda con un generation_run_id sin run. Logica testeada en
+  //    `runGroundedGeneration`; aqui solo el adaptador de Supabase.
+  const now = new Date().toISOString();
+  const runId = uuid();
   const scope: EvidenceScope = {
     topic_id: request.topic_id,
     material_ids: materialIds,
     material_section_ids: sectionIds,
     source_reference_ids: referenceIds,
     topic_source_reference_ids: topicRefIds,
-    evidence_text: evidenceText,
+    evidence_text: promptSources.map((s) => s.excerpt).join('\n\n'),
   };
-
-  const now = new Date().toISOString();
-  const runId = uuid(); // pre-generado para que cada pregunta lo referencie ya.
-  let created = 0;
-  let hadErrors = false;
-  const runErrors: string[] = [];
   const usedSectionIds = new Set<string>();
   const usedReferenceIds = new Set<string>();
 
-  // Compensa una pregunta a medio persistir: borra opciones, informe y pregunta
-  // (best-effort) para NO dejar candidatas incompletas/huerfanas.
+  // Compensa una pregunta a medio persistir (best-effort): nunca candidata huerfana.
   const compensateQuestion = async (questionId: string): Promise<void> => {
-    try {
-      await userClient.from('question_validation_results').delete().eq('question_id', questionId);
-    } catch {
-      // best-effort
-    }
-    try {
-      await userClient.from('question_options').delete().eq('question_id', questionId);
-    } catch {
-      // best-effort
-    }
-    try {
-      await userClient.from('questions').delete().eq('id', questionId);
-    } catch {
-      // best-effort
+    for (const op of [
+      () => userClient.from('question_validation_results').delete().eq('question_id', questionId),
+      () => userClient.from('question_options').delete().eq('question_id', questionId),
+      () => userClient.from('questions').delete().eq('id', questionId),
+    ]) {
+      try {
+        await op();
+      } catch {
+        // best-effort
+      }
     }
   };
 
-  for (const candidate of parseRes.candidates) {
-    if (created >= questionCount) break;
-    const v = validateCandidate(candidate, scope);
-    if (!v.ok) {
-      hadErrors = true;
-      continue;
-    }
-    const validated: ValidatedCandidate = v.value;
-    const status = candidateStatus({ hasCriticalFinding: false, warnings: v.warnings });
-    const questionId = uuid();
-    let questionInserted = false;
-    try {
-      const qRow = buildQuestionRow({
-        id: questionId,
+  const port: QuestionRunPort = {
+    async createRun() {
+      const { error } = await userClient.from('question_generation_runs').insert({
+        id: runId,
         workspace_id: request.workspace_id,
         opposition_id: request.opposition_id,
         topic_id: request.topic_id,
-        topic_title: topic.title,
-        candidate: validated,
-        status,
-        run_id: runId,
+        mode: 'server_grounded',
+        requested_count: questionCount,
+        created_count: 0,
+        status: 'failed', // placeholder honesto (CHECK 023: completed/partial/failed)
+        errors: [],
         provider: provider.provider,
         model: provider.model,
-        now,
+        source_strategy: 'topic_sources',
+        source_reference_ids: [...referenceIds],
+        material_section_ids: [...sectionIds],
       });
-      // Cada escritura de Supabase es FALIBLE: se comprueba su error. No se
-      // incrementa `created` hasta que pregunta + opciones + informe estan los tres
-      // persistidos; ante cualquier fallo se compensa la pregunta incompleta.
-      const { error: qErr } = await userClient.from('questions').insert(qRow);
-      if (qErr) throw new Error('questions');
-      questionInserted = true;
+      return !error;
+    },
+    async saveCandidate(candidate) {
+      const status = candidateStatus({ hasCriticalFinding: false, warnings: candidate.warnings });
+      const questionId = uuid();
+      let questionInserted = false;
+      try {
+        const { error: qErr } = await userClient.from('questions').insert(
+          buildQuestionRow({
+            id: questionId,
+            workspace_id: request.workspace_id,
+            opposition_id: request.opposition_id,
+            topic_id: request.topic_id,
+            topic_title: topic.title,
+            candidate,
+            status,
+            run_id: runId,
+            provider: provider.provider,
+            model: provider.model,
+            now,
+          }),
+        );
+        if (qErr) throw new Error('questions');
+        questionInserted = true;
 
-      const optRows = buildOptionRows({
-        question_id: questionId,
-        workspace_id: request.workspace_id,
-        opposition_id: request.opposition_id,
-        candidate: validated,
-      });
-      const { error: optErr } = await userClient.from('question_options').insert(optRows);
-      if (optErr) throw new Error('question_options');
+        const { error: optErr } = await userClient.from('question_options').insert(
+          buildOptionRows({
+            question_id: questionId,
+            workspace_id: request.workspace_id,
+            opposition_id: request.opposition_id,
+            candidate,
+          }),
+        );
+        if (optErr) throw new Error('question_options');
 
-      const valRow = buildValidationRow({
-        question_id: questionId,
-        workspace_id: request.workspace_id,
-        opposition_id: request.opposition_id,
-        status,
-        warnings: v.warnings,
-      });
-      const { error: valErr } = await userClient
-        .from('question_validation_results')
-        .insert(valRow);
-      if (valErr) throw new Error('question_validation_results');
+        const { error: valErr } = await userClient.from('question_validation_results').insert(
+          buildValidationRow({
+            question_id: questionId,
+            workspace_id: request.workspace_id,
+            opposition_id: request.opposition_id,
+            status,
+            warnings: candidate.warnings,
+          }),
+        );
+        if (valErr) throw new Error('question_validation_results');
 
-      // Los tres persistidos: ahora si cuenta como creada.
-      created += 1;
-      if (validated.material_section_id) usedSectionIds.add(validated.material_section_id);
-      if (validated.source_reference_id) usedReferenceIds.add(validated.source_reference_id);
-      for (const w of v.warnings) warnings.push(w);
-    } catch {
-      hadErrors = true;
-      if (!runErrors.includes(QG_ERROR.SAVE_FAILED)) runErrors.push(QG_ERROR.SAVE_FAILED);
-      if (questionInserted) await compensateQuestion(questionId);
-    }
-  }
+        if (candidate.material_section_id) usedSectionIds.add(candidate.material_section_id);
+        if (candidate.source_reference_id) usedReferenceIds.add(candidate.source_reference_id);
+        for (const w of candidate.warnings) warnings.push(w);
+        return true;
+      } catch {
+        if (questionInserted) await compensateQuestion(questionId);
+        return false;
+      }
+    },
+    async finalizeRun(status, createdCount, errs) {
+      const { error } = await userClient
+        .from('question_generation_runs')
+        .update({
+          status,
+          created_count: createdCount,
+          errors: errs,
+          source_reference_ids: [...usedReferenceIds],
+          material_section_ids: [...usedSectionIds],
+        })
+        .eq('id', runId);
+      return !error;
+    },
+  };
 
-  if (created === 0) {
-    // Sin candidatas persistidas: registra un run fallido HONESTO y no inventa
-    // nada. El codigo distingue "sin candidatas validas" de "fallo de guardado".
-    await userClient.from('question_generation_runs').insert({
-      id: runId,
-      workspace_id: request.workspace_id,
-      opposition_id: request.opposition_id,
-      topic_id: request.topic_id,
-      mode: 'server_grounded',
-      requested_count: questionCount,
-      created_count: 0,
-      status: 'failed',
-      errors: runErrors,
-      provider: provider.provider,
-      model: provider.model,
-      source_strategy: 'topic_sources',
-      source_reference_ids: [...referenceIds],
-      material_section_ids: [...sectionIds],
-    });
-    return fail(
-      runErrors.includes(QG_ERROR.SAVE_FAILED) ? QG_ERROR.SAVE_FAILED : QG_ERROR.NO_VALID_CANDIDATES,
-      runErrors.includes(QG_ERROR.SAVE_FAILED) ? 502 : 422,
-    );
-  }
-
-  // Run coherente con lo realmente persistido (failed/partial/completed). Si el
-  // propio run no se puede guardar, se reporta SAVE_FAILED (trazabilidad honesta).
-  const runStatus = mapRunStatus({
-    created,
+  const result = await runGroundedGeneration({
+    port,
     requested: questionCount,
-    hadErrors,
+    produce: async () => {
+      // Llamada real a OpenAI (salida estructurada). Solo IDs/excerpts del servidor.
+      let content: string | null = null;
+      try {
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${provider.apiKey}`,
+          },
+          body: JSON.stringify(
+            buildOpenAIRequest({
+              model: provider.model,
+              topic_title: topic.title,
+              difficulty: request.difficulty,
+              question_count: questionCount,
+              sources: promptSources,
+              style_note: styleNote,
+            }),
+          ),
+        });
+        if (!resp.ok) return { ok: false, code: QG_ERROR.PROVIDER_FAILED, candidates: [] };
+        const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+        content = data.choices?.[0]?.message?.content ?? null;
+      } catch {
+        return { ok: false, code: QG_ERROR.PROVIDER_FAILED, candidates: [] };
+      }
+      const parseRes = parseProviderCandidates(content);
+      if (!parseRes.ok) return { ok: false, code: parseRes.code, candidates: [] };
+      // Validacion de salida (anclaje a la evidencia; rechaza validated/ajenas).
+      const validated: ValidatedCandidate[] = [];
+      for (const candidate of parseRes.candidates) {
+        const v = validateCandidate(candidate, scope);
+        if (v.ok) validated.push(v.value);
+      }
+      return { ok: true, candidates: validated };
+    },
   });
-  const { error: runErr } = await userClient.from('question_generation_runs').insert({
-    id: runId,
-    workspace_id: request.workspace_id,
-    opposition_id: request.opposition_id,
-    topic_id: request.topic_id,
-    mode: 'server_grounded',
-    requested_count: questionCount,
-    created_count: created,
-    status: runStatus,
-    errors: runErrors,
-    provider: provider.provider,
-    model: provider.model,
-    source_strategy: 'topic_sources',
-    source_reference_ids: [...usedReferenceIds],
-    material_section_ids: [...usedSectionIds],
-  });
-  if (runErr) {
-    return fail(QG_ERROR.SAVE_FAILED, 502);
-  }
 
+  if (!result.ok) {
+    return fail(result.code as QgErrorCode, result.httpStatus);
+  }
   return json({
     run_id: runId,
-    created,
+    created: result.created,
     requested: questionCount,
     warnings: [...new Set(warnings)],
   });
