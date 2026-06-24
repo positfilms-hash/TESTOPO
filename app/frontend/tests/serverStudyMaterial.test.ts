@@ -24,6 +24,7 @@ vi.mock('../src/store/supabaseGateway.js', () => ({ requestedPersistenceMode: ()
 import {
   shouldUseServerStudy,
   studyMaterialViaEdgeFunction,
+  studyIneligibleReasonMessage,
   ServerStudyError,
 } from '../src/study/serverStudyMaterial.js';
 
@@ -50,6 +51,46 @@ describe('SPEC 038 - wrapper de estudio en servidor', () => {
     for (const k of FORBIDDEN) expect(k in body).toBe(false);
     expect(body.mode).toBe('all_eligible');
     expect(r.units).toBe(7);
+  });
+
+  it('expone los motivos de inelegibilidad del resumen (documento legible no estudiado)', async () => {
+    invokeResult = {
+      data: {
+        run_id: 'r1',
+        materials: 1,
+        studied: 1,
+        units: 4,
+        warnings: [],
+        ineligible: [{ material_id: 'm-2', reason: 'classification_not_primary' }],
+      },
+      error: null,
+    };
+    const r = await studyMaterialViaEdgeFunction(input);
+    expect(r.ineligible).toEqual([{ material_id: 'm-2', reason: 'classification_not_primary' }]);
+    expect(studyIneligibleReasonMessage('classification_not_primary')).toMatch(/no es material de estudio/i);
+  });
+
+  it('NO_ELIGIBLE_MATERIAL traslada los motivos exactos en el error', async () => {
+    invokeResult = {
+      data: null,
+      error: {
+        context: {
+          json: async () => ({
+            error: 'MATERIAL_STUDY_NO_ELIGIBLE_MATERIAL',
+            ineligible: [{ material_id: 'm-1', reason: 'classification_needs_review' }],
+          }),
+        },
+      },
+    };
+    try {
+      await studyMaterialViaEdgeFunction(input);
+      throw new Error('no debio resolver');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ServerStudyError);
+      expect((e as ServerStudyError).ineligible).toEqual([
+        { material_id: 'm-1', reason: 'classification_needs_review' },
+      ]);
+    }
   });
 
   it('mapea el 501 sin proveedor a un mensaje seguro', async () => {

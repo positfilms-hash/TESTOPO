@@ -96,6 +96,28 @@ irrelevante/no-analizable/ambiguo no corregido. Los exámenes antiguos solo apor
 estilo; nunca son unidad factual. (Misma regla autoritativa que SPEC 037/
 `generate-questions`.)
 
+### Autosuficiencia: clasificación interna (fix staging)
+
+"Estudiar material" **no depende** de que el usuario haya ejecutado antes
+"Analizar material" ni un índice/temario. Si un material **legible** no tiene
+`document_classifications`, la Edge Function lo clasifica **internamente** con la
+heurística determinista `classifyStudyDocument` (señales de texto/nombre; **no es un
+mock de IA**) usando el texto recuperado **en servidor** de sus secciones, y
+**persiste** una fila `document_classifications` trazable (run interno
+`document_understanding_runs` provider `heuristic`). Se respetan las clasificaciones
+existentes (manuales o previas). **Fail-closed:** si la heurística no produce una
+clase primaria con confianza (`confidence ≥ 0.75` y clase no
+ambigua/irrelevante/no-analizable), el material **no** se estudia.
+
+Cuando un material legible no resulta elegible, la respuesta incluye `ineligible`
+con el **motivo exacto** por material (`material_obsolete`, `material_not_readable`,
+`classification_unresolved`, `classification_needs_review`,
+`classification_not_primary`) para que la UI lo explique. El filtro del frontend
+(`StudyMaterialPanel`) usa el mismo conjunto de extracción legible que el servidor
+(`USABLE_EXTRACTION_STATUSES` = `STUDY_READABLE_EXTRACTION`) y muestra esos motivos:
+ya no puede mostrar "1 documento listo" y recibir `NO_ELIGIBLE_MATERIAL` sin
+explicación.
+
 ## Aislamiento y permisos
 
 Tablas de estudio = **solo gestión** (owner/admin/manager autorizado/premium owner):
@@ -129,9 +151,13 @@ porcentajes):
 
 En modo **Supabase** el botón llama a la Edge Function `study-material`
 (`serverStudyMaterial`); en **InMemory/demo** produce un resumen **local
-determinista** (nunca presentable como real en Supabase). El **índice de temario
-clásico** (Topics/propuestas) queda accesible como flujo **secundario opcional**
-("Temario clásico — opcional") y **no** se borra. El Student no ve esta pantalla.
+determinista** (nunca presentable como real en Supabase). La pantalla Temario/
+Análisis es la ruta **Material → Estudiar material → Generar preguntas**
+(`StudyMaterialPanel` + `GenerateFromStudiedMaterialPanel`, SPEC 039). El **índice/
+temario público** (propuestas, Topic Map, "Aplicar índice", "Añadir tema") queda
+**fuera del flujo normal**: los Topics/propuestas legacy siguen existiendo en el
+dominio para compatibilidad/historial, pero **ya no se exponen** en esta ruta ni son
+requisito para estudiar o generar preguntas. El Student no ve esta pantalla.
 
 ## Estado de esta entrega
 

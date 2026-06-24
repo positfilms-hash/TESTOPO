@@ -7,9 +7,15 @@ import type { Section } from '../components/AppLayout.js';
 import {
   shouldUseServerStudy,
   studyMaterialViaEdgeFunction,
+  studyIneligibleReasonMessage,
   ServerStudyError,
   type ServerStudySummary,
 } from '../study/serverStudyMaterial.js';
+
+// Resume los motivos de inelegibilidad en mensajes humanos UNICOS (deduplicados).
+function reasonMessages(ineligible: { reason: string }[]): string[] {
+  return [...new Set(ineligible.map((d) => studyIneligibleReasonMessage(d.reason)))];
+}
 
 // SPEC 038: la accion PRIMARIA del analisis de material es "Estudiar material".
 // No hay indice visible, ni aplicar indice, ni seleccion de tema. Solo gestion.
@@ -37,6 +43,8 @@ export function StudyMaterialPanel({
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<ServerStudySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Motivos EXACTOS por los que un documento legible no se pudo estudiar (servidor).
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   const eligible = materials.filter(
     (m) => isUsableExtraction(m.extraction_status) && m.status !== 'obsolete',
@@ -56,6 +64,7 @@ export function StudyMaterialPanel({
   const study = async () => {
     if (!currentUser || !currentOpposition) return;
     setError(null);
+    setBlocked([]);
     setBusy(true);
     try {
       if (shouldUseServerStudy()) {
@@ -64,6 +73,7 @@ export function StudyMaterialPanel({
           opposition_id: currentOpposition.id,
         });
         setSummary(result);
+        setBlocked(reasonMessages(result.ineligible));
       } else {
         // Demo/memoria: resumen LOCAL deterministico (no es un proveedor real).
         setSummary({
@@ -74,15 +84,20 @@ export function StudyMaterialPanel({
           warnings: ocrWarnings
             ? ['Algún documento se leyó por OCR con avisos; revísalo.']
             : [],
+          ineligible: [],
         });
       }
       refresh();
     } catch (err) {
-      setError(
-        err instanceof ServerStudyError
-          ? err.message
-          : 'No se pudo estudiar el material. Inténtalo de nuevo.',
-      );
+      // Si el servidor rechazo por inelegibilidad, mostramos el MOTIVO exacto por
+      // documento (p. ej. "examen antiguo", "necesita revisión") en vez de un error
+      // generico: el flujo no depende de una clasificacion/indice previo del usuario.
+      if (err instanceof ServerStudyError) {
+        setError(err.message);
+        setBlocked(reasonMessages(err.ineligible));
+      } else {
+        setError('No se pudo estudiar el material. Inténtalo de nuevo.');
+      }
       setSummary(null);
     } finally {
       setBusy(false);
@@ -97,6 +112,19 @@ export function StudyMaterialPanel({
         subtitle="La app analiza tu material legible y prepara, por dentro, bloques de estudio con sus fuentes. No genera preguntas todavía."
       />
       {error && <div className="notice error">{error}</div>}
+
+      {blocked.length > 0 && (
+        <div className="notice" style={{ marginBottom: 12 }}>
+          <strong>Algún documento legible no se pudo estudiar:</strong>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {blocked.map((m) => (
+              <li key={m} className="small">
+                {m}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {state === 'no_material' && (
         <div className="card" style={{ textAlign: 'center' }}>

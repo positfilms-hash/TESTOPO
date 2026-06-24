@@ -77,7 +77,7 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     expect(screen.queryByRole('button', { name: 'Pegar texto' })).toBeNull();
   });
 
-  it('admin: Temario primario = "Estudiar material"; indice clasico opcional con el arbol (SPEC 038)', async () => {
+  it('admin: Temario = ruta Estudiar -> Generar; SIN indice/temario publico (SPEC 038/039)', async () => {
     renderApp();
     await enter('admin');
     fireEvent.click(
@@ -89,12 +89,11 @@ describe('MVP frontend - smoke (SPEC 010/018.3)', () => {
     // SPEC 039: tras estudiar, el flujo directo "Generar preguntas" esta presente
     // (sin tema ni indice); en demo sin material estudiado invita a estudiar antes.
     expect(await screen.findByText('Generar preguntas')).toBeInTheDocument();
-    // El temario clasico (indice de temas) sigue disponible como OPCIONAL, con el
-    // arbol aplicado del demo dentro.
-    expect(screen.getByText(/Temario clásico/)).toBeInTheDocument();
-    expect(screen.getByText(/Tema 1 - Constitucion/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Añadir tema' })).toBeInTheDocument();
-    expect(screen.queryByText('Importar ZIP')).toBeNull();
+    // El indice/temario PUBLICO queda FUERA del flujo normal: ni temario clasico,
+    // ni arbol de temas, ni "Añadir tema", ni boton de generar indice.
+    expect(screen.queryByText(/Temario clásico/)).toBeNull();
+    expect(screen.queryByText(/Generar índice de temario/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Añadir tema' })).toBeNull();
   });
 
   it('admin: ve preguntas pendientes de revision', async () => {
