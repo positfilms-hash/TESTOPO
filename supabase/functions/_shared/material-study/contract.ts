@@ -36,10 +36,52 @@ export const STUDY_PROVIDER_NOT_CONFIGURED_MESSAGE =
 // ---------------------------------------------------------------------------
 // Limites (acotan lo que se envia/persiste).
 // ---------------------------------------------------------------------------
-export const MAX_STUDY_MATERIALS = 200;
+export const MAX_STUDY_MATERIALS = 60;
 export const MAX_STUDY_UNITS_PER_MATERIAL = 20;
 export const MAX_STUDY_EXCERPT_CHARS = 2000;
-export const MAX_STUDY_SOURCE_CHARS = 20000;
+// Presupuesto GLOBAL POR RUN (no por material): no se reinicia por material ni se
+// lanzan llamadas sin limite. La Edge Function consume estos topes de forma
+// acumulativa (chars y unidades) y para cuando se agotan.
+export const MAX_STUDY_TOTAL_SOURCE_CHARS = 40000;
+export const MAX_STUDY_TOTAL_UNITS = 60;
+export const MAX_STUDY_CONCURRENCY = 1; // secuencial (cota superior segura)
+export const STUDY_PER_CALL_TIMEOUT_MS = 60000;
+
+export interface StudyLimits {
+  maxMaterials: number;
+  totalSourceChars: number;
+  totalUnits: number;
+  concurrency: number;
+  perCallTimeoutMs: number;
+}
+
+function clampLimit(raw: string | null | undefined, min: number, max: number): number {
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < min) return max;
+  return Math.min(n, max);
+}
+
+// Limites por SECRETO de Edge Function: un valor del entorno solo puede ENDURECER
+// (nunca superar el maximo seguro); ausente/invalido -> maximo. PURA.
+export function resolveStudyLimits(env: {
+  STUDY_MAX_MATERIALS?: string | null;
+  STUDY_MAX_TOTAL_CHARS?: string | null;
+  STUDY_MAX_TOTAL_UNITS?: string | null;
+  STUDY_PER_CALL_TIMEOUT_SECONDS?: string | null;
+}): StudyLimits {
+  const timeoutSeconds = clampLimit(
+    env.STUDY_PER_CALL_TIMEOUT_SECONDS,
+    1,
+    Math.floor(STUDY_PER_CALL_TIMEOUT_MS / 1000),
+  );
+  return {
+    maxMaterials: clampLimit(env.STUDY_MAX_MATERIALS, 1, MAX_STUDY_MATERIALS),
+    totalSourceChars: clampLimit(env.STUDY_MAX_TOTAL_CHARS, 1, MAX_STUDY_TOTAL_SOURCE_CHARS),
+    totalUnits: clampLimit(env.STUDY_MAX_TOTAL_UNITS, 1, MAX_STUDY_TOTAL_UNITS),
+    concurrency: MAX_STUDY_CONCURRENCY,
+    perCallTimeoutMs: timeoutSeconds * 1000,
+  };
+}
 
 export const STUDY_MODES = ['all_eligible'] as const;
 export type StudyMode = (typeof STUDY_MODES)[number];
@@ -223,9 +265,11 @@ export interface ProviderUnit {
 
 export interface StudyEvidenceScope {
   material_ids: ReadonlySet<string>;
-  material_section_ids: ReadonlySet<string>;
-  source_reference_ids: ReadonlySet<string>;
-  evidence_text: string;
+  // Texto de cada SECCION / REFERENCIA concreta (clave = id del puntero). El
+  // source_excerpt se valida contra el texto del puntero ELEGIDO por la unidad,
+  // NUNCA contra la concatenacion de todas las secciones del material (SPEC 038 P0).
+  section_texts: ReadonlyMap<string, string>;
+  reference_texts: ReadonlyMap<string, string>;
 }
 
 export interface ValidatedStudyUnit {
@@ -280,18 +324,25 @@ export function validateStudyUnit(
   }
   const sectionId = isNonEmptyString(unit.material_section_id) ? unit.material_section_id : null;
   const referenceId = isNonEmptyString(unit.source_reference_id) ? unit.source_reference_id : null;
-  if (sectionId && !scope.material_section_ids.has(sectionId)) {
+  if (sectionId && !scope.section_texts.has(sectionId)) {
     return { ok: false, code: STUDY_ERROR.INVALID_OUTPUT };
   }
-  if (referenceId && !scope.source_reference_ids.has(referenceId)) {
+  if (referenceId && !scope.reference_texts.has(referenceId)) {
     return { ok: false, code: STUDY_ERROR.INVALID_OUTPUT };
   }
   if (!sectionId && !referenceId) {
     return { ok: false, code: STUDY_ERROR.INVALID_OUTPUT };
   }
+  // El excerpt se valida contra el texto del PUNTERO CONCRETO elegido (esa seccion
+  // o esa referencia), nunca contra la concatenacion del material (SPEC 038 P0).
+  const pointerText = sectionId
+    ? scope.section_texts.get(sectionId)
+    : referenceId
+      ? scope.reference_texts.get(referenceId)
+      : null;
   const grounded = groundedExcerpt(
     typeof unit.source_excerpt === 'string' ? unit.source_excerpt : null,
-    scope.evidence_text,
+    pointerText ?? null,
   );
   if (!isNonEmptyString(grounded)) {
     return { ok: false, code: STUDY_ERROR.INVALID_OUTPUT };
