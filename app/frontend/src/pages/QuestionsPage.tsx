@@ -707,7 +707,7 @@ function GenerateFromTopicForm({ onBack }: { onBack: () => void }) {
             <p className={`muted small`}>
               {sourceCount > 0
                 ? `${sourceCount} fuente(s) disponible(s) para este tema.`
-                : 'Este tema no tiene fuentes elegibles todavia (clasifica y crea secciones del material).'}
+                : 'Este tema no tiene fuentes asociadas y utilizables. Regenera o reaplica el temario para vincularlo al material.'}
             </p>
           )}
           <Field label="Dificultad">

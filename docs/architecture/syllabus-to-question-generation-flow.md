@@ -106,13 +106,29 @@ El temario propuesto es un **índice de bloques de estudio**, no una transcripci
 
 ## Revisión y aplicación global
 
-El flujo de gestor ya es: `Generar temario` → una propuesta revisable
-(`pending_review`) → revisión **global** → `applyProposal` aplica **todo** el
-índice de una vez (no hay aprobación por tema). `applyProposal`
+El flujo de gestor es: `Generar temario` → una propuesta revisable
+(`pending_review`) → revisión **global** → **un solo botón `Aplicar índice
+completo`** (aprueba + aplica; sin aceptar/rechazar por tema en la UI). `applyProposal`
 **crea/reutiliza** `topics` activos del scope correcto y persiste
 `topic_source_references` reales, **sin duplicar** temas equivalentes al reaplicar
-(reutiliza el existente con un aviso) y sin borrar el mapa aplicado sin la
-confirmación segura existente.
+y sin borrar el mapa aplicado sin la confirmación segura existente.
+
+### El apply crea SOLO referencias elegibles (corrige el NO_SOURCES persistente)
+
+El bug real: el apply copiaba las *node sources* a `topic_source_references` **sin
+validar elegibilidad**, así que el servidor luego las rechazaba (`NO_SOURCES`).
+Ahora `applyProposal` aplica la **misma regla autoritativa** (helper
+`topicSourceEligibility`: material legible, clasificación efectiva sin
+`needs_review`, puntero concreto válido) y **solo** vincula fuentes que
+`generate-questions` aceptará. Reaplicar el índice repara los temas; un tema sin
+fuente utilizable queda avisado *sin fuentes utilizables* (la UI desactiva generar).
+
+### `needs_regeneration` no se aplica
+
+Antes de aplicar, el servicio **revalida** la compacidad desde los nodos persistidos
+(`validateCompactIndexFromNodes`) y **bloquea** con
+`SYLLABUS_INDEX_NEEDS_REGENERATION` un índice no compacto/transcripción: nunca se
+crean Topics de una propuesta mala.
 
 ## Verificación (fase 2)
 
