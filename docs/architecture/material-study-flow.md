@@ -47,6 +47,19 @@ Request (whitelist estricta):
   activas) → OpenAI (salida estructurada) → `validateStudyUnit` (título/resumen,
   material y puntero del scope, excerpt anclado) → persiste run + units → marca el
   material `studied`/`studied_with_warnings`/`study_failed`.
+- **Presupuesto GLOBAL por run** (`resolveStudyLimits`, no por material): máximo de
+  materiales, caracteres totales, unidades totales, concurrencia (secuencial) y
+  timeout por llamada. El presupuesto de caracteres/unidades se consume de forma
+  **acumulativa** entre materiales (no se reinicia) y el run se detiene al agotarlo;
+  nunca se lanzan llamadas sin límite. Un secreto solo puede ENDURECER el tope.
+- **Anclaje por puntero**: el `source_excerpt` se valida contra el texto de la
+  `material_section`/`source_reference` CONCRETA citada por la unidad, **nunca**
+  contra la concatenación de todas las secciones del material.
+- **Estado honesto en TODOS los caminos**: secciones vacías, fallo/timeout del
+  proveedor, parse inválido o error de persistencia con 0 unidades → `study_failed`;
+  con unidades y avisos OCR → `studied_with_warnings`; limpio → `studied`.
+- `force_retry`: sin reintento se SALTAN los materiales ya estudiados; con reintento
+  se reestudian todos (siempre un run nuevo; nunca se borra historial).
 
 La lógica determinista vive en `_shared/material-study/contract.ts` (testeada en
 vitest). El `index.ts` corre en **Deno** y **no** lo ejecuta el suite: OpenAI,

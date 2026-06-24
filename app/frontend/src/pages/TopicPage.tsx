@@ -126,51 +126,39 @@ export function TopicPage({ onNavigate }: { onNavigate?: (section: Section) => v
     );
   }
 
-  // --- Revision de una propuesta activa (recien generada o pendiente) ----------
-  if (proposalDetail) {
-    return (
-      <div>
-        <PageHeader
-          eyebrow="Temario"
-          title="Índice propuesto"
-          subtitle="Revisa los temas y sus fuentes. Nada se aplica al temario hasta que lo apruebes y lo apliques."
-        />
-        <ProposalReview
-          detail={proposalDetail}
-          onReload={reloadProposal}
-          onApplied={() => {
-            setProposalDetail(null);
-            setReviewNotice(null);
-            refresh();
-          }}
-          onClose={() => {
-            setProposalDetail(null);
-            setReviewNotice(null);
-            refresh();
-          }}
-          notice={reviewNotice}
-          setNotice={setReviewNotice}
-        />
-      </div>
-    );
-  }
-
-  // SPEC 038: "Estudiar material" es la accion PRIMARIA del analisis. El material
-  // nuevo NO requiere indice visible, aplicar indice ni seleccion de tema. El
-  // indice de temario clasico (Topics/propuestas) queda como flujo legacy
-  // SECUNDARIO y opcional (no se borra; sigue funcionando para quien ya lo use).
+  // SPEC 038 P0 #3: "Estudiar material" es SIEMPRE la accion PRIMARIA. Una propuesta
+  // legacy pendiente NUNCA bloquea con early return; el indice de temario clasico
+  // (Topics/propuestas) queda como flujo SECUNDARIO y opcional dentro del desplegable
+  // (no se borra; sigue funcionando para quien ya lo use).
   return (
     <div>
       <StudyMaterialPanel materials={materials} onNavigate={onNavigate} />
 
       {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
 
-      <details style={{ marginTop: 16 }}>
+      <details style={{ marginTop: 16 }} open={proposalDetail !== null}>
         <summary className="muted small" style={{ cursor: 'pointer' }}>
           Temario clásico (índice de temas) — opcional
         </summary>
         <div style={{ marginTop: 8 }}>
-          {hasAppliedSyllabus ? (
+          {proposalDetail ? (
+            <ProposalReview
+              detail={proposalDetail}
+              onReload={reloadProposal}
+              onApplied={() => {
+                setProposalDetail(null);
+                setReviewNotice(null);
+                refresh();
+              }}
+              onClose={() => {
+                setProposalDetail(null);
+                setReviewNotice(null);
+                refresh();
+              }}
+              notice={reviewNotice}
+              setNotice={setReviewNotice}
+            />
+          ) : hasAppliedSyllabus ? (
             <TopicMap tree={tree} allTopics={allTopics} />
           ) : (
             <div className="card" style={{ textAlign: 'center' }}>

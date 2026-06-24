@@ -1,5 +1,11 @@
 -- TESTOPO - SPEC 038: estudio interno del material (sin indice publico).
 --
+-- NUMERACION (excepcion explicita): el numero de migracion es SECUENCIAL en su
+-- carpeta (035 = la siguiente tras 034) y NO coincide con el numero de SPEC (038).
+-- Es la misma convencion ya usada antes (p. ej. 032 = OCR para SPEC 030/034): los
+-- ficheros de migracion se numeran por orden de aplicacion, no por SPEC. La SPEC
+-- que origina esta migracion se identifica por este encabezado, no por el numero.
+--
 -- Capa de datos INTERNA y trazable para preparar el material de cara a la futura
 -- generacion directa de preguntas (SPEC 039). NO crea preguntas, NO valida nada,
 -- NO depende de un indice de temario visible ni de Topics. Aditiva e IDEMPOTENTE
