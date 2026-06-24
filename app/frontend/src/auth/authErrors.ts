@@ -11,6 +11,7 @@ export enum AuthErrorCode {
   LOGIN_FAILED = 'AUTH_LOGIN_FAILED',
   LOGOUT_FAILED = 'AUTH_LOGOUT_FAILED',
   SESSION_REQUIRED = 'AUTH_SESSION_REQUIRED',
+  PROFILE_UNAVAILABLE = 'AUTH_PROFILE_UNAVAILABLE',
   RESET_EMAIL_FAILED = 'AUTH_RESET_EMAIL_FAILED',
   PASSWORD_UPDATE_FAILED = 'AUTH_PASSWORD_UPDATE_FAILED',
   ACCOUNT_DELETE_CONFIRMATION_REQUIRED = 'ACCOUNT_DELETE_CONFIRMATION_REQUIRED',
@@ -44,6 +45,8 @@ export const AUTH_MESSAGES: Record<AuthErrorCode, string> = {
   [AuthErrorCode.LOGIN_FAILED]: 'No se pudo iniciar sesion.',
   [AuthErrorCode.LOGOUT_FAILED]: 'No se pudo cerrar sesion.',
   [AuthErrorCode.SESSION_REQUIRED]: 'Inicia sesion para continuar.',
+  [AuthErrorCode.PROFILE_UNAVAILABLE]:
+    'No se ha podido cargar tu perfil. Recarga la pagina o vuelve a iniciar sesion.',
   [AuthErrorCode.RESET_EMAIL_FAILED]: 'No se pudo enviar el email de recuperacion.',
   [AuthErrorCode.PASSWORD_UPDATE_FAILED]: 'No se pudo actualizar la contrasena.',
   [AuthErrorCode.ACCOUNT_DELETE_CONFIRMATION_REQUIRED]:

@@ -362,8 +362,29 @@ Deno.serve(async (req: Request) => {
   const runId = uuid(); // pre-generado para que cada pregunta lo referencie ya.
   let created = 0;
   let hadErrors = false;
+  const runErrors: string[] = [];
   const usedSectionIds = new Set<string>();
   const usedReferenceIds = new Set<string>();
+
+  // Compensa una pregunta a medio persistir: borra opciones, informe y pregunta
+  // (best-effort) para NO dejar candidatas incompletas/huerfanas.
+  const compensateQuestion = async (questionId: string): Promise<void> => {
+    try {
+      await userClient.from('question_validation_results').delete().eq('question_id', questionId);
+    } catch {
+      // best-effort
+    }
+    try {
+      await userClient.from('question_options').delete().eq('question_id', questionId);
+    } catch {
+      // best-effort
+    }
+    try {
+      await userClient.from('questions').delete().eq('id', questionId);
+    } catch {
+      // best-effort
+    }
+  };
 
   for (const candidate of parseRes.candidates) {
     if (created >= questionCount) break;
@@ -375,6 +396,7 @@ Deno.serve(async (req: Request) => {
     const validated: ValidatedCandidate = v.value;
     const status = candidateStatus({ hasCriticalFinding: false, warnings: v.warnings });
     const questionId = uuid();
+    let questionInserted = false;
     try {
       const qRow = buildQuestionRow({
         id: questionId,
@@ -389,18 +411,22 @@ Deno.serve(async (req: Request) => {
         model: provider.model,
         now,
       });
+      // Cada escritura de Supabase es FALIBLE: se comprueba su error. No se
+      // incrementa `created` hasta que pregunta + opciones + informe estan los tres
+      // persistidos; ante cualquier fallo se compensa la pregunta incompleta.
       const { error: qErr } = await userClient.from('questions').insert(qRow);
-      if (qErr) {
-        hadErrors = true;
-        continue;
-      }
+      if (qErr) throw new Error('questions');
+      questionInserted = true;
+
       const optRows = buildOptionRows({
         question_id: questionId,
         workspace_id: request.workspace_id,
         opposition_id: request.opposition_id,
         candidate: validated,
       });
-      await userClient.from('question_options').insert(optRows);
+      const { error: optErr } = await userClient.from('question_options').insert(optRows);
+      if (optErr) throw new Error('question_options');
+
       const valRow = buildValidationRow({
         question_id: questionId,
         workspace_id: request.workspace_id,
@@ -408,18 +434,26 @@ Deno.serve(async (req: Request) => {
         status,
         warnings: v.warnings,
       });
-      await userClient.from('question_validation_results').insert(valRow);
+      const { error: valErr } = await userClient
+        .from('question_validation_results')
+        .insert(valRow);
+      if (valErr) throw new Error('question_validation_results');
+
+      // Los tres persistidos: ahora si cuenta como creada.
       created += 1;
       if (validated.material_section_id) usedSectionIds.add(validated.material_section_id);
       if (validated.source_reference_id) usedReferenceIds.add(validated.source_reference_id);
       for (const w of v.warnings) warnings.push(w);
     } catch {
       hadErrors = true;
+      if (!runErrors.includes(QG_ERROR.SAVE_FAILED)) runErrors.push(QG_ERROR.SAVE_FAILED);
+      if (questionInserted) await compensateQuestion(questionId);
     }
   }
 
   if (created === 0) {
-    // Salida sin candidatas validas: registra un run fallido y no inventa nada.
+    // Sin candidatas persistidas: registra un run fallido HONESTO y no inventa
+    // nada. El codigo distingue "sin candidatas validas" de "fallo de guardado".
     await userClient.from('question_generation_runs').insert({
       id: runId,
       workspace_id: request.workspace_id,
@@ -429,22 +463,27 @@ Deno.serve(async (req: Request) => {
       requested_count: questionCount,
       created_count: 0,
       status: 'failed',
-      errors: [],
+      errors: runErrors,
       provider: provider.provider,
       model: provider.model,
       source_strategy: 'topic_sources',
       source_reference_ids: [...referenceIds],
       material_section_ids: [...sectionIds],
     });
-    return fail(QG_ERROR.NO_VALID_CANDIDATES, 422);
+    return fail(
+      runErrors.includes(QG_ERROR.SAVE_FAILED) ? QG_ERROR.SAVE_FAILED : QG_ERROR.NO_VALID_CANDIDATES,
+      runErrors.includes(QG_ERROR.SAVE_FAILED) ? 502 : 422,
+    );
   }
 
+  // Run coherente con lo realmente persistido (failed/partial/completed). Si el
+  // propio run no se puede guardar, se reporta SAVE_FAILED (trazabilidad honesta).
   const runStatus = mapRunStatus({
     created,
     requested: questionCount,
     hadErrors,
   });
-  await userClient.from('question_generation_runs').insert({
+  const { error: runErr } = await userClient.from('question_generation_runs').insert({
     id: runId,
     workspace_id: request.workspace_id,
     opposition_id: request.opposition_id,
@@ -453,13 +492,16 @@ Deno.serve(async (req: Request) => {
     requested_count: questionCount,
     created_count: created,
     status: runStatus,
-    errors: [],
+    errors: runErrors,
     provider: provider.provider,
     model: provider.model,
     source_strategy: 'topic_sources',
     source_reference_ids: [...usedReferenceIds],
     material_section_ids: [...usedSectionIds],
   });
+  if (runErr) {
+    return fail(QG_ERROR.SAVE_FAILED, 502);
+  }
 
   return json({
     run_id: runId,
