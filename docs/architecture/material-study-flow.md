@@ -98,10 +98,33 @@ de units/concepts anclados. Las futuras preguntas deberán enlazar a `material_i
 una sección/referencia o `material_study_unit_id`, source excerpt y explicación, y
 **nunca** guardarse sin evidencia ni como `validated`.
 
+## UI: Temario / Análisis (fase 2)
+
+El contenido **primario** de Temario/Análisis pasa a ser **`Estudiar material`**
+(`StudyMaterialPanel`), sin índice visible obligatorio, sin aplicar índice, sin
+revisión por tema ni selección de `topic_id`. Estados (progreso honesto, sin
+porcentajes):
+
+| Estado | UX |
+| --- | --- |
+| Sin material | Explica subir material; enlace a Material. |
+| Leyéndose/OCR | Explica que el material debe terminar de leerse antes de estudiarlo. |
+| Listo | `Estudiar material` + recuento de documentos legibles. |
+| Estudiando | `La IA está estudiando tus documentos…` + pasos gruesos (revisar elegibles · leer texto · preparar bloques · guardar). |
+| Estudiado | `Material estudiado` + recuentos seguros (documentos, bloques, avisos). |
+| Fallido | Error seguro reintentable; sin completado falso. |
+
+En modo **Supabase** el botón llama a la Edge Function `study-material`
+(`serverStudyMaterial`); en **InMemory/demo** produce un resumen **local
+determinista** (nunca presentable como real en Supabase). El **índice de temario
+clásico** (Topics/propuestas) queda accesible como flujo **secundario opcional**
+("Temario clásico — opcional") y **no** se borra. El Student no ve esta pantalla.
+
 ## Estado de esta entrega
 
-**Fase 1 (server data layer):** migración + contrato puro (testeado) + Edge Function
-honesta + wrapper frontend + docs. **Fase 2 (pendiente):** la UI de Temario/Análisis
-con el estado `Estudiar material`/`Material estudiado` (progreso honesto, sin índice
-visible ni `topic_id`) y el servicio InMemory de estudio para demo/tests. El retest
-real con proveedor (estudio→units) queda para staging (SPEC 035).
+**Fase 1 + 2 entregadas**: migración + contrato puro (testeado) + Edge Function
+honesta + wrapper + **UI `Estudiar material`** (Temario reusado, índice clásico
+secundario) + fallback InMemory determinista + docs. **Pendiente solo de staging**
+(operador): secretos del proveedor + `functions deploy study-material` + aplicar la
+migración 035 + retest real (estudio→units). No se afirma éxito del proveedor sin
+ese retest. Smoke visual cuando el operador valide en staging.

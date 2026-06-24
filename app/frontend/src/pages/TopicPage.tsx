@@ -18,6 +18,7 @@ import {
   PageHeader,
 } from '../components/ui.js';
 import { ProposalReview } from './SyllabusIndexPanel.js';
+import { StudyMaterialPanel } from './StudyMaterialPanel.js';
 
 // SPEC 032: Temario es una pantalla enfocada. Si la oposicion no tiene temario
 // aplicado, la experiencia principal es UNA accion: "Generar temario", que compone
@@ -154,82 +155,41 @@ export function TopicPage({ onNavigate }: { onNavigate?: (section: Section) => v
     );
   }
 
-  // --- Temario ya aplicado: el Topic Map es el contenido principal -------------
-  if (hasAppliedSyllabus) {
-    return (
-      <div>
-        <PageHeader
-          eyebrow="Temario"
-          title="Temario"
-          subtitle="Tu índice de temas. Puedes regenerarlo desde el material o añadir temas a mano."
-          action={
-            <Button onClick={generate} disabled={generating}>
-              {generating ? 'Generando…' : 'Regenerar temario'}
-            </Button>
-          }
-        />
-        {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
-        <TopicMap tree={tree} allTopics={allTopics} />
-      </div>
-    );
-  }
-
-  // --- Sin temario aplicado: pantalla enfocada en "Generar temario" -----------
+  // SPEC 038: "Estudiar material" es la accion PRIMARIA del analisis. El material
+  // nuevo NO requiere indice visible, aplicar indice ni seleccion de tema. El
+  // indice de temario clasico (Topics/propuestas) queda como flujo legacy
+  // SECUNDARIO y opcional (no se borra; sigue funcionando para quien ya lo use).
   return (
     <div>
-      <PageHeader eyebrow="Temario" title="Temario" />
-      <p className="muted">
-        La app analiza el material que has subido y te propone un índice de temas y
-        subtemas <strong>para que lo revises</strong>. No escribe el temario ni genera
-        preguntas: solo organiza tus documentos con sus fuentes.
-      </p>
+      <StudyMaterialPanel materials={materials} onNavigate={onNavigate} />
 
       {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
 
-      {generating ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p>
-            <strong>Generando temario…</strong>
-          </p>
-          <p className="muted small">Analizando material… · Generando índice…</p>
-        </div>
-      ) : materials.length === 0 ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p>Primero sube material en la sección Material.</p>
-          {onNavigate && (
-            <Button onClick={() => onNavigate('material')}>Ir a Material</Button>
+      <details style={{ marginTop: 16 }}>
+        <summary className="muted small" style={{ cursor: 'pointer' }}>
+          Temario clásico (índice de temas) — opcional
+        </summary>
+        <div style={{ marginTop: 8 }}>
+          {hasAppliedSyllabus ? (
+            <TopicMap tree={tree} allTopics={allTopics} />
+          ) : (
+            <div className="card" style={{ textAlign: 'center' }}>
+              <Button
+                variant="secondary"
+                onClick={generate}
+                disabled={generating || eligibleCount === 0}
+              >
+                {generating ? 'Generando…' : 'Generar índice de temario'}
+              </Button>
+              <p className="muted small" style={{ marginTop: 8 }}>
+                Flujo anterior (índice de temas con revisión y aplicación). No es
+                necesario para estudiar el material.
+                {eligibleCount === 0 ? ' Necesitas material legible primero.' : ''}
+              </p>
+            </div>
           )}
         </div>
-      ) : eligibleCount === 0 && processingCount > 0 ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p>Algunos archivos todavía se están leyendo.</p>
-          <p className="muted small">
-            Espera a que termine la lectura del material para generar el temario.
-          </p>
-        </div>
-      ) : eligibleCount === 0 ? (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p>No hay material legible para analizar.</p>
-          <p className="muted small">
-            Sube documentos con texto (o usa el OCR de un escaneo en Material) y vuelve.
-          </p>
-          {onNavigate && (
-            <Button variant="secondary" onClick={() => onNavigate('material')}>
-              Ir a Material
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="card" style={{ textAlign: 'center' }}>
-          <Button onClick={generate} disabled={generating}>
-            Generar temario
-          </Button>
-          <p className="muted small" style={{ marginTop: 10 }}>
-            {eligibleCount} documento(s) listo(s) para analizar
-            {processingCount > 0 ? ` · ${processingCount} todavía leyéndose` : ''}.
-          </p>
-        </div>
-      )}
+      </details>
     </div>
   );
 }
