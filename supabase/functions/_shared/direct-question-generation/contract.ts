@@ -318,6 +318,53 @@ export function isUsableStudiedMaterial(material: {
   return true;
 }
 
+// IDs de evidencia REALMENTE disponibles para el run elegido, ya acotados por el
+// servidor a workspace + oposicion + study run (materiales con unidad en el run,
+// unidades del run, conceptos del run). Es la "verdad" contra la que se valida la
+// seleccion del cliente.
+export interface AvailableEvidenceIds {
+  materialIds: ReadonlySet<string>;
+  unitIds: ReadonlySet<string>;
+  conceptIds: ReadonlySet<string>;
+}
+
+// SPEC 039 (P1): la seleccion del cliente debe validarse ENTERA contra el scope. Si
+// UN SOLO id (material, unidad o concepto) no pertenece a workspace/oposicion/study
+// run, se RECHAZA toda la peticion (`SELECTION_FORBIDDEN`); nunca se descartan ids
+// ajenos en silencio. PURA y testeada en vitest (la Edge Function solo aporta los
+// `available` recuperados de Supabase).
+export function evaluateSelectionScope(
+  request: {
+    scope: DirectScope;
+    material_ids: string[];
+    material_study_unit_ids: string[];
+    material_study_concept_ids: string[];
+  },
+  available: AvailableEvidenceIds,
+): { ok: true } | { ok: false; code: DqgErrorCode } {
+  const allIn = (ids: string[], pool: ReadonlySet<string>): boolean =>
+    ids.length > 0 && ids.every((id) => pool.has(id));
+
+  switch (request.scope) {
+    case 'all_studied_material':
+      return { ok: true };
+    case 'selected_materials':
+      return allIn(request.material_ids, available.materialIds)
+        ? { ok: true }
+        : { ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN };
+    case 'selected_units':
+      return allIn(request.material_study_unit_ids, available.unitIds)
+        ? { ok: true }
+        : { ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN };
+    case 'selected_concepts':
+      return allIn(request.material_study_concept_ids, available.conceptIds)
+        ? { ok: true }
+        : { ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN };
+    default:
+      return { ok: false, code: DQG_ERROR.SELECTION_FORBIDDEN };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Evidencia + validacion ESTRUCTURAL de la salida del proveedor.
 // ---------------------------------------------------------------------------

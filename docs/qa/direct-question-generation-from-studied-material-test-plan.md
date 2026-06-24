@@ -15,6 +15,11 @@ determinista en vitest.
   de arrays; **coherencia scope↔arrays** (`isSelectionCoherent`).
 - **Límites** (`resolveDirectLimits`): ausente/ inválido → máximo seguro; un secreto
   solo **endurece**, nunca supera el máximo.
+- **Validación de selección (P1)** (`evaluateSelectionScope`): la selección de
+  materiales/unidades/conceptos se valida **entera** contra el scope disponible
+  (workspace + oposición + study run). Un payload **mixto válido+ajeno** rechaza
+  **toda** la petición (`SELECTION_FORBIDDEN`); nunca se descartan IDs ajenos en
+  silencio. Pool vacío → rechazo de cualquier selección.
 - **Elegibilidad**: `isStudyRunReady` (solo `completed`/`completed_with_warnings`);
   `isUsableStudiedMaterial` (excluye ajeno, obsoleto, failed/ocr_failed).
 - **Validación de candidata** (`validateDirectCandidate`):
@@ -53,7 +58,7 @@ determinista en vitest.
 | --- | --- |
 | 1. Generar sin índice/tema obligatorio | UI panel + Edge Function sin `topic_id` |
 | 2. Valida JWT/gestión/scope/estudio/evidencia antes de IA | Edge Function pasos 1–5 |
-| 3. Cliente no envía texto ni suplanta scope | contrato `validateDirectGenerateRequest` + wrapper |
+| 3. Cliente no envía texto ni suplanta scope | contrato `validateDirectGenerateRequest` + `evaluateSelectionScope` (P1) + wrapper |
 | 4. Candidata con evidencia, extracto coherente, explicación, 1 correcta | `validateDirectCandidate` |
 | 5. Todas pending_review/needs_fix; nunca validated | `candidateStatus` + regla dura |
 | 6. Student/cross-scope rechazados | `evaluateManagementAccess` + checks scope/selección |
