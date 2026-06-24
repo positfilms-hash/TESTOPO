@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Opposition } from '@backend';
 import { useStore, type Zone } from '../store/StoreContext.js';
 import { Badge, Button, EmptyState, Field, PageHeader } from '../components/ui.js';
+import { slugifyName } from '../workspaces/serverWorkspaceBootstrap.js';
 
 export function OppositionsGate({ zone }: { zone: Zone }) {
   const {
@@ -17,7 +18,7 @@ export function OppositionsGate({ zone }: { zone: Zone }) {
   } = useStore();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
-  const [slug, setSlug] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = zone === 'admin';
@@ -47,21 +48,28 @@ export function OppositionsGate({ zone }: { zone: Zone }) {
   const canSwitchZone = isAdmin && canStudy;
 
   const create = async () => {
-    if (!currentUser) return;
+    if (!currentUser || busy) return;
     setError(null);
+    if (!title.trim()) {
+      setError('Introduce un título para la oposición.');
+      return;
+    }
+    setBusy(true);
     try {
+      // Slug INTERNO autogenerado desde el titulo (no editable).
       const opposition = await store.oppositions.createOpposition(currentUser, {
         workspace_id: currentWorkspace?.id,
         title,
-        slug,
+        slug: slugifyName(title),
       });
       refresh();
       setCreating(false);
       setTitle('');
-      setSlug('');
       selectOpposition(opposition);
     } catch {
-      setError('Revisa el titulo y el slug (el slug debe ser unico).');
+      setError('No se pudo crear la oposición. Inténtalo de nuevo.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -87,21 +95,31 @@ export function OppositionsGate({ zone }: { zone: Zone }) {
       {isAdmin && (
         <div style={{ marginBottom: 16 }}>
           {creating ? (
-            <div className="card">
+            <form
+              className="card"
+              onSubmit={(e) => {
+                e.preventDefault(); // Enter envia el formulario
+                void create();
+              }}
+            >
               {error && <div className="notice error">{error}</div>}
               <Field label="Titulo">
-                <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Auxiliar Administrativo" />
-              </Field>
-              <Field label="Slug (unico)">
-                <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="auxiliar-administrativo" />
+                <input
+                  autoFocus
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Auxiliar Administrativo"
+                />
               </Field>
               <div className="row">
-                <Button onClick={create}>Crear oposicion</Button>
-                <Button variant="secondary" onClick={() => setCreating(false)}>
+                <Button type="submit" disabled={busy}>
+                  {busy ? 'Creando…' : 'Crear oposicion'}
+                </Button>
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => setCreating(false)}>
                   Cancelar
                 </Button>
               </div>
-            </div>
+            </form>
           ) : (
             <Button onClick={() => setCreating(true)}>Crear oposicion</Button>
           )}
