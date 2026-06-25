@@ -31,30 +31,74 @@ añade a `materials.extraction_error`:
 Log seguro: `console.error("ocr_render_failed stage=… page=… diag=…")` — solo etapa,
 página y código; **nunca** bytes del PDF ni `Authorization`.
 
-## Alternativas reales si MuPDF WASM no funciona en Supabase Edge Runtime
+## DECISIÓN (2026-06-25): rasterizar con MuPDF en Edge queda DESCARTADO
 
-El runtime de Edge Functions (Deno aislado) tiene límites de memoria/CPU y de WASM
-que pueden impedir inicializar/rasterizar MuPDF para PDFs grandes (33/24 páginas).
-Opciones, de menor a mayor infraestructura:
+Tras el redeploy del diagnóstico, staging confirma `material_ocr_runs.errors =
+["renderer_init_failed"]` (page_count=24, processed_pages=0): **MuPDF/WASM no
+inicializa en Supabase Edge Runtime**. No es un problema de tamaño ni de contenido,
+es del runtime. Por tanto el rasterizado local en Edge **no es viable** y se sustituye
+por enviar el PDF directamente al proveedor.
 
-1. **Proveedor OCR/visión que acepte PDF directamente (recomendada).** Evita
-   rasterizar en nuestro código: se envían los bytes del PDF y el proveedor devuelve
-   texto por página + confianza. Candidatos: **Mistral OCR API**, **Google Document
-   AI**, **AWS Textract**, **Azure Document Intelligence**. La Edge Function seguiría
-   siendo la frontera de confianza (auth/scope/no-mock) y solo cambiaría el adaptador
-   de proveedor (de “rasterizar + chat vision” a “subir PDF + leer resultado”). OpenAI
-   Chat Vision **no** acepta PDF directamente hoy, por eso requiere rasterizado.
-2. **Worker de rasterizado fuera de Edge.** Una función/servicio con más memoria
-   (Node + `pdfjs-dist`/canvas, o un contenedor con `poppler`/`pdftoppm` o MuPDF
-   nativo) que recibe el PDF y devuelve PNG por página; la Edge Function lo invoca y
-   luego hace la visión. Mantiene OpenAI como proveedor de visión.
-3. **Conversión server-side en infraestructura compatible.** Igual que (2) pero como
-   paso de pipeline (cola/almacenamiento): subir PDF → worker rasteriza a Storage →
-   Edge Function lee imágenes → visión.
+### Alternativas evaluadas
 
-**Recomendación:** evaluar (1) primero (menos infraestructura y sin rasterizado
-propio). Si se mantiene OpenAI Vision, hace falta (2). **No** se rasteriza en el
-frontend y **no** se genera OCR simulado en ningún caso.
+1. **Proveedor que acepte el PDF directamente (ELEGIDA — Opción A).** Evita rasterizar
+   en nuestro código: el servidor descarga el PDF y lo manda como **adjunto** al
+   proveedor, que devuelve texto por página + confianza. Implementada con **OpenAI
+   file input** (Chat Completions, content part `type:"file"` con el PDF en base64),
+   reutilizando el secreto `OPENAI_API_KEY` ya configurado. Alternativas equivalentes
+   para el mismo seam: **Mistral OCR API**, **Google Document AI**, **AWS Textract**,
+   **Azure Document Intelligence**.
+2. **Worker de rasterizado fuera de Edge.** Servicio con más memoria (Node +
+   `pdfjs-dist`/canvas, o contenedor con `poppler`/`pdftoppm` o MuPDF nativo) que
+   devuelve PNG por página; la Edge Function lo invoca y hace la visión. No necesario
+   con la Opción A; queda como plan B si el file input no rinde.
+3. **Conversión server-side por pipeline** (subir PDF → worker rasteriza a Storage →
+   Edge lee imágenes → visión). Mayor infraestructura; descartada de momento.
+
+**No** se rasteriza en el frontend y **no** se genera OCR simulado en ningún caso.
+
+## Implementación: estrategia `provider_pdf` (Opción A)
+
+La Edge Function `ocr-material` elige la estrategia por secreto **`OCR_STRATEGY`**
+(`resolveOcrStrategy`, contrato puro):
+
+| `OCR_STRATEGY` | Comportamiento |
+| --- | --- |
+| (sin valor) / cualquiera | **`provider_pdf`** — envía el PDF al proveedor sin rasterizar (POR DEFECTO). |
+| `edge_rasterize` | Camino legado MuPDF (solo si el entorno lo soporta; si no, falla cerrado `renderer_init_failed`). |
+
+Ruta `provider_pdf` (pura + Deno):
+- `buildOcrPdfRequest({ model, pdfBase64, fileName })` arma la llamada a OpenAI con el
+  PDF como adjunto y `response_format: json_schema (ocr_document)` que pide
+  `{ pages: [{ page_number, text, confidence, warnings }] }`.
+- `parseOcrPdfResponse` parsea de forma tolerante (reasigna `page_number`, acota
+  confianza, basura → sin páginas → fallo honesto).
+- Guarda de entrada antes de llamar: PDF > 32 MB o > 100 páginas → `pdf_too_large`
+  (`OCR_PAGE_LIMIT_EXCEEDED`), sin invocar al proveedor.
+- Si **se llamó** al proveedor y falla (timeout/red o `!ok`) → `OCR_PROVIDER_FAILED`
+  con diag `provider_timeout_or_network` / `provider_http_<status>` (NO render).
+- El resto (persistencia por página, bandas de confianza, agregación, estados
+  terminales) es común a ambas estrategias.
+
+Mientras no haya proveedor configurado se mantiene el **bloqueo honesto**
+(`OCR_PROVIDER_NOT_CONFIGURED`, 501, cero escrituras). Si se fuerza `edge_rasterize`
+en Edge, el bloqueo honesto es `OCR_RENDER_FAILED` / `renderer_init_failed`.
+
+> **Estado SPEC 034/035:** el OCR de PDFs escaneados vía `edge_rasterize` queda
+> **BLOCKED** en Supabase Edge por `renderer_init_failed` (MuPDF/WASM no inicializa).
+> La ruta soportada es `provider_pdf`. El resto del MVP con **PDFs de texto** (capa de
+> texto nativa, sin OCR) sigue funcionando con normalidad.
+
+### Pendiente de operador (no codificable; no afirmar éxito sin retest en staging)
+
+- Secretos: `OCR_PROVIDER=openai`, `OPENAI_API_KEY`, opcional `OCR_MODEL`
+  (def. `gpt-4o-mini`), opcional `OCR_STRATEGY` (def. `provider_pdf`).
+- `supabase functions deploy ocr-material`.
+- Reintentar OCR sobre un PDF escaneado conocido y verificar
+  `material_ocr_runs.processed_pages > 0` con texto/confianza reales.
+- **Riesgo a validar:** límite de páginas/tokens y latencia del file input para PDFs
+  largos (24+ páginas en una sola llamada). Si no rinde, activar la Opción 2 (worker
+  de rasterizado fuera de Edge).
 
 ## Smoke de Edge (verificación en staging — no testeable en vitest)
 

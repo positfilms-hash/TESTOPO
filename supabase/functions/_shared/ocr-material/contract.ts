@@ -433,6 +433,148 @@ export function parseOcrVisionResponse(content: unknown): OcrPageParse {
 }
 
 // ---------------------------------------------------------------------------
+// SPEC 034 (alternativa server-side): OCR enviando el PDF DIRECTAMENTE al
+// proveedor, SIN rasterizar en Edge. Motivo: en Supabase Edge Runtime el motor
+// MuPDF/WASM NO inicializa (diagnostico confirmado: renderer_init_failed), asi
+// que el rasterizado local no es viable. Esta ruta descarga el PDF en el
+// SERVIDOR y lo manda como adjunto al proveedor (OpenAI file input) con la CLAVE
+// como secreto de servidor; el navegador sigue sin aportar imagenes/texto. PURO:
+// construye la peticion y parsea la respuesta; no hace fetch ni lee secretos.
+// ---------------------------------------------------------------------------
+
+// Estrategia de procesamiento del PDF escaneado:
+//   provider_pdf   = enviar el PDF al proveedor sin rasterizar (POR DEFECTO, tras
+//                    confirmarse renderer_init_failed en staging).
+//   edge_rasterize = camino legado MuPDF/WASM (solo si el entorno lo soporta;
+//                    si no, falla cerrado con renderer_init_failed).
+export const OCR_STRATEGIES = ['provider_pdf', 'edge_rasterize'] as const;
+export type OcrStrategy = (typeof OCR_STRATEGIES)[number];
+export const DEFAULT_OCR_STRATEGY: OcrStrategy = 'provider_pdf';
+
+export function resolveOcrStrategy(env: { OCR_STRATEGY?: string | null }): OcrStrategy {
+  const s = (env.OCR_STRATEGY ?? '').trim().toLowerCase();
+  return s === 'edge_rasterize' ? 'edge_rasterize' : DEFAULT_OCR_STRATEGY;
+}
+
+// Limites del envio directo del PDF al proveedor (OpenAI file input acepta hasta
+// ~100 paginas / 32 MB). El documento se procesa en UNA llamada, por eso el
+// timeout es por DOCUMENTO (no por pagina).
+export const MAX_OCR_PDF_BYTES = 32 * 1024 * 1024;
+export const MAX_OCR_PDF_PAGES = 100;
+export const OCR_DOCUMENT_TIMEOUT_MS = 110000; // 110 s para todo el documento
+
+export const OCR_PDF_SYSTEM_PROMPT = [
+  'Eres un OCR de documentos PDF escaneados en espanol.',
+  'Transcribe FIELMENTE el texto visible de CADA pagina, respetando el orden de lectura.',
+  'No interpretes, no resumas, no inventes texto que no aparezca en el documento.',
+  'Devuelve JSON: { "pages": [ { "page_number": number, "text": string, "confidence": number(0..1), "warnings": string[] } ] }.',
+  'Incluye TODAS las paginas en orden ascendente. Pagina en blanco o ilegible: text="" y confidence baja.',
+].join(' ');
+
+export function ocrPdfResponseSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['pages'],
+    properties: {
+      pages: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['page_number', 'text', 'confidence', 'warnings'],
+          properties: {
+            page_number: { type: 'integer' },
+            text: { type: 'string' },
+            confidence: { type: 'number' },
+            warnings: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  };
+}
+
+// Construye la peticion a OpenAI (Chat Completions) enviando el PDF como ADJUNTO
+// (content part `file`), sin rasterizar. PURA: no hace fetch ni lee secretos. El
+// PDF lo descarga el SERVIDOR desde Storage; el navegador NUNCA lo aporta.
+export function buildOcrPdfRequest(args: {
+  model: string;
+  pdfBase64: string;
+  fileName: string;
+}): Record<string, unknown> {
+  return {
+    model: args.model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: OCR_PDF_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Transcribe el texto de cada pagina de este PDF escaneado.' },
+          {
+            type: 'file',
+            file: {
+              filename: args.fileName,
+              file_data: `data:application/pdf;base64,${args.pdfBase64}`,
+            },
+          },
+        ],
+      },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'ocr_document', strict: true, schema: ocrPdfResponseSchema() },
+    },
+  };
+}
+
+export interface OcrPdfPageParse {
+  page_number: number;
+  text: string;
+  confidence: number | null;
+  warnings: string[];
+}
+
+// Parsea la salida JSON del OCR de documento (varias paginas en una llamada).
+// PURA y tolerante: nunca lanza; ante salida invalida devuelve lista vacia (=>
+// sin texto usable -> estado fallido HONESTO). Reasigna page_number por orden si
+// falta o no es valido, y acota la confianza a [0,1].
+export function parseOcrPdfResponse(content: unknown): { pages: OcrPdfPageParse[] } {
+  if (!isNonEmptyString(content)) return { pages: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { pages: [] };
+  }
+  const arr = (parsed as { pages?: unknown }).pages;
+  if (!Array.isArray(arr)) return { pages: [] };
+  const pages: OcrPdfPageParse[] = arr.map((raw, i) => {
+    const o = (raw ?? {}) as {
+      page_number?: unknown;
+      text?: unknown;
+      confidence?: unknown;
+      warnings?: unknown;
+    };
+    const pageNumber =
+      typeof o.page_number === 'number' && Number.isInteger(o.page_number) && o.page_number > 0
+        ? o.page_number
+        : i + 1;
+    const text = typeof o.text === 'string' ? o.text : '';
+    const confidence =
+      typeof o.confidence === 'number' && Number.isFinite(o.confidence)
+        ? Math.min(1, Math.max(0, o.confidence))
+        : null;
+    const warnings = Array.isArray(o.warnings)
+      ? o.warnings.filter((w): w is string => typeof w === 'string')
+      : [];
+    return { page_number: pageNumber, text, confidence, warnings };
+  });
+  return { pages };
+}
+
+// ---------------------------------------------------------------------------
 // Resultado REAL del procesamiento -> estados HONESTOS. Estas funciones puras
 // son la unica fuente de verdad de la clasificacion por confianza y del estado
 // terminal; la Edge Function las usa SOLO sobre paginas realmente procesadas.

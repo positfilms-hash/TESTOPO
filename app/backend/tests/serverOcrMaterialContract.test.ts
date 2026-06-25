@@ -24,6 +24,10 @@ import {
   parseOcrVisionResponse,
   classifyRenderFailure,
   OCR_RENDER_DIAG,
+  resolveOcrStrategy,
+  DEFAULT_OCR_STRATEGY,
+  buildOcrPdfRequest,
+  parseOcrPdfResponse,
   MAX_OCR_PAGES,
   OCR_PER_PAGE_TIMEOUT_MS,
 } from '../../../supabase/functions/_shared/ocr-material/contract';
@@ -284,3 +288,53 @@ describe('classifyRenderFailure (diagnostico SEGURO del render PDF en Edge)', ()
     expect(all).toContain('wasm_runtime_failed');
   });
 });
+
+describe('estrategia OCR provider_pdf (alternativa sin rasterizar en Edge)', () => {
+  it('por defecto envia el PDF al proveedor (provider_pdf); solo edge_rasterize si se pide', () => {
+    expect(DEFAULT_OCR_STRATEGY).toBe('provider_pdf');
+    expect(resolveOcrStrategy({})).toBe('provider_pdf');
+    expect(resolveOcrStrategy({ OCR_STRATEGY: null })).toBe('provider_pdf');
+    expect(resolveOcrStrategy({ OCR_STRATEGY: 'desconocido' })).toBe('provider_pdf');
+    expect(resolveOcrStrategy({ OCR_STRATEGY: 'edge_rasterize' })).toBe('edge_rasterize');
+    expect(resolveOcrStrategy({ OCR_STRATEGY: 'EDGE_RASTERIZE' })).toBe('edge_rasterize');
+  });
+
+  it('buildOcrPdfRequest manda el PDF como adjunto file_data y pide JSON por paginas', () => {
+    const body = buildOcrPdfRequest({ model: 'gpt-4o-mini', pdfBase64: 'QUJD', fileName: 'mat.pdf' }) as {
+      model: string;
+      messages: { role: string; content: unknown }[];
+      response_format: { type: string; json_schema: { name: string } };
+    };
+    expect(body.model).toBe('gpt-4o-mini');
+    expect(body.response_format.type).toBe('json_schema');
+    expect(body.response_format.json_schema.name).toBe('ocr_document');
+    const userMsg = body.messages.find((m) => m.role === 'user');
+    const serialized = JSON.stringify(userMsg?.content);
+    expect(serialized).toContain('data:application/pdf;base64,QUJD');
+    expect(serialized).toContain('mat.pdf');
+    // NUNCA debe contener imagenes rasterizadas en este camino.
+    expect(serialized).not.toContain('image_url');
+  });
+
+  it('parseOcrPdfResponse extrae paginas, reasigna page_number y acota confianza', () => {
+    const out = parseOcrPdfResponse(
+      JSON.stringify({
+        pages: [
+          { page_number: 1, text: 'Primera', confidence: 0.9, warnings: [] },
+          { page_number: 2, text: 'Segunda', confidence: 5, warnings: ['borroso'] },
+          { text: 'Tercera sin numero', confidence: 0.8, warnings: [] },
+        ],
+      }),
+    );
+    expect(out.pages).toHaveLength(3);
+    expect(out.pages[1].confidence).toBe(1); // acotada a [0,1]
+    expect(out.pages[2].page_number).toBe(3); // reasignada por orden
+    expect(out.pages[2].text).toBe('Tercera sin numero');
+  });
+
+  it('parseOcrPdfResponse tolera basura -> sin paginas (=> sin texto usable, fallo honesto)', () => {
+    expect(parseOcrPdfResponse('no-json').pages).toEqual([]);
+    expect(parseOcrPdfResponse(null).pages).toEqual([]);
+    expect(parseOcrPdfResponse(JSON.stringify({ nope: 1 })).pages).toEqual([]);
+  });
+})
