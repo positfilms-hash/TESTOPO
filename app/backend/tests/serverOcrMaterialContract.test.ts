@@ -22,6 +22,8 @@ import {
   mapOcrTerminalOutcome,
   buildOcrVisionRequest,
   parseOcrVisionResponse,
+  classifyRenderFailure,
+  OCR_RENDER_DIAG,
   MAX_OCR_PAGES,
   OCR_PER_PAGE_TIMEOUT_MS,
 } from '../../../supabase/functions/_shared/ocr-material/contract';
@@ -253,5 +255,32 @@ describe('limites documentados', () => {
   it('coinciden con SPEC 030/034', () => {
     expect(MAX_OCR_PAGES).toBe(300);
     expect(OCR_PER_PAGE_TIMEOUT_MS).toBe(60000);
+  });
+});
+
+describe('classifyRenderFailure (diagnostico SEGURO del render PDF en Edge)', () => {
+  it('mapea cada etapa a su codigo de diagnostico', () => {
+    expect(classifyRenderFailure({ stage: 'init', message: 'MuPDF no disponible' })).toBe(OCR_RENDER_DIAG.RENDERER_INIT_FAILED);
+    expect(classifyRenderFailure({ stage: 'load', message: 'No se pudo abrir el PDF' })).toBe(OCR_RENDER_DIAG.PDF_LOAD_FAILED);
+    expect(classifyRenderFailure({ stage: 'page', message: 'No se pudo rasterizar la pagina 3' })).toBe(OCR_RENDER_DIAG.PAGE_RASTERIZE_FAILED);
+    expect(classifyRenderFailure({ stage: 'size', message: 'excede el tamano maximo' })).toBe(OCR_RENDER_DIAG.PDF_TOO_LARGE);
+  });
+
+  it('detecta PDF cifrado/protegido por contenido del error (cualquier etapa)', () => {
+    expect(classifyRenderFailure({ stage: 'load', message: 'document is password protected' })).toBe(OCR_RENDER_DIAG.PDF_PASSWORD_OR_ENCRYPTED);
+    expect(classifyRenderFailure({ stage: 'load', message: 'PDF encrypted' })).toBe(OCR_RENDER_DIAG.PDF_PASSWORD_OR_ENCRYPTED);
+  });
+
+  it('detecta fallo del runtime WASM en init/page; y tamano por contenido', () => {
+    expect(classifyRenderFailure({ stage: 'init', message: 'WebAssembly.instantiate failed: out of memory' })).toBe(OCR_RENDER_DIAG.WASM_RUNTIME_FAILED);
+    expect(classifyRenderFailure({ stage: 'page', message: 'wasm memory access out of bounds' })).toBe(OCR_RENDER_DIAG.WASM_RUNTIME_FAILED);
+    expect(classifyRenderFailure({ stage: 'page', message: 'image too large' })).toBe(OCR_RENDER_DIAG.PDF_TOO_LARGE);
+  });
+
+  it('todos los codigos son etiquetas estables (sin contenido del PDF ni secretos)', () => {
+    const all = Object.values(OCR_RENDER_DIAG);
+    for (const v of all) expect(/^[a-z_]+$/.test(v)).toBe(true);
+    expect(all).toContain('renderer_init_failed');
+    expect(all).toContain('wasm_runtime_failed');
   });
 });

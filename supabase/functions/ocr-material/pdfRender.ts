@@ -12,16 +12,22 @@
 import {
   MAX_OCR_IMAGE_BYTES,
   MAX_OCR_PAGES,
+  classifyRenderFailure,
+  type OcrRenderDiag,
+  type RenderStage,
 } from '../_shared/ocr-material/contract.ts';
 
 export class PdfRenderError extends Error {
+  /** Codigo de diagnostico seguro derivado de la etapa + el mensaje (sin contenido). */
+  readonly diag: OcrRenderDiag;
   constructor(
-    readonly kind: 'init' | 'page',
+    readonly stage: RenderStage,
     readonly pageNumber: number | null,
     message: string,
   ) {
     super(message);
     this.name = 'PdfRenderError';
+    this.diag = classifyRenderFailure({ stage, message });
   }
 }
 
@@ -65,7 +71,7 @@ export async function renderPdfToPages(
       Document: { openDocument(buf: Uint8Array, magic: string): typeof doc };
     }).Document.openDocument(bytes, 'application/pdf');
   } catch (e) {
-    throw new PdfRenderError('init', null, `No se pudo abrir el PDF: ${String(e)}`);
+    throw new PdfRenderError('load', null, `No se pudo abrir el PDF: ${String(e)}`);
   }
 
   const out: RenderedPage[] = [];
@@ -93,7 +99,7 @@ export async function renderPdfToPages(
         throw new PdfRenderError('page', i + 1, `No se pudo rasterizar la pagina ${i + 1}: ${String(e)}`);
       }
       if (png.byteLength > MAX_OCR_IMAGE_BYTES) {
-        throw new PdfRenderError('page', i + 1, `La pagina ${i + 1} excede el tamano maximo de imagen.`);
+        throw new PdfRenderError('size', i + 1, `La pagina ${i + 1} excede el tamano maximo de imagen.`);
       }
       out.push({ page_number: i + 1, imageDataUrl: `data:image/png;base64,${toBase64(png)}` });
     }
