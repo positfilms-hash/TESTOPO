@@ -739,6 +739,69 @@ export function parseProviderCandidates(content: unknown): ParseResult {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostico SEGURO de errores del proveedor (SPEC 039 fix staging). Mapea el
+// status HTTP + el body de error de OpenAI a codigos ESTABLES y SEGUROS para
+// guardar en question_generation_runs.errors. NUNCA incluye api key, prompts,
+// excerpts ni la respuesta cruda: solo status/type/code del proveedor. PURO.
+// ---------------------------------------------------------------------------
+export const PROVIDER_ERROR_TIMEOUT = 'provider_timeout';
+export const PROVIDER_ERROR_NETWORK = 'provider_network_error';
+
+export interface ProviderErrorInfo {
+  /** Codigos seguros: provider_http_NNN + refinamientos (sin datos sensibles). */
+  codes: string[];
+  provider_status: number;
+  provider_code: string | null;
+  provider_type: string | null;
+}
+
+export function classifyProviderError(status: number, body: unknown): ProviderErrorInfo {
+  const codes: string[] = [`provider_http_${status}`];
+  let providerCode: string | null = null;
+  let providerType: string | null = null;
+  let message = '';
+  let param = '';
+  if (body && typeof body === 'object') {
+    const err = (body as { error?: unknown }).error;
+    if (err && typeof err === 'object') {
+      const e = err as { message?: unknown; type?: unknown; code?: unknown; param?: unknown };
+      providerType = isNonEmptyString(e.type) ? e.type.trim() : null;
+      providerCode = isNonEmptyString(e.code) ? e.code.trim() : null;
+      message = isNonEmptyString(e.message) ? e.message.toLowerCase() : '';
+      param = isNonEmptyString(e.param) ? e.param.toLowerCase() : '';
+    }
+  }
+  const hay = `${providerType ?? ''} ${providerCode ?? ''} ${message}`.toLowerCase();
+
+  if (providerCode === 'insufficient_quota' || hay.includes('insufficient_quota') || hay.includes('exceeded your current quota')) {
+    codes.push('provider_insufficient_quota');
+  }
+  if (
+    providerCode === 'model_not_found' ||
+    hay.includes('model_not_found') ||
+    (hay.includes('model') && hay.includes('does not exist'))
+  ) {
+    codes.push('provider_model_not_found');
+  }
+  if (providerType === 'invalid_request_error') {
+    codes.push('provider_invalid_request');
+  }
+  if (
+    hay.includes('response_format') ||
+    hay.includes('json_schema') ||
+    param.includes('response_format')
+  ) {
+    codes.push('provider_response_format_error');
+  }
+  return {
+    codes: [...new Set(codes)],
+    provider_status: status,
+    provider_code: providerCode,
+    provider_type: providerType,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Constructores de filas de persistencia (esquema 023/028-E + enlace 036). PUROS.
 // `topic_id` queda NULL en este flujo; `topic` lleva la etiqueta descriptiva.
 // ---------------------------------------------------------------------------
@@ -886,6 +949,10 @@ export interface ProducedCandidates {
   ok: boolean;
   code?: DqgErrorCode;
   candidates: ValidatedDirectCandidate[];
+  /** Codigos de diagnostico SEGUROS del proveedor (provider_http_NNN, etc.). */
+  errors?: string[];
+  provider_status?: number;
+  provider_code?: string | null;
 }
 
 export interface RunResult {
@@ -893,6 +960,10 @@ export interface RunResult {
   code?: DqgErrorCode;
   httpStatus: number;
   created: number;
+  /** Codigos de diagnostico seguros (para errors del run y respuesta de QA). */
+  errors?: string[];
+  provider_status?: number;
+  provider_code?: string | null;
 }
 
 export async function runDirectGeneration(args: {
@@ -908,12 +979,18 @@ export async function runDirectGeneration(args: {
   const produced = await args.produce();
   if (!produced.ok) {
     const code = produced.code ?? DQG_ERROR.PROVIDER_FAILED;
-    await args.port.finalizeRun('failed', 0, [code]);
+    // El run guarda el codigo de wire + los codigos de diagnostico seguros del
+    // proveedor (provider_http_NNN, provider_insufficient_quota, ...).
+    const runErrors = [...new Set([code, ...(produced.errors ?? [])])];
+    await args.port.finalizeRun('failed', 0, runErrors);
     return {
       ok: false,
       code,
       httpStatus: code === DQG_ERROR.PROVIDER_FAILED ? 502 : 422,
       created: 0,
+      errors: produced.errors ?? [],
+      provider_status: produced.provider_status,
+      provider_code: produced.provider_code ?? null,
     };
   }
 

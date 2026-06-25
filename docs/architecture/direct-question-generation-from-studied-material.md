@@ -65,6 +65,19 @@ Request (whitelist estricta — solo IDs de alcance y parámetros):
 - Proveedor (`resolveProvider`, **OpenAI-only**). Sin proveedor real → **HTTP 501
   `DIRECT_QG_PROVIDER_NOT_CONFIGURED`** y **cero escrituras** (ni run, ni pregunta,
   ni opción, ni validación).
+- **Diagnóstico seguro de fallo de proveedor (SPEC 039 fix):** si OpenAI responde
+  `!ok`, se lee el body de error y `classifyProviderError(status, body)` produce
+  códigos **estables y seguros** (`provider_http_NNN`, `provider_insufficient_quota`,
+  `provider_model_not_found`, `provider_invalid_request`,
+  `provider_response_format_error`; y `provider_timeout`/`provider_network_error` en
+  excepción). Esos códigos se guardan en `question_generation_runs.errors` y la
+  respuesta `DIRECT_QG_PROVIDER_FAILED` incluye `provider_status`/`provider_code`
+  para QA. **Nunca** se guardan/loguean la API key, prompts, excerpts ni la respuesta
+  cruda; el `console.error` solo emite `status`/`type`/`code`. (Revisado #6/#7: el
+  `response_format` `json_schema` `strict` es compatible con `gpt-4o-mini`
+  —cada objeto con `additionalProperties:false` y todas sus props en `required`—; si
+  el diagnóstico muestra `provider_response_format_error`, el siguiente paso es pasar
+  a `response_format: json_object`.)
 
 La lógica determinista vive en
 `supabase/functions/_shared/direct-question-generation/contract.ts` (testeada en
