@@ -118,6 +118,30 @@ preguntas con evidencia concreta. **Nunca** usa texto enviado por el frontend.
   se silencian**: la función devuelve un bloqueo trazable
   `MATERIAL_STUDY_PREP_FAILED` (502).
 
+### Troceado en bloques + fallback determinista (fix staging)
+
+Una sección grande (p. ej. un BOE de ~163k caracteres) **no** se envía entera como
+una sola fuente al modelo (eso provocaba `NO_VALID_UNITS`: el modelo no echaba bien
+el `material_section_id` o el `source_excerpt`). La Edge Function **trocea** cada
+sección en **bloques manejables** (`chunkSectionText`, por encabezados legales/
+estructurales —Artículo/Título/Capítulo/Sección/Disposición/Anexo— y por tamaño,
+`MAX_STUDY_CHUNK_CHARS`), respetando el presupuesto global y `MAX_STUDY_BLOCKS_PER_MATERIAL`.
+Cada bloque conserva su `material_section_id` **real** (subreferencia trazable). El
+prompt **fuerza** citar un `material_section_id` exacto y un `source_excerpt`
+**copiado literalmente** del bloque.
+
+Si el proveedor no devuelve unidades válidas, se aplica un **fallback determinista
+seguro** (`buildFallbackStudyUnits`): crea bloques de estudio desde los chunks con un
+`source_excerpt` **real** (texto literal del material, anclado a la sección). **No es
+un mock**: es estructuración determinista del texto real, no contenido inventado;
+garantiza unidades cuando hay texto. Las unidades quedan ancladas a la sección
+concreta (evidencia para SPEC 039).
+
+Cuando no se crean unidades, la respuesta `NO_VALID_UNITS` incluye `warnings` y
+`errors` internos para QA (sin secretos ni texto): p. ej. `provider_parse_failed`,
+`provider_units_rejected=N`, `provider_zero_valid_units`, `deterministic_fallback_used`,
+`unit_persist_failed`.
+
 ### Autosuficiencia: clasificación interna (fix staging)
 
 "Estudiar material" **no depende** de que el usuario haya ejecutado antes

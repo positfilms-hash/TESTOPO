@@ -42,6 +42,11 @@ export const STUDY_PROVIDER_NOT_CONFIGURED_MESSAGE =
 export const MAX_STUDY_MATERIALS = 60;
 export const MAX_STUDY_UNITS_PER_MATERIAL = 20;
 export const MAX_STUDY_EXCERPT_CHARS = 2000;
+// Una seccion grande (p. ej. un BOE de 163k chars) NO se envia entera como una
+// sola fuente: se TROCEA en bloques manejables (cada bloque conserva su
+// material_section_id real como subreferencia trazable). Cotas seguras.
+export const MAX_STUDY_CHUNK_CHARS = 6000;
+export const MAX_STUDY_BLOCKS_PER_MATERIAL = 12;
 // Presupuesto GLOBAL POR RUN (no por material): no se reinicia por material ni se
 // lanzan llamadas sin limite. La Edge Function consume estos topes de forma
 // acumulativa (chars y unidades) y para cuando se agotan.
@@ -517,12 +522,14 @@ export function resolveStudyProvider(env: {
 
 export const STUDY_SYSTEM_PROMPT = [
   'Eres un asistente que ORGANIZA evidencia de estudio de oposiciones en español.',
-  'Recibes fragmentos de material clasificado (con material_id y un puntero de',
-  'fuente: material_section_id o source_reference_id) y devuelves BLOQUES de estudio',
-  '(units) anclados a esos punteros, con un titulo conciso, un resumen breve y un',
-  'source_excerpt CONTENIDO en la evidencia. Opcionalmente, conceptos por bloque.',
-  'USA SOLO los punteros e ids proporcionados; no inventes datos, no copies preguntas',
-  'de examenes antiguos, no generes preguntas ni nada validated.',
+  'Recibes BLOQUES de material, cada uno con su material_section_id. Devuelves BLOQUES',
+  'de estudio (units) anclados a esos punteros, con un titulo conciso y un resumen breve.',
+  'OBLIGATORIO por cada unit: (1) material_section_id debe ser EXACTAMENTE uno de los',
+  'material_section_id que aparecen en los bloques (no lo inventes ni lo abrevies);',
+  '(2) source_excerpt debe estar COPIADO LITERALMENTE, palabra por palabra, de ese mismo',
+  'bloque (sin parafrasear, sin resumir, una sola frase o parrafo que aparezca tal cual).',
+  'USA SOLO los ids y el texto proporcionados; no inventes datos, no copies preguntas de',
+  'examenes antiguos, no generes preguntas ni nada validated.',
 ].join(' ');
 
 // ---------------------------------------------------------------------------
@@ -659,6 +666,88 @@ export function parseProviderUnits(content: unknown): ParseUnitsResult {
     return { ok: false, code: STUDY_ERROR.INVALID_OUTPUT };
   }
   return { ok: true, units: root.units as ProviderUnit[] };
+}
+
+// ---------------------------------------------------------------------------
+// Troceado de seccion en BLOQUES manejables (SPEC 038 fix staging) + fallback
+// DETERMINISTA de unidades. PUROS y testeables. Una seccion canonica de 163k
+// chars NO se envia entera: se trocea por encabezados legales/estructurales
+// (Articulo, Titulo, Capitulo, Seccion, Disposicion, Anexo) y por tamano. El
+// fallback crea unidades internas desde esos chunks con un source_excerpt REAL
+// (texto literal del material) cuando el proveedor no devuelve unidades validas:
+// NO es un mock de IA, es estructuracion deterministica del texto real anclada a
+// la seccion concreta (evidencia para SPEC 039).
+// ---------------------------------------------------------------------------
+const STUDY_HEADING_RE =
+  /^\s*(?:art[íi]culo|t[íi]tulo|cap[íi]tulo|secci[óo]n|disposici[óo]n|anexo|pre[áa]mbulo)\b/i;
+
+export function chunkSectionText(
+  text: string,
+  opts: { maxChunkChars?: number } = {},
+): string[] {
+  const max = Math.max(500, opts.maxChunkChars ?? MAX_STUDY_CHUNK_CHARS);
+  const chunks: string[] = [];
+  let cur = '';
+  const flush = (): void => {
+    const t = cur.trim();
+    if (t.length > 0) chunks.push(t);
+    cur = '';
+  };
+  for (const rawLine of (text ?? '').split(/\r?\n/)) {
+    const line = rawLine;
+    // Un encabezado inicia bloque nuevo si el actual ya tiene contenido.
+    if (STUDY_HEADING_RE.test(line) && cur.trim().length > 0) flush();
+    // Si anadir la linea excede el maximo, corta antes (salvo bloque vacio).
+    if (cur.length + line.length + 1 > max && cur.trim().length > 0) flush();
+    cur += (cur.length > 0 ? '\n' : '') + line;
+    // Hard-wrap de una linea unica gigantesca.
+    while (cur.length > max) {
+      const piece = cur.slice(0, max).trim();
+      if (piece.length > 0) chunks.push(piece);
+      cur = cur.slice(max);
+    }
+  }
+  flush();
+  return chunks.filter((c) => c.length > 0);
+}
+
+function deriveBlockTitle(chunk: string, index: number): string {
+  const firstLine = (chunk.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '').trim();
+  const title = firstLine.slice(0, 120).trim();
+  return title.length >= 3 ? title : `Bloque ${index}`;
+}
+function deriveBlockSummary(chunk: string): string {
+  return chunk.replace(/\s+/g, ' ').trim().slice(0, 220);
+}
+
+// Construye unidades DETERMINISTAS desde los chunks de una seccion. Cada unidad
+// queda anclada a `section_id` con un `source_excerpt` REAL (el propio chunk, que
+// validateStudyUnit anclara y acotara). Pensadas como fallback seguro.
+export function buildFallbackStudyUnits(args: {
+  material_id: string;
+  section_id: string;
+  chunks: ReadonlyArray<string>;
+  max: number;
+}): ProviderUnit[] {
+  const out: ProviderUnit[] = [];
+  let index = 0;
+  for (const raw of args.chunks) {
+    if (out.length >= args.max) break;
+    const chunk = (raw ?? '').trim();
+    if (chunk.length === 0) continue;
+    index += 1;
+    out.push({
+      title: deriveBlockTitle(chunk, index),
+      summary: deriveBlockSummary(chunk),
+      material_id: args.material_id,
+      material_section_id: args.section_id,
+      source_reference_id: null,
+      source_excerpt: chunk,
+      importance: 'medium',
+      confidence: null,
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

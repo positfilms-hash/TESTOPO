@@ -17,6 +17,10 @@ import {
   resolveCanonicalSection,
   CANONICAL_SECTION_TITLE,
   MAX_CANONICAL_SECTION_CHARS,
+  chunkSectionText,
+  buildFallbackStudyUnits,
+  MAX_STUDY_CHUNK_CHARS,
+  MAX_STUDY_EXCERPT_CHARS,
   STUDY_INELIGIBLE_REASON,
   resolveStudyProvider,
   parseProviderUnits,
@@ -245,6 +249,71 @@ describe('seccion canonica: completed + content_text + 0 secciones -> estudiable
     if (capped.kind === 'create') {
       expect(capped.section.content_text.length).toBe(MAX_CANONICAL_SECTION_CHARS);
     }
+  });
+});
+
+// Reproduce el P0: una seccion canonica LARGA (BOE legal, >> MAX_STUDY_CHUNK_CHARS)
+// no se envia entera; se trocea en bloques y, si el proveedor no da unidades
+// validas, el fallback determinista crea unidades ANCLADAS a la seccion con un
+// source_excerpt REAL (contenido literalmente). Antes -> NO_VALID_UNITS.
+describe('seccion larga legal: troceo + fallback determinista -> unidades validas', () => {
+  function longLegalText(): string {
+    const articles: string[] = [];
+    for (let i = 1; i <= 40; i++) {
+      articles.push(
+        `Articulo ${i}. Disposiciones aplicables a la materia numero ${i}.\n` +
+          `El presente articulo regula con detalle el supuesto ${i} y sus efectos. `.repeat(18),
+      );
+    }
+    return `Ley Organica 5/2000, de 12 de enero. BOE numero 11.\n\n${articles.join('\n\n')}`;
+  }
+
+  it('chunkSectionText trocea por articulos respetando el tope de tamano', () => {
+    const text = longLegalText();
+    expect(text.length).toBeGreaterThan(MAX_STUDY_CHUNK_CHARS * 3);
+    const chunks = chunkSectionText(text, { maxChunkChars: MAX_STUDY_CHUNK_CHARS });
+    expect(chunks.length).toBeGreaterThan(2);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(MAX_STUDY_CHUNK_CHARS);
+    // La mayoria de bloques empiezan en un encabezado "Articulo N".
+    expect(chunks.some((c) => /^Articulo \d+/.test(c.trim()))).toBe(true);
+  });
+
+  it('fallback determinista crea unidades validas con material_section_id y excerpt REAL', () => {
+    const text = longLegalText();
+    const SECTION = 'canon-1';
+    const chunks = chunkSectionText(text, { maxChunkChars: MAX_STUDY_CHUNK_CHARS });
+    // Scope como el de la Edge Function: section_texts[SECTION] = texto enviado.
+    const scope: StudyEvidenceScope = {
+      material_ids: new Set(['mat-1']),
+      section_texts: new Map([[SECTION, chunks.join('\n')]]),
+      reference_texts: new Map<string, string>(),
+    };
+    const fallback = buildFallbackStudyUnits({ material_id: 'mat-1', section_id: SECTION, chunks, max: 10 });
+    expect(fallback.length).toBeGreaterThan(0);
+
+    const valid = fallback
+      .map((u) => validateStudyUnit(u, scope))
+      .filter((r): r is Extract<typeof r, { ok: true }> => r.ok);
+    // TODAS las unidades del fallback son validas (excerpt real, anclado).
+    expect(valid.length).toBe(fallback.length);
+    for (const v of valid) {
+      expect(v.value.material_section_id).toBe(SECTION);
+      expect(v.value.excerpt.length).toBeGreaterThan(0);
+      expect(v.value.excerpt.length).toBeLessThanOrEqual(MAX_STUDY_EXCERPT_CHARS);
+      // El excerpt esta CONTENIDO literalmente en el texto de la seccion.
+      expect(chunks.join('\n').includes(v.value.excerpt)).toBe(true);
+    }
+    // Titulos derivados de los encabezados de articulo.
+    expect(valid.some((v) => /^Articulo \d+/.test(v.value.title))).toBe(true);
+  });
+
+  it('texto corto sin encabezados produce un solo bloque valido', () => {
+    const text = 'Resumen breve del tema sobre la organizacion administrativa del Estado y sus organos.';
+    const chunks = chunkSectionText(text);
+    expect(chunks).toEqual([text]);
+    const [u] = buildFallbackStudyUnits({ material_id: 'm', section_id: 's', chunks, max: 5 });
+    expect(u.material_section_id).toBe('s');
+    expect(u.source_excerpt).toBe(text);
   });
 });
 
