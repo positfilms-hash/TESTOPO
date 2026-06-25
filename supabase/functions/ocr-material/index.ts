@@ -5,9 +5,12 @@
 // prompts ni `user_id`). Esta funcion: (1) autentica el JWT, (2) valida el body,
 // (3) comprueba EXPLICITAMENTE el permiso de gestion (rol owner/admin activo) +
 // scope + elegibilidad del material (no solo RLS), (4) descarga el PDF privado en
-// el servidor, lo renderiza pagina a pagina (MuPDF WASM) y lee cada pagina con un
-// modelo de vision usando la CLAVE como secreto de SERVIDOR, (5) persiste run +
-// paginas + texto real y estados honestos, y (6) devuelve un resumen seguro.
+// el servidor y obtiene el texto OCR real segun la ESTRATEGIA: por defecto
+// `provider_pdf` (envia el PDF al proveedor SIN rasterizar, porque MuPDF/WASM no
+// inicializa en Edge -> renderer_init_failed), o legado `edge_rasterize` (MuPDF
+// pagina a pagina) si el entorno lo soporta; en ambos la CLAVE es secreto de
+// SERVIDOR, (5) persiste run + paginas + texto real y estados honestos, y (6)
+// devuelve un resumen seguro.
 //
 // La clave NUNCA llega al navegador/Vite. Sin proveedor real configurado responde
 // 501, PRESERVA `scanned_detected` y NO persiste nada. La logica determinista vive
@@ -32,6 +35,12 @@ import {
   buildOcrVisionRequest,
   parseOcrVisionResponse,
   classifyRenderFailure,
+  resolveOcrStrategy,
+  buildOcrPdfRequest,
+  parseOcrPdfResponse,
+  MAX_OCR_PDF_BYTES,
+  MAX_OCR_PDF_PAGES,
+  OCR_DOCUMENT_TIMEOUT_MS,
   type OcrErrorCode,
   type OcrPageBand,
 } from '../_shared/ocr-material/contract.ts';
@@ -54,6 +63,17 @@ function fail(code: OcrErrorCode, status: number, message?: string): Response {
 }
 function uuid(): string {
   return crypto.randomUUID();
+}
+// Base64 de un Uint8Array sin dependencias (envio del PDF como adjunto al
+// proveedor). El PDF lo descarga el servidor desde Storage; el navegador nunca lo
+// aporta.
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 Deno.serve(async (req: Request) => {
@@ -226,41 +246,37 @@ Deno.serve(async (req: Request) => {
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
 
-  // 5b) Render server-side (fail-closed si MuPDF no inicializa/rasteriza). NO se
-  //     ha llamado aun al proveedor: un fallo aqui es de RENDER, no de proveedor.
-  let pages: { page_number: number; imageDataUrl: string }[];
-  try {
-    pages = await renderPdfToPages(bytes, { maxPages: limits.maxPages });
-  } catch (e) {
-    const renderErr = e instanceof PdfRenderError ? e : null;
-    const stage = renderErr?.stage ?? 'init';
-    const pageNumber = renderErr?.pageNumber ?? null;
-    const diag = renderErr?.diag ?? classifyRenderFailure({ stage: 'init', message: String(e) });
-    // Log SEGURO: solo etapa + pagina + codigo de diagnostico; nunca contenido del
-    // PDF, bytes ni secretos.
-    console.error(`ocr_render_failed stage=${stage} page=${pageNumber ?? ''} diag=${diag}`);
-    return await failRun(userClient, runId, request.material_id, material, {
-      runStatus: 'failed',
-      extractionStatus: 'ocr_failed',
-      errorCode: stage === 'page' ? OCR_ERROR.PAGE_RENDER_FAILED : OCR_ERROR.RENDER_FAILED,
-      errorText: 'No se pudo procesar el PDF del escaneo en el servidor.',
-      diagCodes: [diag],
-    });
-  }
+  // 5b) Obtener el texto OCR por pagina segun la ESTRATEGIA del entorno:
+  //   provider_pdf   = enviar el PDF al proveedor SIN rasterizar (por defecto;
+  //                    MuPDF/WASM no inicializa en Edge -> renderer_init_failed).
+  //   edge_rasterize = camino legado MuPDF (solo si el entorno lo soporta).
+  // En ambos casos `results` es la lista honesta de paginas con texto/confianza
+  // realmente devueltos por el proveedor (sin inventar nada).
+  type PageResult = { page_number: number; text: string; confidence: number | null; warnings: string[] };
+  const strategy = resolveOcrStrategy({ OCR_STRATEGY: Deno.env.get('OCR_STRATEGY') });
+  let results: PageResult[];
 
-  // 5c) OCR real pagina a pagina, en orden. Timeout por pagina; sin inventar texto.
-  const pageRows: { page_number: number; text: string; band: OcrPageBand }[] = [];
-  const confidences: (number | null)[] = [];
-  const warnings: string[] = [];
-  let processed = 0;
-  let failed = 0;
-  let saveFailed = false;
-
-  for (const page of pages) {
-    let result = { text: '', confidence: null as number | null, warnings: [] as string[] };
+  if (strategy === 'provider_pdf') {
+    // 5b-A) Envio directo del PDF al proveedor (una sola llamada). Guarda de
+    //       tamano/paginas ANTES de llamar (limite del file input del proveedor).
+    if (
+      bytes.byteLength > MAX_OCR_PDF_BYTES ||
+      (typeof material.page_count === 'number' && material.page_count > MAX_OCR_PDF_PAGES)
+    ) {
+      console.error('ocr_pdf_input_too_large');
+      return await failRun(userClient, runId, request.material_id, material, {
+        runStatus: 'failed',
+        extractionStatus: 'ocr_failed',
+        errorCode: OCR_ERROR.PAGE_LIMIT_EXCEEDED,
+        errorText: 'El PDF excede el limite admitido por el OCR del servidor.',
+        diagCodes: ['pdf_too_large'],
+      });
+    }
+    const fileName = `${request.material_id}.pdf`;
+    const body = buildOcrPdfRequest({ model: provider.model, pdfBase64: toBase64(bytes), fileName });
+    let resp: Response;
     try {
-      const body = buildOcrVisionRequest({ model: provider.model, imageDataUrl: page.imageDataUrl });
-      const resp = await withTimeout(
+      resp = await withTimeout(
         fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -269,21 +285,101 @@ Deno.serve(async (req: Request) => {
           },
           body: JSON.stringify(body),
         }),
-        limits.pageTimeoutMs,
+        OCR_DOCUMENT_TIMEOUT_MS,
       );
-      if (resp.ok) {
-        const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-        result = parseOcrVisionResponse(data.choices?.[0]?.message?.content ?? null);
-      } else {
-        result.warnings.push('El proveedor OCR rechazo esta pagina.');
-      }
     } catch {
-      result.warnings.push('Error o timeout del proveedor OCR en esta pagina.');
+      // SI se llamo al proveedor (timeout/red): fallo de PROVEEDOR, no de render.
+      console.error('ocr_provider_failed reason=timeout_or_network');
+      return await failRun(userClient, runId, request.material_id, material, {
+        runStatus: 'failed',
+        extractionStatus: 'ocr_failed',
+        errorCode: OCR_ERROR.PROVIDER_FAILED,
+        errorText: 'El proveedor OCR no respondio.',
+        diagCodes: ['provider_timeout_or_network'],
+      });
     }
+    if (!resp.ok) {
+      // Log SEGURO: solo el status; nunca cuerpo crudo, prompt ni Authorization.
+      console.error(`ocr_provider_failed status=${resp.status}`);
+      return await failRun(userClient, runId, request.material_id, material, {
+        runStatus: 'failed',
+        extractionStatus: 'ocr_failed',
+        errorCode: OCR_ERROR.PROVIDER_FAILED,
+        errorText: 'El proveedor OCR rechazo el documento.',
+        diagCodes: [`provider_http_${resp.status}`],
+      });
+    }
+    const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+    results = parseOcrPdfResponse(data.choices?.[0]?.message?.content ?? null).pages;
+  } else {
+    // 5b-B) Render server-side (fail-closed si MuPDF no inicializa/rasteriza). NO
+    //       se ha llamado aun al proveedor: un fallo aqui es de RENDER, no de
+    //       proveedor.
+    let pages: { page_number: number; imageDataUrl: string }[];
+    try {
+      pages = await renderPdfToPages(bytes, { maxPages: limits.maxPages });
+    } catch (e) {
+      const renderErr = e instanceof PdfRenderError ? e : null;
+      const stage = renderErr?.stage ?? 'init';
+      const pageNumber = renderErr?.pageNumber ?? null;
+      const diag = renderErr?.diag ?? classifyRenderFailure({ stage: 'init', message: String(e) });
+      // Log SEGURO: solo etapa + pagina + codigo de diagnostico; nunca contenido
+      // del PDF, bytes ni secretos.
+      console.error(`ocr_render_failed stage=${stage} page=${pageNumber ?? ''} diag=${diag}`);
+      return await failRun(userClient, runId, request.material_id, material, {
+        runStatus: 'failed',
+        extractionStatus: 'ocr_failed',
+        errorCode: stage === 'page' ? OCR_ERROR.PAGE_RENDER_FAILED : OCR_ERROR.RENDER_FAILED,
+        errorText: 'No se pudo procesar el PDF del escaneo en el servidor.',
+        diagCodes: [diag],
+      });
+    }
+    results = [];
+    for (const page of pages) {
+      let result = { text: '', confidence: null as number | null, warnings: [] as string[] };
+      try {
+        const body = buildOcrVisionRequest({ model: provider.model, imageDataUrl: page.imageDataUrl });
+        const resp = await withTimeout(
+          fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${provider.apiKey}`,
+            },
+            body: JSON.stringify(body),
+          }),
+          limits.pageTimeoutMs,
+        );
+        if (resp.ok) {
+          const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+          result = parseOcrVisionResponse(data.choices?.[0]?.message?.content ?? null);
+        } else {
+          result.warnings.push('El proveedor OCR rechazo esta pagina.');
+        }
+      } catch {
+        result.warnings.push('Error o timeout del proveedor OCR en esta pagina.');
+      }
+      results.push({
+        page_number: page.page_number,
+        text: result.text,
+        confidence: result.confidence,
+        warnings: result.warnings,
+      });
+    }
+  }
 
+  // 5c) Persistencia HONESTA por pagina + agregacion (comun a ambas estrategias).
+  const pageRows: { page_number: number; text: string; band: OcrPageBand }[] = [];
+  const confidences: (number | null)[] = [];
+  const warnings: string[] = [];
+  let processed = 0;
+  let failed = 0;
+  let saveFailed = false;
+
+  for (const result of results) {
     const band = ocrConfidenceBand(result.confidence);
     confidences.push(result.confidence);
-    pageRows.push({ page_number: page.page_number, text: result.text, band });
+    pageRows.push({ page_number: result.page_number, text: result.text, band });
     if (band === 'failed') failed += 1;
     else {
       processed += 1;
@@ -296,7 +392,7 @@ Deno.serve(async (req: Request) => {
       opposition_id: request.opposition_id,
       material_id: request.material_id,
       ocr_run_id: runId,
-      page_number: page.page_number,
+      page_number: result.page_number,
       image_ref: null, // las imagenes temporales no se conservan ni se exponen.
       text: result.text,
       confidence: result.confidence,
