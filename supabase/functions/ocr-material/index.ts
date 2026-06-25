@@ -31,6 +31,7 @@ import {
   mapOcrTerminalOutcome,
   buildOcrVisionRequest,
   parseOcrVisionResponse,
+  classifyRenderFailure,
   type OcrErrorCode,
   type OcrPageBand,
 } from '../_shared/ocr-material/contract.ts';
@@ -225,17 +226,25 @@ Deno.serve(async (req: Request) => {
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
 
-  // 5b) Render server-side (fail-closed si MuPDF no inicializa/rasteriza).
+  // 5b) Render server-side (fail-closed si MuPDF no inicializa/rasteriza). NO se
+  //     ha llamado aun al proveedor: un fallo aqui es de RENDER, no de proveedor.
   let pages: { page_number: number; imageDataUrl: string }[];
   try {
     pages = await renderPdfToPages(bytes, { maxPages: limits.maxPages });
   } catch (e) {
-    const isPage = e instanceof PdfRenderError && e.kind === 'page';
+    const renderErr = e instanceof PdfRenderError ? e : null;
+    const stage = renderErr?.stage ?? 'init';
+    const pageNumber = renderErr?.pageNumber ?? null;
+    const diag = renderErr?.diag ?? classifyRenderFailure({ stage: 'init', message: String(e) });
+    // Log SEGURO: solo etapa + pagina + codigo de diagnostico; nunca contenido del
+    // PDF, bytes ni secretos.
+    console.error(`ocr_render_failed stage=${stage} page=${pageNumber ?? ''} diag=${diag}`);
     return await failRun(userClient, runId, request.material_id, material, {
       runStatus: 'failed',
       extractionStatus: 'ocr_failed',
-      errorCode: isPage ? OCR_ERROR.PAGE_RENDER_FAILED : OCR_ERROR.RENDER_FAILED,
+      errorCode: stage === 'page' ? OCR_ERROR.PAGE_RENDER_FAILED : OCR_ERROR.RENDER_FAILED,
       errorText: 'No se pudo procesar el PDF del escaneo en el servidor.',
+      diagCodes: [diag],
     });
   }
 
@@ -400,12 +409,21 @@ async function failRun(
     extractionStatus: 'ocr_failed';
     errorCode: OcrErrorCode;
     errorText: string;
+    /** Codigos de diagnostico seguros (p. ej. render): se guardan en errors. */
+    diagCodes?: string[];
   },
 ): Promise<Response> {
   const ts = new Date().toISOString();
+  const errors = args.diagCodes && args.diagCodes.length > 0 ? args.diagCodes : [args.errorText];
+  // El codigo de diagnostico se incluye tambien en extraction_error del material
+  // (seguro: es una etiqueta estable, sin contenido del PDF).
+  const extractionError =
+    args.diagCodes && args.diagCodes.length > 0
+      ? `${args.errorText} (${args.diagCodes[0]})`
+      : args.errorText;
   await client
     .from('material_ocr_runs')
-    .update({ status: args.runStatus, errors: [args.errorText], updated_at: ts })
+    .update({ status: args.runStatus, errors, updated_at: ts })
     .eq('id', runId);
   await client
     .from('materials')
@@ -413,7 +431,7 @@ async function failRun(
       extraction_status: args.extractionStatus,
       status: 'needs_review',
       ocr_status: args.runStatus,
-      extraction_error: args.errorText,
+      extraction_error: extractionError,
     })
     .eq('id', materialId);
   return fail(args.errorCode, 502, args.errorText);

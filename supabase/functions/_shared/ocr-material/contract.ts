@@ -46,6 +46,69 @@ export const OCR_ERROR = {
 
 export type OcrErrorCode = (typeof OCR_ERROR)[keyof typeof OCR_ERROR];
 
+// ---------------------------------------------------------------------------
+// Diagnostico SEGURO del fallo de RASTERIZADO/RENDER del PDF en Edge (SPEC 034 fix).
+// Codigos estables que se guardan en material_ocr_runs.errors y en
+// material.extraction_error. NO incluyen contenido del PDF ni secretos. El render
+// real (MuPDF WASM) corre en Deno; este clasificador es PURO y testeable en vitest.
+// ---------------------------------------------------------------------------
+export const OCR_RENDER_DIAG = {
+  RENDERER_INIT_FAILED: 'renderer_init_failed',
+  PDF_LOAD_FAILED: 'pdf_load_failed',
+  PAGE_RASTERIZE_FAILED: 'page_rasterize_failed',
+  PDF_PASSWORD_OR_ENCRYPTED: 'pdf_password_or_encrypted',
+  PDF_TOO_LARGE: 'pdf_too_large',
+  WASM_RUNTIME_FAILED: 'wasm_runtime_failed',
+} as const;
+export type OcrRenderDiag = (typeof OCR_RENDER_DIAG)[keyof typeof OCR_RENDER_DIAG];
+
+// Etapa del render donde se produjo el fallo.
+//   init = cargar/instanciar el motor (MuPDF WASM)
+//   load = abrir el documento PDF
+//   page = rasterizar una pagina
+//   size = la imagen rasterizada excede el tamano maximo
+export type RenderStage = 'init' | 'load' | 'page' | 'size';
+
+// Mapea (etapa + mensaje de error) a un codigo de diagnostico seguro. El mensaje se
+// inspecciona solo para senales genericas (password/encrypted, memoria/wasm,
+// tamano); nunca se propaga el mensaje crudo a la respuesta.
+export function classifyRenderFailure(args: {
+  stage: RenderStage;
+  message?: string | null;
+}): OcrRenderDiag {
+  const m = (args.message ?? '').toLowerCase();
+  if (m.includes('password') || m.includes('encrypt') || m.includes('cifrad')) {
+    return OCR_RENDER_DIAG.PDF_PASSWORD_OR_ENCRYPTED;
+  }
+  const mentionsWasm =
+    m.includes('wasm') ||
+    m.includes('webassembly') ||
+    m.includes('instantiat') ||
+    m.includes('out of memory') ||
+    m.includes('memory access');
+  if (
+    m.includes('too large') ||
+    m.includes('excede') ||
+    m.includes('exceeds') ||
+    m.includes('maximo') ||
+    m.includes('max image')
+  ) {
+    return OCR_RENDER_DIAG.PDF_TOO_LARGE;
+  }
+  switch (args.stage) {
+    case 'init':
+      return mentionsWasm ? OCR_RENDER_DIAG.WASM_RUNTIME_FAILED : OCR_RENDER_DIAG.RENDERER_INIT_FAILED;
+    case 'load':
+      return OCR_RENDER_DIAG.PDF_LOAD_FAILED;
+    case 'page':
+      return mentionsWasm ? OCR_RENDER_DIAG.WASM_RUNTIME_FAILED : OCR_RENDER_DIAG.PAGE_RASTERIZE_FAILED;
+    case 'size':
+      return OCR_RENDER_DIAG.PDF_TOO_LARGE;
+    default:
+      return OCR_RENDER_DIAG.RENDERER_INIT_FAILED;
+  }
+}
+
 // Mensaje seguro y humano para el bloqueo honesto sin proveedor (SPEC 034).
 export const OCR_PROVIDER_NOT_CONFIGURED_MESSAGE =
   'OCR no disponible todavía: proveedor OCR no configurado en servidor.';
