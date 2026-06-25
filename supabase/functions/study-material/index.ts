@@ -20,12 +20,16 @@ import {
   STUDY_ERROR,
   STUDY_PROVIDER_NOT_CONFIGURED_MESSAGE,
   MAX_STUDY_UNITS_PER_MATERIAL,
+  MAX_STUDY_CHUNK_CHARS,
+  MAX_STUDY_BLOCKS_PER_MATERIAL,
   resolveStudyLimits,
   validateStudyRequest,
   STUDY_READABLE_EXTRACTION,
   evaluateStudyEligibility,
   classifyStudyDocument,
   resolveCanonicalSection,
+  chunkSectionText,
+  buildFallbackStudyUnits,
   materialHasOcrWarnings,
   resolveStudyProvider,
   STUDY_SYSTEM_PROMPT,
@@ -35,6 +39,8 @@ import {
   mapMaterialStudyStatus,
   type StudyErrorCode,
   type StudyEvidenceScope,
+  type ProviderUnit,
+  type ValidatedStudyUnit,
 } from '../_shared/material-study/contract.ts';
 
 const corsHeaders = {
@@ -354,6 +360,8 @@ Deno.serve(async (req: Request) => {
   if (runErr) return fail(STUDY_ERROR.SAVE_FAILED, 502);
 
   const warnings: string[] = [];
+  // Pistas internas de QA para diagnosticar NO_VALID_UNITS (sin secretos ni texto).
+  const qaErrors: string[] = [];
   let unitsCreated = 0;
   let studiedCount = 0;
   let hadErrors = false;
@@ -376,32 +384,46 @@ Deno.serve(async (req: Request) => {
       .order('order_index', { ascending: true });
     const secRows = (sections ?? []).filter((s) => s.material_id === material.id);
 
-    // Construye secciones consumiendo el presupuesto GLOBAL de caracteres.
-    const promptSections: { id: string; text: string }[] = [];
-    for (const s of secRows) {
-      if (totalCharBudget <= 0) break;
-      const text = ((s.content_text || s.content_excerpt) ?? '')
-        .slice(0, Math.max(0, totalCharBudget))
-        .trim();
-      if (text.length === 0) continue;
-      totalCharBudget -= text.length;
-      promptSections.push({ id: s.id, text });
-    }
+    // TROCEA cada seccion en BLOQUES manejables (no se envia una seccion de 163k
+    // como una sola fuente). Cada bloque conserva su material_section_id real
+    // (subreferencia trazable). Respeta el presupuesto GLOBAL y el tope de bloques.
+    const blocks: { section_id: string; label: string; text: string }[] = [];
+    const sectionTextById = new Map<string, string>();
+    secRows.forEach((s, sIdx) => {
+      const sectionText = ((s.content_text || s.content_excerpt) ?? '').trim();
+      if (sectionText.length === 0) return;
+      let bIdx = 0;
+      for (const chunk of chunkSectionText(sectionText, { maxChunkChars: MAX_STUDY_CHUNK_CHARS })) {
+        if (totalCharBudget <= 0 || blocks.length >= MAX_STUDY_BLOCKS_PER_MATERIAL) break;
+        const text = chunk.slice(0, Math.max(0, totalCharBudget)).trim();
+        if (text.length === 0) continue;
+        totalCharBudget -= text.length;
+        bIdx += 1;
+        blocks.push({ section_id: s.id, label: `S${sIdx + 1}-B${bIdx}`, text });
+        const prev = sectionTextById.get(s.id);
+        sectionTextById.set(s.id, prev ? `${prev}\n${text}` : text);
+      }
+    });
 
-    if (promptSections.length === 0) {
+    if (blocks.length === 0) {
       warnings.push('Un material elegible no tiene secciones activas legibles para estudiar.');
     } else {
       const scope: StudyEvidenceScope = {
         material_ids: new Set([material.id]),
-        section_texts: new Map(promptSections.map((s) => [s.id, s.text])),
+        section_texts: sectionTextById,
         reference_texts: new Map<string, string>(),
       };
+
+      // Proveedor: prompt que FUERZA material_section_id valido + source_excerpt
+      // copiado literalmente del bloque.
       let content: string | null = null;
       try {
         const userContent = [
           `material_id=${material.id}`,
-          `Maximo ${MAX_STUDY_UNITS_PER_MATERIAL} bloques. Cita siempre material_section_id de la lista.`,
-          ...promptSections.map((s) => `SECCION [material_section_id=${s.id}]\n${s.text}`),
+          `Maximo ${MAX_STUDY_UNITS_PER_MATERIAL} unidades de estudio.`,
+          'Por cada unidad: material_section_id EXACTO del bloque y source_excerpt COPIADO',
+          'LITERALMENTE de ese bloque.',
+          ...blocks.map((b) => `BLOQUE ${b.label} [material_section_id=${b.section_id}]\n${b.text}`),
         ].join('\n\n');
         const resp = await withTimeout(
           fetch('https://api.openai.com/v1/chat/completions', {
@@ -424,46 +446,82 @@ Deno.serve(async (req: Request) => {
           content = data.choices?.[0]?.message?.content ?? null;
         } else {
           hadErrors = true;
+          qaErrors.push('provider_http_error');
         }
       } catch {
-        hadErrors = true; // fallo o timeout del proveedor
+        hadErrors = true;
+        qaErrors.push('provider_exception');
       }
 
+      // Valida la salida del proveedor (puntero + excerpt anclado).
+      const validUnits: ValidatedStudyUnit[] = [];
       if (content !== null) {
         const parseRes = parseProviderUnits(content);
         if (!parseRes.ok) {
-          hadErrors = true; // salida invalida
+          hadErrors = true;
+          qaErrors.push('provider_parse_failed');
         } else {
+          let rejected = 0;
           for (const u of parseRes.units) {
-            if (materialUnits >= MAX_STUDY_UNITS_PER_MATERIAL || totalUnits >= limits.totalUnits) break;
             const v = validateStudyUnit(u, scope);
-            if (!v.ok) {
-              hadErrors = true;
-              continue;
-            }
-            const { error: uErr } = await userClient.from('material_study_units').insert({
-              id: uuid(),
-              workspace_id: request.workspace_id,
-              opposition_id: request.opposition_id,
-              run_id: runId,
-              material_id: v.value.material_id,
-              material_section_id: v.value.material_section_id,
-              source_reference_id: v.value.source_reference_id,
-              title: v.value.title,
-              summary: v.value.summary,
-              excerpt: v.value.excerpt,
-              importance: v.value.importance,
-              confidence: v.value.confidence,
-            });
-            if (uErr) {
-              hadErrors = true; // error de persistencia
-              continue;
-            }
-            materialUnits += 1;
-            unitsCreated += 1;
-            totalUnits += 1;
+            if (v.ok) validUnits.push(v.value);
+            else rejected += 1;
+          }
+          if (rejected > 0) qaErrors.push(`provider_units_rejected=${rejected}`);
+          if (parseRes.units.length > 0 && validUnits.length === 0) {
+            qaErrors.push('provider_zero_valid_units');
           }
         }
+      }
+
+      // FALLBACK DETERMINISTA SEGURO: si el proveedor no dio unidades validas, crea
+      // bloques internos desde los chunks con source_excerpt REAL (texto literal).
+      // No es un mock: es estructuracion deterministica del material, anclada a su
+      // seccion concreta. Garantiza unidades cuando hay texto real.
+      if (validUnits.length === 0) {
+        for (const b of blocks) {
+          if (validUnits.length >= MAX_STUDY_UNITS_PER_MATERIAL) break;
+          const [fb] = buildFallbackStudyUnits({
+            material_id: material.id,
+            section_id: b.section_id,
+            chunks: [b.text],
+            max: 1,
+          }) as ProviderUnit[];
+          if (!fb) continue;
+          const v = validateStudyUnit(fb, scope);
+          if (v.ok) validUnits.push(v.value);
+        }
+        if (validUnits.length > 0) {
+          warnings.push('Se prepararon bloques de estudio de forma determinista desde el texto del material.');
+          qaErrors.push('deterministic_fallback_used');
+        }
+      }
+
+      // Persiste las unidades validas (respeta topes por material y global).
+      for (const v of validUnits) {
+        if (materialUnits >= MAX_STUDY_UNITS_PER_MATERIAL || totalUnits >= limits.totalUnits) break;
+        const { error: uErr } = await userClient.from('material_study_units').insert({
+          id: uuid(),
+          workspace_id: request.workspace_id,
+          opposition_id: request.opposition_id,
+          run_id: runId,
+          material_id: v.material_id,
+          material_section_id: v.material_section_id,
+          source_reference_id: v.source_reference_id,
+          title: v.title,
+          summary: v.summary,
+          excerpt: v.excerpt,
+          importance: v.importance,
+          confidence: v.confidence,
+        });
+        if (uErr) {
+          hadErrors = true;
+          qaErrors.push('unit_persist_failed');
+          continue;
+        }
+        materialUnits += 1;
+        unitsCreated += 1;
+        totalUnits += 1;
       }
     }
 
@@ -488,13 +546,23 @@ Deno.serve(async (req: Request) => {
     studied_count: studiedCount,
     unit_count: unitsCreated,
     warnings: [...new Set(warnings)],
-    errors: [],
+    errors: [...new Set(qaErrors)],
     updated_at: new Date().toISOString(),
   }).eq('id', runId);
   if (finErr) return fail(STUDY_ERROR.SAVE_FAILED, 502);
 
   if (unitsCreated === 0) {
-    return fail(STUDY_ERROR.NO_VALID_UNITS, 422);
+    // QA: se devuelven pistas internas (sin secretos ni texto) para diagnosticar
+    // por que no se crearon unidades validas.
+    return json(
+      {
+        error: STUDY_ERROR.NO_VALID_UNITS,
+        warnings: [...new Set(warnings)],
+        errors: [...new Set(qaErrors)],
+        ineligible,
+      },
+      422,
+    );
   }
   return json({
     run_id: runId,
