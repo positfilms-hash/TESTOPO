@@ -66,6 +66,8 @@ const MESSAGES: Record<string, string> = {
   [OCR_ERROR.RENDER_FAILED]: 'No se pudo procesar el PDF del escaneo en el servidor.',
   [OCR_ERROR.PAGE_LIMIT_EXCEEDED]:
     'El documento supera el máximo de páginas admitido para OCR.',
+  [OCR_ERROR.BUDGET_EXCEEDED]:
+    'El OCR de este documento supera el presupuesto admitido. Reduce el documento o ajusta el límite.',
   [OCR_ERROR.NO_TEXT_EXTRACTED]: 'El OCR no extrajo texto utilizable del escaneo.',
   [OCR_ERROR.STORAGE_FAILED]: 'No se pudo leer el archivo original para el OCR.',
   [OCR_ERROR.SAVE_FAILED]: 'No se pudo guardar el resultado del OCR. Inténtalo de nuevo.',

@@ -112,4 +112,19 @@ describe('SPEC 034 - wrapper de OCR en servidor', () => {
     ).rejects.toBeInstanceOf(ServerOcrError);
     expect(lastInvoke).toBeNull();
   });
+
+  it('mapea el 429 de presupuesto a un mensaje seguro', async () => {
+    invokeResult = {
+      data: null,
+      error: { context: { json: async () => ({ error: 'OCR_BUDGET_EXCEEDED' }) } },
+    };
+    try {
+      await runOcrViaEdgeFunction(baseInput);
+      throw new Error('deberia rechazar');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ServerOcrError);
+      expect((e as ServerOcrError).code).toBe('OCR_BUDGET_EXCEEDED');
+      expect((e as ServerOcrError).message).toContain('presupuesto');
+    }
+  });
 });

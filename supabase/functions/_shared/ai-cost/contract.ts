@@ -163,6 +163,31 @@ export function estimateRunCostUsd(args: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 4b) Estimacion de coste de OCR por documento (SPEC 034/035). El coste de la
+//     vision/file input lo domina el numero de PAGINAS (tokens de imagen de
+//     entrada + transcripcion de salida). Aproximacion documentada; el coste REAL
+//     se calcula despues con el `usage` que devuelve el proveedor.
+// ---------------------------------------------------------------------------
+export const OCR_INPUT_TOKENS_PER_PAGE = 1200;
+export const OCR_OUTPUT_TOKENS_PER_PAGE = 700;
+
+export function estimateOcrCostUsd(args: {
+  pages: number;
+  model: string;
+  env?: { AI_PRICE_INPUT_PER_M?: string | null; AI_PRICE_OUTPUT_PER_M?: string | null };
+}): { estimatedCostUsd: number; cost_model: string } {
+  const price = resolvePrice(args.model, args.env ?? {});
+  const pages = Math.max(0, Math.floor(args.pages));
+  const inputTokens = pages * OCR_INPUT_TOKENS_PER_PAGE;
+  const outputTokens = pages * OCR_OUTPUT_TOKENS_PER_PAGE;
+  const estimatedCostUsd = estimateCostUsd(
+    { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
+    price,
+  );
+  return { estimatedCostUsd, cost_model: price.cost_model };
+}
+
 export type BudgetDecision =
   | { ok: true }
   | { ok: false; reason: 'run_cost_exceeded' | 'daily_cost_exceeded' };
