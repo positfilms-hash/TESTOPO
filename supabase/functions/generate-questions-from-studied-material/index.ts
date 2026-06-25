@@ -27,6 +27,17 @@ import {
   type ErrorMemoryRecord,
 } from '../_shared/reliability/contract.ts';
 import {
+  EMPTY_USAGE,
+  parseOpenAIUsage,
+  resolvePrice,
+  buildCostBreakdown,
+  costPerQuestion,
+  resolveCostLimits,
+  estimateRunCostUsd,
+  evaluateBudget,
+  type AiUsage,
+} from '../_shared/ai-cost/contract.ts';
+import {
   DQG_ERROR,
   DQG_PROVIDER_NOT_CONFIGURED_MESSAGE,
   resolveDirectLimits,
@@ -302,6 +313,58 @@ Deno.serve(async (req: Request) => {
     return fail(DQG_ERROR.PROVIDER_NOT_CONFIGURED, 501, DQG_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
 
+  // 6a) Presupuesto de coste de IA. Antes de llamar al proveedor: estima el coste de
+  //     este run y suma el coste de HOY de la oposicion (generacion + estudio). Si
+  //     excede el tope por run o el diario, bloquea SIN crear el run ni llamar a IA.
+  const price = resolvePrice(provider.model, {
+    AI_PRICE_INPUT_PER_M: Deno.env.get('AI_PRICE_INPUT_PER_M'),
+    AI_PRICE_OUTPUT_PER_M: Deno.env.get('AI_PRICE_OUTPUT_PER_M'),
+  });
+  const costLimits = resolveCostLimits({
+    MAX_QUESTIONS_PER_RUN: Deno.env.get('MAX_QUESTIONS_PER_RUN'),
+    MAX_COST_PER_RUN_USD: Deno.env.get('MAX_COST_PER_RUN_USD'),
+    MAX_DAILY_COST_USD: Deno.env.get('MAX_DAILY_COST_USD'),
+  });
+  const cappedQuestionCount = Math.min(questionCount, costLimits.maxQuestionsPerRun);
+  const sourceChars = promptUnits.reduce((acc, u) => acc + u.excerpt.length, 0);
+  const estimatedRunCostUsd = estimateRunCostUsd({
+    sourceChars,
+    questionCount: cappedQuestionCount,
+    price,
+  });
+  const startOfDayUtc = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z').toISOString();
+  let todayCostSoFarUsd = 0;
+  try {
+    for (const table of ['question_generation_runs', 'material_study_runs']) {
+      const { data: rows } = await userClient
+        .from(table)
+        .select('estimated_cost_usd')
+        .eq('workspace_id', request.workspace_id)
+        .eq('opposition_id', request.opposition_id)
+        .gte('created_at', startOfDayUtc);
+      for (const r of rows ?? []) {
+        const c = Number(r.estimated_cost_usd);
+        if (Number.isFinite(c) && c > 0) todayCostSoFarUsd += c;
+      }
+    }
+  } catch {
+    todayCostSoFarUsd = 0; // si no se puede sumar, no se inventa coste (best-effort).
+  }
+  const budget = evaluateBudget({ estimatedRunCostUsd, todayCostSoFarUsd, limits: costLimits });
+  if (!budget.ok) {
+    return json(
+      {
+        error: DQG_ERROR.COST_LIMIT,
+        reason: budget.reason,
+        estimated_run_cost_usd: estimatedRunCostUsd,
+        today_cost_usd: Math.round(todayCostSoFarUsd * 1e6) / 1e6,
+        max_cost_per_run_usd: costLimits.maxCostPerRunUsd,
+        max_daily_cost_usd: costLimits.maxDailyCostUsd,
+      },
+      429,
+    );
+  }
+
   // 6b) SPEC 040: memoria de errores AISLADA (mismo workspace + oposicion). Se lee
   //     con el cliente del usuario (RLS de gestion); se SELECCIONA y ACOTA en el
   //     contrato puro (≤10 entradas / ≤3000 chars) y se inyecta como bloque de
@@ -335,6 +398,9 @@ Deno.serve(async (req: Request) => {
   //    `runDirectGeneration`; aqui solo el adaptador de Supabase.
   const now = new Date().toISOString();
   const runId = uuid();
+  // Uso/coste real del proveedor en este run (se rellena tras la llamada a OpenAI y
+  // se persiste en finalizeRun). Sin secretos ni texto: solo tokens.
+  let runUsage: AiUsage = EMPTY_USAGE;
   const scope: DirectEvidenceScope = {
     material_ids: scopeMaterialIds,
     unit_ids: scopeUnitIds,
@@ -364,7 +430,7 @@ Deno.serve(async (req: Request) => {
         topic_id: null,
         material_study_run_id: studyRunId,
         mode: 'studied_material',
-        requested_count: questionCount,
+        requested_count: cappedQuestionCount,
         created_count: 0,
         status: 'failed', // placeholder honesto (CHECK 023: completed/partial/failed)
         errors: [],
@@ -428,9 +494,20 @@ Deno.serve(async (req: Request) => {
       // La trazabilidad de la evidencia usada va en cada pregunta
       // (material_study_unit_id) y en el enlace run -> estudio
       // (material_study_run_id); no se sobrecarga ninguna columna ajena.
+      // Coste de IA del run (tokens + estimacion; sin prompts ni texto).
+      const cost = buildCostBreakdown(runUsage, price);
       const { error } = await userClient
         .from('question_generation_runs')
-        .update({ status, created_count: createdCount, errors: errs })
+        .update({
+          status,
+          created_count: createdCount,
+          errors: errs,
+          input_tokens: cost.input_tokens,
+          output_tokens: cost.output_tokens,
+          total_tokens: cost.total_tokens,
+          estimated_cost_usd: cost.estimated_cost_usd,
+          cost_model: cost.cost_model,
+        })
         .eq('id', runId);
       return !error;
     },
@@ -438,7 +515,7 @@ Deno.serve(async (req: Request) => {
 
   const result = await runDirectGeneration({
     port,
-    requested: questionCount,
+    requested: cappedQuestionCount,
     produce: async () => {
       let content: string | null = null;
       try {
@@ -452,7 +529,7 @@ Deno.serve(async (req: Request) => {
             buildOpenAIRequest({
               model: provider.model,
               difficulty: request.difficulty,
-              question_count: questionCount,
+              question_count: cappedQuestionCount,
               units: promptUnits,
               avoidBlock,
             }),
@@ -481,7 +558,12 @@ Deno.serve(async (req: Request) => {
             provider_code: info.provider_code,
           };
         }
-        const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+        const data = (await resp.json()) as {
+          choices?: { message?: { content?: string } }[];
+          usage?: unknown;
+        };
+        // Coste de IA: captura el uso de tokens del proveedor (sin secretos/texto).
+        runUsage = parseOpenAIUsage(data.usage);
         content = data.choices?.[0]?.message?.content ?? null;
       } catch (err) {
         // Timeout (withTimeout rechaza con Error('timeout')) vs error de red.
@@ -517,11 +599,20 @@ Deno.serve(async (req: Request) => {
     }
     return fail(result.code as DqgErrorCode, result.httpStatus);
   }
+  const runCost = buildCostBreakdown(runUsage, price);
   return json({
     run_id: runId,
     study_run_id: studyRunId,
     created: result.created,
-    requested: questionCount,
+    requested: cappedQuestionCount,
     warnings: [...new Set(warnings)],
+    cost: {
+      input_tokens: runUsage.input_tokens,
+      output_tokens: runUsage.output_tokens,
+      total_tokens: runUsage.total_tokens,
+      estimated_cost_usd: runCost.estimated_cost_usd,
+      cost_model: runCost.cost_model,
+      cost_per_question_usd: costPerQuestion(runCost.estimated_cost_usd, result.created),
+    },
   });
 });

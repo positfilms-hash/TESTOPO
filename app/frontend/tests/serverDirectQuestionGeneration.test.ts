@@ -84,6 +84,35 @@ describe('SPEC 039 - wrapper de generacion directa desde material estudiado', ()
     expect(body.material_study_run_id).toBe('run-9');
   });
 
+  it('expone el coste de IA del run cuando viene en la respuesta', async () => {
+    invokeResult = {
+      data: {
+        run_id: 'r1', created: 4, requested: 5, warnings: [],
+        cost: { input_tokens: 1000, output_tokens: 900, total_tokens: 1900, estimated_cost_usd: 0.00069, cost_model: 'gpt-4o-mini@table', cost_per_question_usd: 0.0001725 },
+      },
+      error: null,
+    };
+    const summary = await generateFromStudiedMaterialViaEdgeFunction(baseInput);
+    expect(summary.cost).toMatchObject({ total_tokens: 1900, estimated_cost_usd: 0.00069, cost_model: 'gpt-4o-mini@table' });
+    expect(summary.cost?.cost_per_question_usd).toBe(0.0001725);
+  });
+
+  it('sin coste en la respuesta -> cost null', async () => {
+    invokeResult = { data: { created: 1 }, error: null };
+    const summary = await generateFromStudiedMaterialViaEdgeFunction(baseInput);
+    expect(summary.cost).toBeNull();
+  });
+
+  it('mapea el limite de coste (DIRECT_QG_COST_LIMIT) a un mensaje seguro', async () => {
+    invokeResult = {
+      data: null,
+      error: { context: { json: async () => ({ error: 'DIRECT_QG_COST_LIMIT', reason: 'daily_cost_exceeded' }) } },
+    };
+    await expect(generateFromStudiedMaterialViaEdgeFunction(baseInput)).rejects.toMatchObject({
+      code: 'DIRECT_QG_COST_LIMIT',
+    });
+  });
+
   it('mapea el 501 sin proveedor a un mensaje seguro', async () => {
     invokeResult = {
       data: null,
