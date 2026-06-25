@@ -195,6 +195,16 @@ export function GenerateFromStudiedMaterialPanel({
           {summary.warnings.length > 0 && (
             <p className="muted small">{summary.warnings[0]}</p>
           )}
+          {summary.cost && (
+            <p className="muted small">
+              Coste estimado IA: ${summary.cost.estimated_cost_usd.toFixed(4)} ·{' '}
+              {summary.cost.total_tokens} tokens
+              {summary.cost.cost_per_question_usd != null
+                ? ` · $${summary.cost.cost_per_question_usd.toFixed(4)}/pregunta`
+                : ''}{' '}
+              ({summary.cost.cost_model})
+            </p>
+          )}
           <div className="row">
             {onNavigate && summary.created > 0 && (
               <Button onClick={() => onNavigate('preguntas')}>Ir a revisar</Button>

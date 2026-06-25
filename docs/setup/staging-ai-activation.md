@@ -47,6 +47,13 @@ MAX_QUESTION_SOURCE_CHARS=20000
 OCR_MAX_PAGES_PER_DOCUMENT=300
 OCR_MAX_CONCURRENT_PAGES=3
 OCR_PAGE_TIMEOUT_SECONDS=60
+# Tracking/limite de coste de IA (opcionales; los limites solo pueden REDUCIR).
+# Requiere aplicar la migracion 039 (columnas de coste en las tablas de run).
+AI_PRICE_INPUT_PER_M=0.15        # USD por 1M tokens de entrada (override de la tabla)
+AI_PRICE_OUTPUT_PER_M=0.60       # USD por 1M tokens de salida
+MAX_QUESTIONS_PER_RUN=20
+MAX_COST_PER_RUN_USD=0.5
+MAX_DAILY_COST_USD=5.0           # por workspace+oposicion (suma generacion + estudio)
 ```
 
 Notas sobre los límites (SPEC 035):

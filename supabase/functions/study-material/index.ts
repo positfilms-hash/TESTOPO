@@ -17,6 +17,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { evaluateManagementAccess } from '../_shared/authz/management.ts';
 import {
+  EMPTY_USAGE,
+  parseOpenAIUsage,
+  addUsage,
+  resolvePrice,
+  buildCostBreakdown,
+  type AiUsage,
+} from '../_shared/ai-cost/contract.ts';
+import {
   STUDY_ERROR,
   STUDY_PROVIDER_NOT_CONFIGURED_MESSAGE,
   MAX_STUDY_UNITS_PER_MATERIAL,
@@ -362,6 +370,12 @@ Deno.serve(async (req: Request) => {
   const warnings: string[] = [];
   // Pistas internas de QA para diagnosticar NO_VALID_UNITS (sin secretos ni texto).
   const qaErrors: string[] = [];
+  // Coste de IA del run (acumulado entre llamadas por material). Solo tokens.
+  let totalUsage: AiUsage = EMPTY_USAGE;
+  const price = resolvePrice(provider.model, {
+    AI_PRICE_INPUT_PER_M: Deno.env.get('AI_PRICE_INPUT_PER_M'),
+    AI_PRICE_OUTPUT_PER_M: Deno.env.get('AI_PRICE_OUTPUT_PER_M'),
+  });
   let unitsCreated = 0;
   let studiedCount = 0;
   let hadErrors = false;
@@ -442,8 +456,13 @@ Deno.serve(async (req: Request) => {
           limits.perCallTimeoutMs,
         );
         if (resp.ok) {
-          const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+          const data = (await resp.json()) as {
+            choices?: { message?: { content?: string } }[];
+            usage?: unknown;
+          };
           content = data.choices?.[0]?.message?.content ?? null;
+          // Coste de IA: acumula el uso de tokens del proveedor (sin secretos/texto).
+          totalUsage = addUsage(totalUsage, parseOpenAIUsage(data.usage));
         } else {
           hadErrors = true;
           qaErrors.push('provider_http_error');
@@ -541,12 +560,18 @@ Deno.serve(async (req: Request) => {
     hadErrors,
     hadWarnings: warnings.length > 0,
   });
+  const cost = buildCostBreakdown(totalUsage, price);
   const { error: finErr } = await userClient.from('material_study_runs').update({
     status: runStatus,
     studied_count: studiedCount,
     unit_count: unitsCreated,
     warnings: [...new Set(warnings)],
     errors: [...new Set(qaErrors)],
+    input_tokens: cost.input_tokens,
+    output_tokens: cost.output_tokens,
+    total_tokens: cost.total_tokens,
+    estimated_cost_usd: cost.estimated_cost_usd,
+    cost_model: cost.cost_model,
     updated_at: new Date().toISOString(),
   }).eq('id', runId);
   if (finErr) return fail(STUDY_ERROR.SAVE_FAILED, 502);
@@ -571,5 +596,12 @@ Deno.serve(async (req: Request) => {
     units: unitsCreated,
     warnings: [...new Set(warnings)],
     ineligible,
+    cost: {
+      input_tokens: cost.input_tokens,
+      output_tokens: cost.output_tokens,
+      total_tokens: cost.total_tokens,
+      estimated_cost_usd: cost.estimated_cost_usd,
+      cost_model: cost.cost_model,
+    },
   });
 });

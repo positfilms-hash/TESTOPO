@@ -34,6 +34,8 @@ export const DQG_ERROR = {
   INVALID_OUTPUT: 'DIRECT_QG_INVALID_OUTPUT',
   NO_VALID_CANDIDATES: 'DIRECT_QG_NO_VALID_CANDIDATES',
   SAVE_FAILED: 'DIRECT_QG_SAVE_FAILED',
+  // Presupuesto de coste de IA excedido (por run o diario por workspace+oposicion).
+  COST_LIMIT: 'DIRECT_QG_COST_LIMIT',
   INVALID_REQUEST: 'DIRECT_QG_INVALID_REQUEST',
 } as const;
 

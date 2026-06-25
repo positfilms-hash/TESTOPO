@@ -40,6 +40,15 @@ export interface ServerDirectGenerationSummary {
   created: number;
   requested: number;
   warnings: string[];
+  /** Coste estimado de IA del run (tokens + USD), para QA/admin. */
+  cost: ServerDirectGenerationCost | null;
+}
+
+export interface ServerDirectGenerationCost {
+  total_tokens: number;
+  estimated_cost_usd: number;
+  cost_model: string;
+  cost_per_question_usd: number | null;
 }
 
 export class ServerDirectGenerationError extends Error {
@@ -73,6 +82,8 @@ const MESSAGES: Record<string, string> = {
   [DQG_ERROR.INVALID_OUTPUT]:
     'La respuesta del generador no era válida. No se ha creado ninguna candidata.',
   [DQG_ERROR.SAVE_FAILED]: 'No se pudieron guardar las candidatas. Inténtalo de nuevo.',
+  [DQG_ERROR.COST_LIMIT]:
+    'Se alcanzó el límite de coste de IA (por run o diario de esta oposición). Inténtalo más tarde o ajusta el presupuesto.',
   [DQG_ERROR.INVALID_REQUEST]: 'Petición no válida.',
 };
 
@@ -126,6 +137,22 @@ export async function generateFromStudiedMaterialViaEdgeFunction(
     created: typeof summary.created === 'number' ? summary.created : 0,
     requested: typeof summary.requested === 'number' ? summary.requested : input.question_count,
     warnings: Array.isArray(summary.warnings) ? summary.warnings.map(String) : [],
+    cost: normalizeCost((data ?? {}) as { cost?: unknown }),
+  };
+}
+
+function normalizeCost(data: { cost?: unknown }): ServerDirectGenerationCost | null {
+  const c = data.cost;
+  if (!c || typeof c !== 'object') return null;
+  const o = c as Record<string, unknown>;
+  const usd = Number(o.estimated_cost_usd);
+  if (!Number.isFinite(usd)) return null;
+  const cpq = Number(o.cost_per_question_usd);
+  return {
+    total_tokens: Number.isFinite(Number(o.total_tokens)) ? Number(o.total_tokens) : 0,
+    estimated_cost_usd: usd,
+    cost_model: typeof o.cost_model === 'string' ? o.cost_model : 'unknown',
+    cost_per_question_usd: Number.isFinite(cpq) ? cpq : null,
   };
 }
 
