@@ -51,10 +51,13 @@ describe('SPEC 038 - StudyMaterialPanel: estado persistente', () => {
 });
 
 describe('SPEC 039 - GenerateFromStudiedMaterialPanel', () => {
-  it('con material estudiado ofrece generar (alcance + boton)', () => {
+  it('con material estudiado ofrece generar y NO redirige a estudiar', () => {
     render(<GenerateFromStudiedMaterialPanel materials={[material()]} />);
     expect(screen.getByRole('button', { name: 'Generar preguntas' })).toBeInTheDocument();
     expect(screen.getByText('Todo el material estudiado')).toBeInTheDocument();
+    // NO debe pedir estudiar primero cuando study_status ya es studied (era el bug
+    // del mapper: la UI no veia study_status y redirigia a estudiar).
+    expect(screen.queryByText('Primero estudia el material.')).toBeNull();
   });
 
   it('sin material estudiado muestra bloqueo claro "Primero estudia el material"', () => {

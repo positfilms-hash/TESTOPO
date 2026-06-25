@@ -76,6 +76,36 @@ describe('SPEC 022 - SupabaseMaterialRepository', () => {
     const obsoleted = await repo.save({ ...makeMaterial('m1'), status: 'obsolete' });
     expect(obsoleted.status).toBe('obsolete');
   });
+
+  it('SPEC 038: mapea study_status fila<->modelo (era el bug: la UI no veia studied)', async () => {
+    const repo = new SupabaseMaterialRepository(new InMemorySupabasePort());
+    await repo.create(makeMaterial('ms', { study_status: 'studied' }));
+    expect((await repo.findById('ms'))?.study_status).toBe('studied');
+
+    // studied_with_warnings tambien round-trip.
+    const saved = await repo.save({ ...makeMaterial('ms'), study_status: 'studied_with_warnings' });
+    expect(saved.study_status).toBe('studied_with_warnings');
+    expect((await repo.findById('ms'))?.study_status).toBe('studied_with_warnings');
+  });
+
+  it('SPEC 022/038: persiste workspace_id resuelto desde la oposicion al crear', async () => {
+    const port = new InMemorySupabasePort();
+    const repo = new SupabaseMaterialRepository(port);
+    await port.table('oppositions').insert({ id: 'op-ws', workspace_id: 'ws-9' });
+
+    // El material no trae workspace_id -> se resuelve desde opposition.workspace_id.
+    const created = await repo.create(makeMaterial('mw', { opposition_id: 'op-ws' }));
+    expect(created.workspace_id).toBe('ws-9');
+    expect((await repo.findById('mw'))?.workspace_id).toBe('ws-9');
+  });
+
+  it('respeta un workspace_id explicito del material (no lo sobreescribe)', async () => {
+    const port = new InMemorySupabasePort();
+    const repo = new SupabaseMaterialRepository(port);
+    await port.table('oppositions').insert({ id: 'op-ws', workspace_id: 'ws-9' });
+    const created = await repo.create(makeMaterial('mx', { opposition_id: 'op-ws', workspace_id: 'ws-explicit' }));
+    expect(created.workspace_id).toBe('ws-explicit');
+  });
 });
 
 describe('SPEC 022 - SupabaseTopicRepository', () => {

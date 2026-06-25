@@ -23,8 +23,24 @@ export class SupabaseMaterialRepository implements MaterialRepository {
   constructor(private readonly port: SupabaseClientPort) {}
 
   async create(material: Material): Promise<Material> {
-    const row = await this.port.table(TABLE).insert(toRow(material));
-    return toMaterial(row);
+    const row = toRow(material);
+    // SPEC 022/038: persistir workspace_id. Si el material no lo trae, se resuelve
+    // desde la oposicion (opposition.workspace_id) para que el estudio/generacion en
+    // servidor (que FILTRAN por workspace_id) vean el material. Best-effort: no
+    // rompe la creacion si no se puede resolver.
+    if (!row.workspace_id && material.opposition_id) {
+      try {
+        const opps = await this.port
+          .table('oppositions')
+          .selectMatch({ id: material.opposition_id });
+        const ws = opps[0]?.workspace_id;
+        if (typeof ws === 'string' && ws.length > 0) row.workspace_id = ws;
+      } catch {
+        // resolucion best-effort; el material se crea igualmente.
+      }
+    }
+    const inserted = await this.port.table(TABLE).insert(row);
+    return toMaterial(inserted);
   }
 
   async findAll(filter: MaterialFilter = {}): Promise<Material[]> {
@@ -62,6 +78,7 @@ function toRow(m: Material): SupabaseRow {
   return {
     id: m.id,
     opposition_id: m.opposition_id,
+    workspace_id: m.workspace_id ?? null,
     title: m.title,
     description: m.description,
     type: m.type,
@@ -78,6 +95,9 @@ function toRow(m: Material): SupabaseRow {
     page_count: m.page_count ?? null,
     // SPEC 030: metadata OCR.
     extraction_method: m.extraction_method ?? null,
+    // SPEC 038: estado de estudio interno (lo que la UI usa para saber si ya hay
+    // material estudiado). Se persiste si el modelo lo trae.
+    study_status: m.study_status ?? null,
     ocr_status: m.ocr_status ?? null,
     ocr_confidence: m.ocr_confidence ?? null,
     ocr_page_count: m.ocr_page_count ?? null,
@@ -94,6 +114,7 @@ function toMaterial(row: SupabaseRow): Material {
   return {
     id: String(row.id),
     opposition_id: String(row.opposition_id ?? ''),
+    workspace_id: asNullableString(row.workspace_id),
     title: String(row.title ?? ''),
     description: asNullableString(row.description),
     type: row.type as MaterialType,
@@ -110,6 +131,7 @@ function toMaterial(row: SupabaseRow): Material {
     page_count: asNullableNumber(row.page_count),
     extraction_method:
       (row.extraction_method as Material['extraction_method']) ?? null,
+    study_status: (row.study_status as Material['study_status']) ?? null,
     ocr_status: asNullableString(row.ocr_status),
     ocr_confidence: asNullableNumber(row.ocr_confidence),
     ocr_page_count: asNullableNumber(row.ocr_page_count),
