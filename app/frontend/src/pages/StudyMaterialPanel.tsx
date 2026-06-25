@@ -30,6 +30,9 @@ const PROCESSING_STATUSES = new Set([
   'scanned_detected',
 ]);
 
+// Estados de study_status que cuentan como "material estudiado" (persistente).
+const STUDIED_STATUSES = new Set(['studied', 'studied_with_warnings']);
+
 type StudyState = 'no_material' | 'reading' | 'ready' | 'studying' | 'studied' | 'failed';
 
 export function StudyMaterialPanel({
@@ -51,6 +54,15 @@ export function StudyMaterialPanel({
   );
   const reading = materials.filter((m) => PROCESSING_STATUSES.has(m.extraction_status ?? ''));
   const ocrWarnings = eligible.some((m) => extractionHasOcrWarnings(m.extraction_status));
+  // SPEC 038: estado PERSISTENTE. Un material queda `studied`/`studied_with_warnings`
+  // en la BD tras estudiarlo; el panel debe mostrar verde al recargar (no solo
+  // cuando hay un `summary` local de esta sesion).
+  const studiedMaterials = eligible.filter((m) => STUDIED_STATUSES.has(m.study_status ?? ''));
+  const notYetStudied = eligible.filter((m) => !STUDIED_STATUSES.has(m.study_status ?? ''));
+  const persistedStudied = studiedMaterials.length > 0 && notYetStudied.length === 0;
+  const persistedWarnings = studiedMaterials.some(
+    (m) => (m.study_status ?? '') === 'studied_with_warnings',
+  );
 
   // Estado derivado (sin porcentajes falsos).
   let state: StudyState;
@@ -59,6 +71,7 @@ export function StudyMaterialPanel({
   else if (materials.length === 0) state = 'no_material';
   else if (eligible.length === 0 && reading.length > 0) state = 'reading';
   else if (eligible.length === 0) state = 'no_material';
+  else if (persistedStudied) state = 'studied'; // verde persistente desde study_status
   else state = 'ready';
 
   const study = async () => {
@@ -170,22 +183,34 @@ export function StudyMaterialPanel({
         </div>
       )}
 
-      {state === 'studied' && summary && (
+      {state === 'studied' && (
         <div className="card" style={{ textAlign: 'center' }}>
           <p>
-            <strong>Material estudiado</strong>
+            <strong>✓ Material estudiado</strong>
           </p>
-          <p className="muted">
-            {summary.studied}/{summary.materials} documento(s) preparado(s) ·{' '}
-            {summary.units} bloque(s) de estudio
-            {summary.warnings.length > 0 ? ` · ${summary.warnings.length} aviso(s)` : ''}.
-          </p>
-          {summary.warnings.length > 0 && (
+          {summary ? (
+            <p className="muted">
+              {summary.studied}/{summary.materials} documento(s) preparado(s) ·{' '}
+              {summary.units} bloque(s) de estudio
+              {summary.warnings.length > 0 ? ` · ${summary.warnings.length} aviso(s)` : ''}.
+            </p>
+          ) : (
+            <p className="muted">
+              {studiedMaterials.length} documento(s) estudiado(s) y listos para generar preguntas
+              {persistedWarnings ? ' (con avisos)' : ''}.
+            </p>
+          )}
+          {summary && summary.warnings.length > 0 && (
             <p className="muted small">{summary.warnings[0]}</p>
           )}
-          <Button variant="secondary" onClick={study}>
-            Volver a estudiar
-          </Button>
+          <div className="row" style={{ justifyContent: 'center' }}>
+            {onNavigate && (
+              <Button onClick={() => onNavigate('preguntas')}>Generar preguntas</Button>
+            )}
+            <Button variant="secondary" onClick={study}>
+              Volver a estudiar
+            </Button>
+          </div>
         </div>
       )}
 

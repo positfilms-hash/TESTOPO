@@ -96,10 +96,18 @@ export function GenerateFromStudiedMaterialPanel({
       {error && <div className="notice error">{error}</div>}
 
       {state === 'no_studied' && (
-        <p className="muted">
-          Cuando tu material esté estudiado podrás generar preguntas aquí. Estudia el
-          material primero (arriba).
-        </p>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>
+            <strong>Primero estudia el material.</strong>
+          </p>
+          <p className="muted small">
+            La generación de preguntas parte del material ya estudiado. Ve a Temario /
+            Análisis, pulsa “Estudiar material” y vuelve aquí.
+          </p>
+          {onNavigate && (
+            <Button onClick={() => onNavigate('temario')}>Ir a estudiar material</Button>
+          )}
+        </div>
       )}
 
       {(state === 'ready' || state === 'generating') && (

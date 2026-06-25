@@ -12,6 +12,8 @@ import {
   type Topic,
 } from '@backend';
 import { useStore } from '../store/StoreContext.js';
+import type { Section } from '../components/AppLayout.js';
+import { GenerateFromStudiedMaterialPanel } from './GenerateFromStudiedMaterialPanel.js';
 import {
   shouldUseServerGeneration,
   generateQuestionsViaEdgeFunction,
@@ -36,7 +38,9 @@ type View =
   | { kind: 'list' }
   | { kind: 'review'; id: string }
   | { kind: 'generate' }
-  // SPEC 028-E: generar candidatas desde un tema aplicado y sus fuentes.
+  // SPEC 039: flujo PRINCIPAL del MVP: generar desde material estudiado (sin tema).
+  | { kind: 'generate-studied' }
+  // SPEC 028-E (legacy/secundario): generar desde un tema aplicado y sus fuentes.
   | { kind: 'generate-grounded' };
 
 const PENDING = ['draft', 'pending_review', 'needs_fix'];
@@ -63,11 +67,14 @@ const REASON_OPTIONS: { type: FeedbackType; label: string }[] = [
   { type: 'other', label: 'Otro' },
 ];
 
-export function QuestionsPage() {
+export function QuestionsPage({ onNavigate }: { onNavigate?: (section: Section) => void }) {
   const [view, setView] = useState<View>({ kind: 'list' });
 
   if (view.kind === 'review') {
     return <QuestionReview id={view.id} onBack={() => setView({ kind: 'list' })} />;
+  }
+  if (view.kind === 'generate-studied') {
+    return <GenerateStudiedView onBack={() => setView({ kind: 'list' })} onNavigate={onNavigate} />;
   }
   if (view.kind === 'generate') {
     return <GenerateForm onBack={() => setView({ kind: 'list' })} />;
@@ -78,18 +85,56 @@ export function QuestionsPage() {
   return (
     <QuestionsList
       onReview={(id) => setView({ kind: 'review', id })}
+      onGenerateStudied={() => setView({ kind: 'generate-studied' })}
       onGenerate={() => setView({ kind: 'generate' })}
       onGenerateGrounded={() => setView({ kind: 'generate-grounded' })}
     />
   );
 }
 
+// SPEC 039: vista PRINCIPAL del MVP. Genera preguntas directamente desde el material
+// ESTUDIADO (sin tema, sin topic_id, sin indice visible). Reusa el panel directo.
+function GenerateStudiedView({
+  onBack,
+  onNavigate,
+}: {
+  onBack: () => void;
+  onNavigate?: (section: Section) => void;
+}) {
+  const { store, currentUser, currentOpposition, version } = useStore();
+  const [materials, setMaterials] = useState<Material[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser || !currentOpposition?.id) return;
+    void store.platform.listMaterials(currentUser, currentOpposition.id).then((m) => {
+      if (!cancelled) setMaterials(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, currentUser, currentOpposition, version]);
+
+  return (
+    <div>
+      <div className="row spread" style={{ marginBottom: 8 }}>
+        <span />
+        <Button variant="secondary" onClick={onBack}>
+          Volver
+        </Button>
+      </div>
+      <GenerateFromStudiedMaterialPanel materials={materials} onNavigate={onNavigate} />
+    </div>
+  );
+}
+
 function QuestionsList({
   onReview,
+  onGenerateStudied,
   onGenerate,
   onGenerateGrounded,
 }: {
   onReview: (id: string) => void;
+  onGenerateStudied: () => void;
   onGenerate: () => void;
   onGenerateGrounded: () => void;
 }) {
@@ -133,12 +178,7 @@ function QuestionsList({
         title="Preguntas"
         subtitle="Revisa y aprueba las preguntas del banco."
         action={
-          <div className="row">
-            <Button onClick={onGenerateGrounded}>Generar desde tema</Button>
-            <Button variant="secondary" onClick={onGenerate}>
-              Generar desde fragmento
-            </Button>
-          </div>
+          <Button onClick={onGenerateStudied}>Generar preguntas desde material estudiado</Button>
         }
       />
       <div className="tabs">
@@ -163,6 +203,23 @@ function QuestionsList({
             : ''}
         </p>
       )}
+
+      {/* SPEC 039: el flujo principal del MVP es "desde material estudiado" (arriba).
+          Los generadores por tema/fragmento quedan como LEGACY/secundario, no como
+          camino principal. */}
+      <details style={{ marginTop: 8, marginBottom: 8 }}>
+        <summary className="muted small" style={{ cursor: 'pointer' }}>
+          Otros generadores (avanzado)
+        </summary>
+        <div className="row" style={{ marginTop: 8 }}>
+          <Button variant="secondary" small onClick={onGenerateGrounded}>
+            Generar desde tema (legacy)
+          </Button>
+          <Button variant="secondary" small onClick={onGenerate}>
+            Generar desde fragmento
+          </Button>
+        </div>
+      </details>
 
       {questions.length === 0 ? (
         <EmptyState
