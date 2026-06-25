@@ -109,13 +109,24 @@ candidatas completamente persistidas.
 
 ## Frontend
 
-En Temario/Análisis, tras el estudio, el panel `GenerateFromStudiedMaterialPanel`
-ofrece **Generar preguntas** (alcance: todo el material estudiado o un documento;
-cantidad; dificultad), progreso honesto, bloqueos comprensibles y un resumen con
-enlace a revisión. En modo Supabase invoca la Edge Function
-(`serverDirectQuestionGeneration`); en **InMemory/demo** NO se aparenta generación
-real: avisa de que el flujo directo vive en servidor (fallback explícito de
-desarrollo). El alumno no ve este panel.
+El panel `GenerateFromStudiedMaterialPanel` ofrece **Generar preguntas** (alcance:
+todo el material estudiado o un documento; cantidad; dificultad), progreso honesto,
+bloqueos comprensibles y un resumen con enlace a revisión. En modo Supabase invoca la
+Edge Function (`serverDirectQuestionGeneration`, **sin `topic_id`**); en
+**InMemory/demo** NO se aparenta generación real: avisa de que el flujo directo vive
+en servidor (fallback explícito de desarrollo). El alumno no ve este panel.
+
+**MVP: este es el flujo PRINCIPAL.** En **Preguntas**, el CTA principal es
+**“Generar preguntas desde material estudiado”** (abre el panel anterior). El flujo
+por tema (`Generar desde tema`, SPEC 028-E) y el de fragmento quedan como
+**generadores legacy/secundarios** dentro de un desplegable “Otros generadores
+(avanzado)”: no dependen de él el camino MVP ni piden tema/índice. Si no hay material
+estudiado, el panel muestra **“Primero estudia el material”** y enlaza a Temario.
+
+El estado de estudio es **persistente**: `StudyMaterialPanel` muestra “✓ Material
+estudiado” cuando los materiales tienen `study_status` `studied`/`studied_with_warnings`
+(no sólo cuando hay un resumen local de la sesión), y ofrece pasar directamente a
+generar preguntas.
 
 ## Fuera de alcance
 

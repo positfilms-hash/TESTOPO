@@ -138,7 +138,7 @@ function AppShell({
           )}
           {section === 'material' && <MaterialPage isAdmin={isAdminZone} />}
           {section === 'temario' && isAdminZone && <TopicPage onNavigate={navigate} />}
-          {section === 'preguntas' && isAdminZone && <QuestionsPage />}
+          {section === 'preguntas' && isAdminZone && <QuestionsPage onNavigate={navigate} />}
           {section === 'ia' && isAdminZone && <OppositionAIPanel />}
           {section === 'alumnos' && isAdminZone && <AlumnosPage />}
           {section === 'tests' && <TestsPage />}
