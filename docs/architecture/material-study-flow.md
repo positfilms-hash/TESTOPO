@@ -96,23 +96,46 @@ irrelevante/no-analizable/ambiguo no corregido. Los exámenes antiguos solo apor
 estilo; nunca son unidad factual. (Misma regla autoritativa que SPEC 037/
 `generate-questions`.)
 
+### Sección/fuente canónica desde `content_text` (fix staging)
+
+Un material **legible** (`completed`) puede no tener `material_sections` (la
+sección 028-C nunca corrió) pero **sí** tener el texto extraído en
+`materials.content_text` (`active_sections=0` pero `content_text` no vacío). Antes la
+Edge Function solo leía `material_sections`, así que la auto-clasificación recibía
+**vacío** y el material caía en `NO_ELIGIBLE_MATERIAL`.
+
+Ahora, **antes** de clasificar/estudiar, la función comprueba si cada material
+legible tiene secciones activas; si no, lee **exclusivamente en servidor**
+`materials.content_text` y crea internamente una **sección canónica** trazable
+(`resolveCanonicalSection`: una `material_section` `study_content` con el texto del
+documento). La clasificación y el estudio operan sobre esa sección, y las **unidades
+quedan ancladas a ella** (`material_section_id`), de modo que SPEC 039 genera
+preguntas con evidencia concreta. **Nunca** usa texto enviado por el frontend.
+
+- Si `content_text` falta pese a `completed` (ni secciones ni texto) → motivo honesto
+  y específico `material_completed_without_text` (no se estudia).
+- Errores de **lectura/escritura** de la sección canónica o de la clasificación **no
+  se silencian**: la función devuelve un bloqueo trazable
+  `MATERIAL_STUDY_PREP_FAILED` (502).
+
 ### Autosuficiencia: clasificación interna (fix staging)
 
 "Estudiar material" **no depende** de que el usuario haya ejecutado antes
 "Analizar material" ni un índice/temario. Si un material **legible** no tiene
 `document_classifications`, la Edge Function lo clasifica **internamente** con la
 heurística determinista `classifyStudyDocument` (señales de texto/nombre; **no es un
-mock de IA**) usando el texto recuperado **en servidor** de sus secciones, y
-**persiste** una fila `document_classifications` trazable (run interno
-`document_understanding_runs` provider `heuristic`). Se respetan las clasificaciones
-existentes (manuales o previas). **Fail-closed:** si la heurística no produce una
-clase primaria con confianza (`confidence ≥ 0.75` y clase no
+mock de IA**) usando el texto recuperado **en servidor** de sus secciones (incluida la
+sección canónica anterior), y **persiste** una fila `document_classifications`
+trazable (run interno `document_understanding_runs` provider `heuristic`). Se respetan
+las clasificaciones existentes (manuales o previas). **Fail-closed:** si la heurística
+no produce una clase primaria con confianza (`confidence ≥ 0.75` y clase no
 ambigua/irrelevante/no-analizable), el material **no** se estudia.
 
 Cuando un material legible no resulta elegible, la respuesta incluye `ineligible`
 con el **motivo exacto** por material (`material_obsolete`, `material_not_readable`,
 `classification_unresolved`, `classification_needs_review`,
-`classification_not_primary`) para que la UI lo explique. El filtro del frontend
+`classification_not_primary`, `material_completed_without_text`) para que la UI lo
+explique. El filtro del frontend
 (`StudyMaterialPanel`) usa el mismo conjunto de extracción legible que el servidor
 (`USABLE_EXTRACTION_STATUSES` = `STUDY_READABLE_EXTRACTION`) y muestra esos motivos:
 ya no puede mostrar "1 documento listo" y recibir `NO_ELIGIBLE_MATERIAL` sin
