@@ -25,6 +25,7 @@ import {
   STUDY_READABLE_EXTRACTION,
   evaluateStudyEligibility,
   classifyStudyDocument,
+  resolveCanonicalSection,
   materialHasOcrWarnings,
   resolveStudyProvider,
   STUDY_SYSTEM_PROMPT,
@@ -130,7 +131,7 @@ Deno.serve(async (req: Request) => {
   // 4) Materiales del scope + su clasificacion efectiva (la mas reciente por material).
   const { data: materials } = await userClient
     .from('materials')
-    .select('id, workspace_id, opposition_id, status, extraction_status, study_status, title')
+    .select('id, workspace_id, opposition_id, status, extraction_status, study_status, title, content_text')
     .eq('opposition_id', request.opposition_id)
     .limit(limits.maxMaterials);
   const matRows = (materials ?? []).filter((m) => m.workspace_id === request.workspace_id);
@@ -157,7 +158,71 @@ Deno.serve(async (req: Request) => {
   const readableCandidates = matRows.filter(
     (m) => m.status !== 'obsolete' && STUDY_READABLE_EXTRACTION.has(m.extraction_status ?? ''),
   );
-  const unclassified = readableCandidates.filter((m) => !classByMaterial.has(m.id));
+
+  // 4a) SECCION CANONICA (SPEC 038 fix staging): un material legible puede no tener
+  // material_sections (la seccion 028-C nunca corrio) pero SI tener texto en
+  // materials.content_text. Para esos, creamos internamente una seccion canonica
+  // desde content_text (recuperado SOLO en servidor) ANTES de clasificar/estudiar,
+  // de modo que la clasificacion reciba texto y las unidades queden ancladas a esa
+  // seccion concreta (evidencia para SPEC 039). Errores de lectura/escritura ->
+  // bloqueo TRAZABLE (no se silencian). Sin content_text -> motivo honesto.
+  const readableIds = readableCandidates.map((m) => m.id);
+  const { data: existingSections, error: secReadErr } = await userClient
+    .from('material_sections')
+    .select('material_id, status')
+    .in('material_id', readableIds.length ? readableIds : [''])
+    .eq('status', 'active');
+  if (secReadErr) {
+    return fail(STUDY_ERROR.PREP_FAILED, 502, 'No se pudo leer la estructura del material.');
+  }
+  const activeSectionCount = new Map<string, number>();
+  for (const s of existingSections ?? []) {
+    activeSectionCount.set(s.material_id, (activeSectionCount.get(s.material_id) ?? 0) + 1);
+  }
+  // Materiales legibles SIN texto utilizable (completed pero sin secciones y sin
+  // content_text): motivo honesto y especifico.
+  const noTextReason = new Map<string, string>();
+  for (const m of readableCandidates) {
+    const resolution = resolveCanonicalSection({
+      activeSectionCount: activeSectionCount.get(m.id) ?? 0,
+      content_text: m.content_text,
+      title: m.title,
+    });
+    if (resolution.kind === 'has_sections') continue;
+    if (resolution.kind === 'no_text') {
+      noTextReason.set(m.id, resolution.reason);
+      continue;
+    }
+    // Crea la seccion canonica trazable. Error de escritura -> bloqueo trazable.
+    const { error: secErr } = await userClient.from('material_sections').insert({
+      workspace_id: request.workspace_id,
+      opposition_id: request.opposition_id,
+      material_id: m.id,
+      section_title: resolution.section.section_title,
+      section_type: resolution.section.section_type,
+      classification: resolution.section.classification,
+      content_text: resolution.section.content_text,
+      content_excerpt: resolution.section.content_text.slice(0, 500),
+      order_index: resolution.section.order_index,
+      status: 'active',
+    });
+    if (secErr) {
+      return fail(STUDY_ERROR.PREP_FAILED, 502, 'No se pudo preparar la fuente del material.');
+    }
+    activeSectionCount.set(m.id, 1);
+  }
+
+  // "Estudiar material" es AUTOSUFICIENTE: si un material LEGIBLE no tiene
+  // clasificacion previa (el usuario no ejecuto "Analizar material"/indice), la
+  // resolvemos AQUI con la heuristica determinista y la PERSISTIMOS de forma
+  // trazable (run interno de comprension + fila document_classifications). NO es un
+  // mock de IA ni depende de un indice/temario publico. El texto sale de las
+  // secciones del material en SERVIDOR; el navegador nunca lo aporta. Fail-closed:
+  // sin clase primaria con confianza, el material no se estudia (motivo exacto).
+  // Se excluyen los materiales sin texto (no hay nada que clasificar).
+  const unclassified = readableCandidates.filter(
+    (m) => !classByMaterial.has(m.id) && !noTextReason.has(m.id),
+  );
   if (unclassified.length > 0) {
     const autoRunId = uuid();
     const { error: arErr } = await userClient.from('document_understanding_runs').insert({
@@ -173,52 +238,64 @@ Deno.serve(async (req: Request) => {
       warnings: [],
       errors: [],
     });
-    if (!arErr) {
-      let classifiedCount = 0;
-      for (const m of unclassified) {
-        const { data: secs } = await userClient
-          .from('material_sections')
-          .select('material_id, status, content_text, content_excerpt, order_index')
-          .eq('material_id', m.id)
-          .eq('status', 'active')
-          .order('order_index', { ascending: true });
-        const text = (secs ?? [])
-          .filter((s) => s.material_id === m.id)
-          .map((s) => (s.content_text || s.content_excerpt) ?? '')
-          .join('\n')
-          .slice(0, 20000);
-        const auto = classifyStudyDocument({ text, filename: m.title });
-        const { error: insErr } = await userClient.from('document_classifications').insert({
-          workspace_id: request.workspace_id,
-          opposition_id: request.opposition_id,
-          material_id: m.id,
-          run_id: autoRunId,
-          classification: auto.classification,
-          confidence: auto.confidence,
-          reason: auto.reason,
-          needs_review: auto.needs_review,
-          manually_corrected: false,
-          warnings: auto.warnings,
-        });
-        if (!insErr) {
-          classifiedCount += 1;
-          classByMaterial.set(m.id, {
-            classification: auto.classification,
-            needs_review: auto.needs_review,
-          });
-        }
-      }
-      await userClient
-        .from('document_understanding_runs')
-        .update({ classified_materials: classifiedCount })
-        .eq('id', autoRunId);
+    if (arErr) {
+      return fail(STUDY_ERROR.PREP_FAILED, 502, 'No se pudo preparar la clasificacion del material.');
     }
+    let classifiedCount = 0;
+    for (const m of unclassified) {
+      const { data: secs, error: secErr } = await userClient
+        .from('material_sections')
+        .select('material_id, status, content_text, content_excerpt, order_index')
+        .eq('material_id', m.id)
+        .eq('status', 'active')
+        .order('order_index', { ascending: true });
+      if (secErr) {
+        return fail(STUDY_ERROR.PREP_FAILED, 502, 'No se pudo leer el texto del material.');
+      }
+      const text = (secs ?? [])
+        .filter((s) => s.material_id === m.id)
+        .map((s) => (s.content_text || s.content_excerpt) ?? '')
+        .join('\n')
+        .slice(0, 20000);
+      const auto = classifyStudyDocument({ text, filename: m.title });
+      // No se silencia el error de escritura de la clasificacion: bloqueo trazable.
+      const { error: insErr } = await userClient.from('document_classifications').insert({
+        workspace_id: request.workspace_id,
+        opposition_id: request.opposition_id,
+        material_id: m.id,
+        run_id: autoRunId,
+        classification: auto.classification,
+        confidence: auto.confidence,
+        reason: auto.reason,
+        needs_review: auto.needs_review,
+        manually_corrected: false,
+        warnings: auto.warnings,
+      });
+      if (insErr) {
+        return fail(STUDY_ERROR.PREP_FAILED, 502, 'No se pudo guardar la clasificacion del material.');
+      }
+      classifiedCount += 1;
+      classByMaterial.set(m.id, {
+        classification: auto.classification,
+        needs_review: auto.needs_review,
+      });
+    }
+    await userClient
+      .from('document_understanding_runs')
+      .update({ classified_materials: classifiedCount })
+      .eq('id', autoRunId);
   }
 
   // Elegibilidad con MOTIVO exacto sobre los materiales legibles (tras autoclasificar).
   const eligible: typeof matRows = [];
   const ineligible: { material_id: string; reason: string }[] = [];
   for (const m of readableCandidates) {
+    // Material completed sin texto: motivo honesto y especifico (no clasificable).
+    const noText = noTextReason.get(m.id);
+    if (noText) {
+      ineligible.push({ material_id: m.id, reason: noText });
+      continue;
+    }
     const verdict = evaluateStudyEligibility({ material: m, classification: classByMaterial.get(m.id) });
     if (verdict.eligible) eligible.push(m);
     else ineligible.push({ material_id: m.id, reason: verdict.reason });

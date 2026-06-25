@@ -67,6 +67,8 @@ export function studyIneligibleReasonMessage(reason: string): string {
       return 'El tipo de documento es dudoso y necesita revisión manual antes de estudiarlo.';
     case STUDY_INELIGIBLE_REASON.NOT_PRIMARY:
       return 'El documento no es material de estudio (p. ej. examen antiguo, índice o contenido no apto como fuente factual).';
+    case STUDY_INELIGIBLE_REASON.COMPLETED_WITHOUT_TEXT:
+      return 'El documento se marcó como leído pero no contiene texto extraíble. Vuelve a subirlo o reprocesa la extracción.';
     default:
       return 'El documento no es apto para estudiar.';
   }
@@ -86,6 +88,8 @@ const MESSAGES: Record<string, string> = {
   [STUDY_ERROR.NO_VALID_UNITS]:
     'No se pudo preparar material de estudio con fuente. Revisa que el material sea legible.',
   [STUDY_ERROR.SAVE_FAILED]: 'No se pudo guardar el estudio. Inténtalo de nuevo.',
+  [STUDY_ERROR.PREP_FAILED]:
+    'No se pudo preparar la fuente del material (lectura/escritura). Inténtalo de nuevo; si persiste, reprocesa el material.',
   [STUDY_ERROR.INVALID_REQUEST]: 'Petición no válida.',
 };
 

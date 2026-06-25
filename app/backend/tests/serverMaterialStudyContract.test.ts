@@ -14,6 +14,9 @@ import {
   isStudyEligibleMaterial,
   evaluateStudyEligibility,
   classifyStudyDocument,
+  resolveCanonicalSection,
+  CANONICAL_SECTION_TITLE,
+  MAX_CANONICAL_SECTION_CHARS,
   STUDY_INELIGIBLE_REASON,
   resolveStudyProvider,
   parseProviderUnits,
@@ -154,6 +157,94 @@ describe('autosuficiencia: clasificacion interna desacopla el estudio del indice
     const empty = classifyStudyDocument({ text: '   ', filename: 'scan.pdf' });
     expect(empty.classification).toBe('not_analyzable');
     expect(empty.needs_review).toBe(true);
+  });
+});
+
+// Reproduce EXACTAMENTE el bug de staging: material `completed` con texto en
+// materials.content_text pero CERO material_sections (active_sections=0). Antes la
+// Edge Function solo leia material_sections, la autoclasificacion recibia vacio y
+// devolvia NO_ELIGIBLE_MATERIAL. El fix crea una seccion canonica desde content_text
+// (solo en servidor) y entonces clasifica/estudia, anclando las unidades a esa
+// seccion concreta. Tambien cubre el caso `completed` sin content_text.
+describe('seccion canonica: completed + content_text + 0 secciones -> estudiable', () => {
+  const readable = { status: 'active', extraction_status: 'completed' };
+  const DOC_TEXT = [
+    'TEMA 3 - El procedimiento administrativo comun de las administraciones publicas.',
+    'El procedimiento se inicia de oficio o a solicitud del interesado. Las fases son',
+    'iniciacion, ordenacion, instruccion y terminacion. La resolucion debe ser motivada',
+    'y notificada en plazo; el silencio administrativo puede ser estimatorio o',
+    'desestimatorio segun la materia y la norma aplicable a cada caso concreto.',
+  ].join('\n');
+
+  it('crea una seccion canonica desde content_text cuando no hay secciones', () => {
+    const r = resolveCanonicalSection({ activeSectionCount: 0, content_text: DOC_TEXT, title: 'apuntes.pdf' });
+    expect(r.kind).toBe('create');
+    if (r.kind === 'create') {
+      expect(r.section.content_text).toBe(DOC_TEXT);
+      expect(r.section.section_title).toBe('apuntes.pdf');
+      expect(r.section.section_type).toBe('chunk');
+      expect(r.section.classification).toBe('study_content');
+    }
+  });
+
+  it('ESTUDIO EXITOSO end-to-end (puro): canonica -> clasifica -> elegible -> unidad anclada', () => {
+    // 1) Sin secciones pero con content_text -> seccion canonica.
+    const resolution = resolveCanonicalSection({ activeSectionCount: 0, content_text: DOC_TEXT, title: 'apuntes.pdf' });
+    expect(resolution.kind).toBe('create');
+    if (resolution.kind !== 'create') return;
+    const sectionText = resolution.section.content_text;
+
+    // 2) La autoclasificacion recibe el texto de la canonica (ya NO vacio) -> clase
+    //    PRIMARIA (de estudio) sin needs_review; antes recibia vacio -> not_analyzable.
+    const auto = classifyStudyDocument({ text: sectionText, filename: 'documento.pdf' });
+    expect(auto.needs_review).toBe(false);
+
+    // 3) Elegible (ya no NO_ELIGIBLE_MATERIAL).
+    expect(evaluateStudyEligibility({ material: readable, classification: auto })).toMatchObject({ eligible: true });
+
+    // 4) La unidad de estudio queda ANCLADA a esa seccion concreta (evidencia para
+    //    SPEC 039): el excerpt se valida contra el texto de la seccion canonica.
+    const scope: StudyEvidenceScope = {
+      material_ids: new Set(['mat-1']),
+      section_texts: new Map([['canon-1', sectionText]]),
+      reference_texts: new Map<string, string>(),
+    };
+    const unit: ProviderUnit = {
+      title: 'Fases del procedimiento',
+      summary: 'Iniciacion, ordenacion, instruccion y terminacion.',
+      material_id: 'mat-1',
+      material_section_id: 'canon-1',
+      source_reference_id: null,
+      source_excerpt: 'Las fases son iniciacion, ordenacion, instruccion y terminacion.',
+      importance: 'high',
+      confidence: 0.9,
+    };
+    const v = validateStudyUnit(unit, scope);
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.value.material_section_id).toBe('canon-1');
+  });
+
+  it('completed SIN content_text (ni secciones) -> bloqueo honesto especifico', () => {
+    for (const content_text of ['', '   ', null, undefined]) {
+      const r = resolveCanonicalSection({ activeSectionCount: 0, content_text });
+      expect(r).toMatchObject({ kind: 'no_text', reason: STUDY_INELIGIBLE_REASON.COMPLETED_WITHOUT_TEXT });
+    }
+  });
+
+  it('si ya hay secciones activas, no se crea ninguna canonica', () => {
+    expect(resolveCanonicalSection({ activeSectionCount: 2, content_text: DOC_TEXT })).toEqual({ kind: 'has_sections' });
+  });
+
+  it('titulo por defecto y tope de tamano de la seccion canonica', () => {
+    const noTitle = resolveCanonicalSection({ activeSectionCount: 0, content_text: 'texto suficiente para una seccion.' });
+    expect(noTitle.kind).toBe('create');
+    if (noTitle.kind === 'create') expect(noTitle.section.section_title).toBe(CANONICAL_SECTION_TITLE);
+
+    const huge = 'a'.repeat(MAX_CANONICAL_SECTION_CHARS + 5000);
+    const capped = resolveCanonicalSection({ activeSectionCount: 0, content_text: huge });
+    if (capped.kind === 'create') {
+      expect(capped.section.content_text.length).toBe(MAX_CANONICAL_SECTION_CHARS);
+    }
   });
 });
 

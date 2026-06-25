@@ -25,6 +25,9 @@ export const STUDY_ERROR = {
   INVALID_OUTPUT: 'MATERIAL_STUDY_INVALID_OUTPUT',
   NO_VALID_UNITS: 'MATERIAL_STUDY_NO_VALID_UNITS',
   SAVE_FAILED: 'MATERIAL_STUDY_SAVE_FAILED',
+  // Bloqueo TRAZABLE al preparar la evidencia: error de lectura/escritura de la
+  // seccion/fuente canonica o de la clasificacion (no se silencia; SPEC 038 fix).
+  PREP_FAILED: 'MATERIAL_STUDY_PREP_FAILED',
   INVALID_REQUEST: 'MATERIAL_STUDY_INVALID_REQUEST',
 } as const;
 
@@ -205,9 +208,67 @@ export const STUDY_INELIGIBLE_REASON = {
   UNCLASSIFIED: 'classification_unresolved',
   NEEDS_REVIEW: 'classification_needs_review',
   NOT_PRIMARY: 'classification_not_primary',
+  // Material `completed` pero sin secciones y sin `content_text`: no hay texto que
+  // estudiar. Motivo HONESTO y especifico (SPEC 038 fix staging).
+  COMPLETED_WITHOUT_TEXT: 'material_completed_without_text',
 } as const;
 export type StudyIneligibleReason =
   (typeof STUDY_INELIGIBLE_REASON)[keyof typeof STUDY_INELIGIBLE_REASON];
+
+// ---------------------------------------------------------------------------
+// Seccion/fuente CANONICA (SPEC 038 fix): un material legible (`completed`) puede
+// no tener `material_sections` (la seccion 028-C nunca corrio) pero SI tener texto
+// en `materials.content_text`. En ese caso la Edge Function crea internamente una
+// seccion canonica desde ese texto (recuperado SOLO en servidor) para poder
+// clasificar y estudiar, y para que las unidades queden ancladas a ella (evidencia
+// concreta para SPEC 039). Esta decision es PURA y testeable; la Edge Function la
+// ejecuta y persiste. Nunca usa texto del frontend.
+// ---------------------------------------------------------------------------
+export const MAX_CANONICAL_SECTION_CHARS = 200000;
+export const CANONICAL_SECTION_TITLE = 'Documento completo';
+
+export interface CanonicalSectionPlan {
+  section_title: string;
+  section_type: 'chunk';
+  classification: 'study_content';
+  content_text: string;
+  order_index: 0;
+}
+
+export type CanonicalSectionResolution =
+  | { kind: 'has_sections' }
+  | { kind: 'create'; section: CanonicalSectionPlan }
+  | { kind: 'no_text'; reason: StudyIneligibleReason };
+
+// Decide si hace falta crear una seccion canonica para un material legible:
+// - ya tiene secciones activas -> nada que crear;
+// - sin secciones pero con `content_text` -> crear seccion canonica desde ese texto;
+// - sin secciones y sin `content_text` -> bloqueo HONESTO `completed_without_text`.
+// Solo usa `materials.content_text` (servidor); ignora cualquier texto externo.
+export function resolveCanonicalSection(args: {
+  activeSectionCount: number;
+  content_text?: string | null;
+  title?: string | null;
+}): CanonicalSectionResolution {
+  if (args.activeSectionCount > 0) {
+    return { kind: 'has_sections' };
+  }
+  const text = typeof args.content_text === 'string' ? args.content_text.trim() : '';
+  if (text.length === 0) {
+    return { kind: 'no_text', reason: STUDY_INELIGIBLE_REASON.COMPLETED_WITHOUT_TEXT };
+  }
+  const title = isNonEmptyString(args.title) ? args.title.trim() : CANONICAL_SECTION_TITLE;
+  return {
+    kind: 'create',
+    section: {
+      section_title: title.slice(0, 300),
+      section_type: 'chunk',
+      classification: 'study_content',
+      content_text: text.slice(0, MAX_CANONICAL_SECTION_CHARS),
+      order_index: 0,
+    },
+  };
+}
 
 export type StudyEligibility =
   | { eligible: true; ocrWarnings: boolean }
