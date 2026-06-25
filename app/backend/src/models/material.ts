@@ -63,6 +63,12 @@ export interface Material {
   id: string;
   /** Oposicion a la que pertenece el material (SPEC 010). Obligatorio. */
   opposition_id: string;
+  /**
+   * Workspace de la oposicion (SPEC 022). Aditivo/nullable en el modelo: la tabla
+   * `materials` lo tiene y la generacion/estudio en servidor FILTRAN por el (RLS y
+   * aislamiento). Se resuelve desde `opposition.workspace_id` al crear el material.
+   */
+  workspace_id?: string | null;
   title: string;
   description: string | null;
   type: MaterialType;
