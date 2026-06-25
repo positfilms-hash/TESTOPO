@@ -20,6 +20,9 @@ import {
   mapRunStatus,
   resolveProvider,
   parseProviderCandidates,
+  classifyProviderError,
+  PROVIDER_ERROR_TIMEOUT,
+  PROVIDER_ERROR_NETWORK,
   runDirectGeneration,
   type DirectEvidenceScope,
   type ProviderDirectCandidate,
@@ -356,12 +359,64 @@ describe('resolveProvider + parseProviderCandidates', () => {
   });
 });
 
+describe('classifyProviderError (diagnostico SEGURO del proveedor)', () => {
+  it('429 quota -> provider_http_429 + provider_insufficient_quota', () => {
+    const info = classifyProviderError(429, {
+      error: { type: 'insufficient_quota', code: 'insufficient_quota', message: 'You exceeded your current quota' },
+    });
+    expect(info.codes).toContain('provider_http_429');
+    expect(info.codes).toContain('provider_insufficient_quota');
+    expect(info.provider_status).toBe(429);
+    expect(info.provider_code).toBe('insufficient_quota');
+  });
+
+  it('401 clave invalida -> provider_http_401 + provider_invalid_request', () => {
+    const info = classifyProviderError(401, {
+      error: { type: 'invalid_request_error', code: 'invalid_api_key', message: 'Incorrect API key provided: sk-XXX' },
+    });
+    expect(info.codes).toContain('provider_http_401');
+    expect(info.codes).toContain('provider_invalid_request');
+    expect(info.provider_code).toBe('invalid_api_key');
+  });
+
+  it('404 modelo inexistente -> provider_http_404 + provider_model_not_found', () => {
+    const info = classifyProviderError(404, {
+      error: { code: 'model_not_found', message: 'The model `gpt-x` does not exist or you do not have access' },
+    });
+    expect(info.codes).toContain('provider_http_404');
+    expect(info.codes).toContain('provider_model_not_found');
+  });
+
+  it('400 response_format -> provider_http_400 + provider_invalid_request + provider_response_format_error', () => {
+    const info = classifyProviderError(400, {
+      error: { type: 'invalid_request_error', message: 'Invalid schema for response_format', param: 'response_format' },
+    });
+    expect(info.codes).toContain('provider_http_400');
+    expect(info.codes).toContain('provider_invalid_request');
+    expect(info.codes).toContain('provider_response_format_error');
+  });
+
+  it('500 sin body util -> solo provider_http_500 (sin filtrar nada sensible)', () => {
+    const info = classifyProviderError(500, null);
+    expect(info.codes).toEqual(['provider_http_500']);
+    expect(info.provider_code).toBeNull();
+    // Todos los codigos son etiquetas seguras provider_* (sin secretos/contenido).
+    expect(info.codes.every((c) => c.startsWith('provider_'))).toBe(true);
+  });
+
+  it('expone constantes de timeout/red', () => {
+    expect(PROVIDER_ERROR_TIMEOUT).toBe('provider_timeout');
+    expect(PROVIDER_ERROR_NETWORK).toBe('provider_network_error');
+  });
+});
+
 describe('runDirectGeneration (ciclo de vida del run)', () => {
-  function fakePort(over: Partial<DirectRunPort> = {}): DirectRunPort & { created: ValidatedDirectCandidate[]; finalized: { status: string; count: number } | null } {
+  type Finalized = { status: string; count: number; errors: string[] } | null;
+  function fakePort(over: Partial<DirectRunPort> = {}): DirectRunPort & { created: ValidatedDirectCandidate[]; finalized: Finalized } {
     const state = {
       createdRun: false,
       created: [] as ValidatedDirectCandidate[],
-      finalized: null as { status: string; count: number } | null,
+      finalized: null as Finalized,
       async createRun() {
         state.createdRun = true;
         return true;
@@ -370,13 +425,13 @@ describe('runDirectGeneration (ciclo de vida del run)', () => {
         state.created.push(c);
         return true;
       },
-      async finalizeRun(status: string, count: number) {
-        state.finalized = { status, count };
+      async finalizeRun(status: string, count: number, errors: string[]) {
+        state.finalized = { status, count, errors };
         return true;
       },
       ...over,
     };
-    return state as unknown as DirectRunPort & { created: ValidatedDirectCandidate[]; finalized: { status: string; count: number } | null };
+    return state as unknown as DirectRunPort & { created: ValidatedDirectCandidate[]; finalized: Finalized };
   }
   const valid = (): ValidatedDirectCandidate => {
     const r = validateDirectCandidate(candidate(), scope);
@@ -398,6 +453,30 @@ describe('runDirectGeneration (ciclo de vida del run)', () => {
     expect(res.code).toBe(DQG_ERROR.PROVIDER_FAILED);
     expect(port.created.length).toBe(0);
     expect(port.finalized).toMatchObject({ status: 'failed', count: 0 });
+  });
+
+  it('proveedor falla: el run guarda diagnostico provider_http_xxx, no solo el codigo de wire', async () => {
+    const port = fakePort();
+    const res = await runDirectGeneration({
+      port,
+      requested: 2,
+      produce: async () => ({
+        ok: false,
+        code: DQG_ERROR.PROVIDER_FAILED,
+        candidates: [],
+        errors: ['provider_http_429', 'provider_insufficient_quota'],
+        provider_status: 429,
+        provider_code: 'insufficient_quota',
+      }),
+    });
+    // El run.errors incluye el codigo de wire Y los codigos de diagnostico seguros.
+    expect(port.finalized?.errors).toContain('provider_http_429');
+    expect(port.finalized?.errors).toContain('provider_insufficient_quota');
+    expect(port.finalized?.errors).toContain(DQG_ERROR.PROVIDER_FAILED);
+    // El RunResult los traslada para la respuesta de QA.
+    expect(res.errors).toEqual(['provider_http_429', 'provider_insufficient_quota']);
+    expect(res.provider_status).toBe(429);
+    expect(res.provider_code).toBe('insufficient_quota');
   });
 
   it('sin candidatas validas -> NO_VALID_CANDIDATES y run failed', async () => {

@@ -37,6 +37,9 @@ import {
   resolveProvider,
   buildOpenAIRequest,
   parseProviderCandidates,
+  classifyProviderError,
+  PROVIDER_ERROR_TIMEOUT,
+  PROVIDER_ERROR_NETWORK,
   validateDirectCandidate,
   candidateStatus,
   runDirectGeneration,
@@ -455,11 +458,37 @@ Deno.serve(async (req: Request) => {
             }),
           ),
         });
-        if (!resp.ok) return { ok: false, code: DQG_ERROR.PROVIDER_FAILED, candidates: [] };
+        if (!resp.ok) {
+          // Diagnostico SEGURO: lee el body de error de OpenAI (sin exponer api key,
+          // prompt ni la respuesta cruda) y mapea a codigos estables.
+          let body: unknown = null;
+          try {
+            body = await resp.json();
+          } catch {
+            body = null;
+          }
+          const info = classifyProviderError(resp.status, body);
+          // Log seguro: SOLO status/type/code; nunca Authorization ni prompt.
+          console.error(
+            `direct_qg provider_error status=${info.provider_status} type=${info.provider_type ?? ''} code=${info.provider_code ?? ''}`,
+          );
+          return {
+            ok: false,
+            code: DQG_ERROR.PROVIDER_FAILED,
+            candidates: [],
+            errors: info.codes,
+            provider_status: info.provider_status,
+            provider_code: info.provider_code,
+          };
+        }
         const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
         content = data.choices?.[0]?.message?.content ?? null;
-      } catch {
-        return { ok: false, code: DQG_ERROR.PROVIDER_FAILED, candidates: [] };
+      } catch (err) {
+        // Timeout (withTimeout rechaza con Error('timeout')) vs error de red.
+        const isTimeout = err instanceof Error && err.message === 'timeout';
+        const diag = isTimeout ? PROVIDER_ERROR_TIMEOUT : PROVIDER_ERROR_NETWORK;
+        console.error(`direct_qg provider_error ${diag}`);
+        return { ok: false, code: DQG_ERROR.PROVIDER_FAILED, candidates: [], errors: [diag] };
       }
       const parseRes = parseProviderCandidates(content);
       if (!parseRes.ok) return { ok: false, code: parseRes.code, candidates: [] };
@@ -473,6 +502,19 @@ Deno.serve(async (req: Request) => {
   });
 
   if (!result.ok) {
+    // Para fallo de proveedor, devuelve diagnostico SEGURO (status/code/errors) para
+    // QA, sin secretos ni contenido. El resto de errores van con su codigo de wire.
+    if (result.code === DQG_ERROR.PROVIDER_FAILED) {
+      return json(
+        {
+          error: DQG_ERROR.PROVIDER_FAILED,
+          errors: result.errors ?? [],
+          provider_status: result.provider_status ?? null,
+          provider_code: result.provider_code ?? null,
+        },
+        result.httpStatus,
+      );
+    }
     return fail(result.code as DqgErrorCode, result.httpStatus);
   }
   return json({
