@@ -42,6 +42,7 @@ export const OCR_ERROR = {
   RETRY_FAILED: 'OCR_RETRY_FAILED',
   STORAGE_FAILED: 'OCR_STORAGE_FAILED',
   INVALID_REQUEST: 'OCR_INVALID_REQUEST',
+  BUDGET_EXCEEDED: 'OCR_BUDGET_EXCEEDED',
 } as const;
 
 export type OcrErrorCode = (typeof OCR_ERROR)[keyof typeof OCR_ERROR];
@@ -495,14 +496,26 @@ export function ocrPdfResponseSchema(): Record<string, unknown> {
   };
 }
 
+// Rango de paginas (1-based, inclusivo) de un lote.
+export interface OcrPageRange {
+  from: number;
+  to: number;
+}
+
 // Construye la peticion a OpenAI (Chat Completions) enviando el PDF como ADJUNTO
 // (content part `file`), sin rasterizar. PURA: no hace fetch ni lee secretos. El
-// PDF lo descarga el SERVIDOR desde Storage; el navegador NUNCA lo aporta.
+// PDF lo descarga el SERVIDOR desde Storage; el navegador NUNCA lo aporta. Si se
+// indica `pageRange`, se pide transcribir SOLO ese rango (usando el numero de
+// pagina REAL del PDF) para procesar documentos grandes por LOTES sin timeout.
 export function buildOcrPdfRequest(args: {
   model: string;
   pdfBase64: string;
   fileName: string;
+  pageRange?: OcrPageRange;
 }): Record<string, unknown> {
+  const instruction = args.pageRange
+    ? `Transcribe SOLO las paginas de la ${args.pageRange.from} a la ${args.pageRange.to} (incluidas) de este PDF escaneado, usando su numero de pagina REAL del documento.`
+    : 'Transcribe el texto de cada pagina de este PDF escaneado.';
   return {
     model: args.model,
     temperature: 0,
@@ -511,7 +524,7 @@ export function buildOcrPdfRequest(args: {
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'Transcribe el texto de cada pagina de este PDF escaneado.' },
+          { type: 'text', text: instruction },
           {
             type: 'file',
             file: {
@@ -527,6 +540,83 @@ export function buildOcrPdfRequest(args: {
       json_schema: { name: 'ocr_document', strict: true, schema: ocrPdfResponseSchema() },
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Lotes por rango de paginas (SPEC 034/035). En Edge no se puede PARTIR el PDF
+// (mismo limite de MuPDF), asi que cada lote reenvia el PDF completo pidiendo solo
+// su rango. Beneficio: evita el timeout de una unica llamada y, si un lote falla,
+// se CONSERVA el texto de los lotes anteriores (resultado PARCIAL honesto con
+// advertencias). PURA.
+// ---------------------------------------------------------------------------
+export const OCR_PDF_BATCH_PAGES = 10;
+
+// Tamano de lote efectivo: un secreto solo puede ENDURECER (reducir) el maximo.
+export function resolveOcrBatchSize(env: { OCR_PDF_BATCH_PAGES?: string | null }): number {
+  return clampOcrLimit(env.OCR_PDF_BATCH_PAGES, 1, OCR_PDF_BATCH_PAGES);
+}
+
+// Divide [1..totalPages] en rangos consecutivos de a lo sumo `batchSize` paginas.
+// totalPages<=0 o batchSize<=0 -> [] (el llamador hace una unica llamada al doc).
+export function planOcrBatches(totalPages: number, batchSize: number): OcrPageRange[] {
+  const total = Math.floor(totalPages);
+  const size = Math.floor(batchSize);
+  if (!Number.isFinite(total) || total <= 0 || size <= 0) return [];
+  const ranges: OcrPageRange[] = [];
+  for (let from = 1; from <= total; from += size) {
+    ranges.push({ from, to: Math.min(from + size - 1, total) });
+  }
+  return ranges;
+}
+
+// ---------------------------------------------------------------------------
+// Presupuesto de OCR por DOCUMENTO (SPEC 034/035). Cap de paginas (ya acotado a
+// MAX_OCR_PDF_PAGES) + coste estimado maximo por documento. Defaults seguros; un
+// secreto SOLO puede REDUCIR. El coste se estima fuera (ai-cost.estimateOcrCostUsd)
+// y se evalua aqui ANTES de llamar al proveedor. PURA.
+// ---------------------------------------------------------------------------
+export const MAX_OCR_COST_PER_DOCUMENT_USD = 0.5;
+
+export interface OcrBudget {
+  maxPages: number;
+  maxCostUsd: number;
+}
+
+export function resolveOcrBudget(env: {
+  OCR_MAX_PAGES_PER_DOCUMENT?: string | null;
+  OCR_MAX_COST_PER_DOCUMENT_USD?: string | null;
+}): OcrBudget {
+  const maxCost =
+    typeof env.OCR_MAX_COST_PER_DOCUMENT_USD === 'string'
+      ? Number.parseFloat(env.OCR_MAX_COST_PER_DOCUMENT_USD)
+      : NaN;
+  return {
+    maxPages: clampOcrLimit(env.OCR_MAX_PAGES_PER_DOCUMENT, 1, MAX_OCR_PDF_PAGES),
+    maxCostUsd:
+      Number.isFinite(maxCost) && maxCost > 0
+        ? Math.min(maxCost, MAX_OCR_COST_PER_DOCUMENT_USD)
+        : MAX_OCR_COST_PER_DOCUMENT_USD,
+  };
+}
+
+export type OcrBudgetDecision =
+  | { ok: true }
+  | { ok: false; reason: 'page_limit' | 'cost_limit' };
+
+// Decide si un documento cabe en el presupuesto de OCR. `pages` y
+// `estimatedCostUsd` los aporta el servidor (page_count del material + estimacion).
+export function evaluateOcrBudget(args: {
+  pages: number;
+  estimatedCostUsd: number;
+  budget: OcrBudget;
+}): OcrBudgetDecision {
+  if (Number.isFinite(args.pages) && args.pages > args.budget.maxPages) {
+    return { ok: false, reason: 'page_limit' };
+  }
+  if (args.estimatedCostUsd > args.budget.maxCostUsd) {
+    return { ok: false, reason: 'cost_limit' };
+  }
+  return { ok: true };
 }
 
 export interface OcrPdfPageParse {

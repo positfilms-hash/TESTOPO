@@ -15,6 +15,9 @@ import {
   buildCostBreakdown,
   resolveCostLimits,
   estimateRunCostUsd,
+  estimateOcrCostUsd,
+  OCR_INPUT_TOKENS_PER_PAGE,
+  OCR_OUTPUT_TOKENS_PER_PAGE,
   evaluateBudget,
   MAX_QUESTIONS_PER_RUN,
   MAX_COST_PER_RUN_USD,
@@ -104,3 +107,22 @@ describe('limites de coste/cantidad', () => {
     expect(evaluateBudget({ estimatedRunCostUsd: 0.1, todayCostSoFarUsd: 4.95, limits })).toMatchObject({ ok: false, reason: 'daily_cost_exceeded' });
   });
 });
+
+describe('estimateOcrCostUsd (presupuesto OCR por documento)', () => {
+  it('estima coste por paginas con la tabla de precios del modelo', () => {
+    const out = estimateOcrCostUsd({ pages: 24, model: 'gpt-4o-mini' });
+    const inputTokens = 24 * OCR_INPUT_TOKENS_PER_PAGE;
+    const outputTokens = 24 * OCR_OUTPUT_TOKENS_PER_PAGE;
+    const expected =
+      (inputTokens / 1_000_000) * 0.15 + (outputTokens / 1_000_000) * 0.6;
+    expect(out.estimatedCostUsd).toBeCloseTo(Math.round(expected * 1e6) / 1e6, 9);
+    expect(out.cost_model).toBe('gpt-4o-mini@table');
+  });
+
+  it('0 paginas -> coste 0; crece de forma monotona con las paginas', () => {
+    expect(estimateOcrCostUsd({ pages: 0, model: 'gpt-4o-mini' }).estimatedCostUsd).toBe(0);
+    const a = estimateOcrCostUsd({ pages: 10, model: 'gpt-4o-mini' }).estimatedCostUsd;
+    const b = estimateOcrCostUsd({ pages: 50, model: 'gpt-4o-mini' }).estimatedCostUsd;
+    expect(b).toBeGreaterThan(a);
+  });
+})

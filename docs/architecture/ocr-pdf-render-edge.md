@@ -84,6 +84,45 @@ Mientras no haya proveedor configurado se mantiene el **bloqueo honesto**
 (`OCR_PROVIDER_NOT_CONFIGURED`, 501, cero escrituras). Si se fuerza `edge_rasterize`
 en Edge, el bloqueo honesto es `OCR_RENDER_FAILED` / `renderer_init_failed`.
 
+### Lotes por rango de páginas (PDFs grandes / timeout)
+
+Una sola llamada para un PDF largo agota el wall-clock de Edge (caso real:
+`provider_timeout_or_network`). Como en Edge **no se puede partir el PDF** (mismo
+límite de MuPDF), cada lote **reenvía el PDF completo pidiendo solo su rango**:
+- `resolveOcrBatchSize` (`OCR_PDF_BATCH_PAGES`, def. 10, reduce-only) y
+  `planOcrBatches(totalPages, batchSize)` → rangos `{from,to}` consecutivos.
+- `buildOcrPdfRequest({ ..., pageRange })` pide transcribir solo ese rango.
+- La Edge Function llama por lote y **persiste incrementalmente**; si un lote falla
+  (timeout/`!ok`) **conserva el texto de los lotes anteriores** como resultado
+  **parcial** (`completed_ocr_with_warnings`) con un aviso de lote; solo falla por
+  completo si el **primer** lote no devuelve nada.
+- Sin `page_count` conocido → una única llamada al documento completo.
+
+Coste: reenviar el PDF por lote es más caro; por eso el lote por defecto es 10 y el
+cap de páginas/coste (abajo) acota el gasto. Si no rinde, plan B = worker fuera de Edge.
+
+### Presupuesto por documento
+
+- `resolveOcrBudget` (`OCR_MAX_PAGES_PER_DOCUMENT`, `OCR_MAX_COST_PER_DOCUMENT_USD`
+  def. 0.5, ambos reduce-only) + `evaluateOcrBudget({pages, estimatedCostUsd})`.
+- Antes de crear el run se estima el coste por páginas (`estimateOcrCostUsd`,
+  `_shared/ai-cost`); si excede páginas → `OCR_PAGE_LIMIT_EXCEEDED` (413), si excede
+  coste → `OCR_BUDGET_EXCEEDED` (429), **cero escrituras**.
+- El coste **real** se acumula del `usage` de cada lote y se persiste en
+  `material_ocr_runs` (migración **040**: `input_tokens`/`output_tokens`/
+  `total_tokens`/`estimated_cost_usd`/`cost_model`).
+
+### UX (frontend)
+
+- **Polling**: mientras algún material está `ocr_processing`, `MaterialPage`
+  refresca la lista cada 5 s (tope ~5 min) → el estado terminal aparece **solo**, sin
+  recargar. Al lanzar OCR se marca el material como procesando de forma optimista y
+  se avisa de que puede tardar varios minutos.
+- **Conteo parcial**: "19/24 páginas leídas · 5 con fallo" + confianza/advertencias;
+  el material parcial queda usable (`completed_ocr_with_warnings`).
+- **Reintento**: botón sobre `ocr_failed`/`completed_ocr_with_warnings` (estados
+  reintentables); un timeout deja estado honesto reintentable.
+
 > **Estado SPEC 034/035:** el OCR de PDFs escaneados vía `edge_rasterize` queda
 > **BLOCKED** en Supabase Edge por `renderer_init_failed` (MuPDF/WASM no inicializa).
 > La ruta soportada es `provider_pdf`. El resto del MVP con **PDFs de texto** (capa de

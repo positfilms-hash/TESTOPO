@@ -64,6 +64,29 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
     };
   }, [loadMaterials, version]);
 
+  // El OCR de escaneos largos corre en servidor y puede tardar minutos. Mientras
+  // haya algun material en `ocr_processing`, refrescamos la lista periodicamente
+  // para que el estado terminal (completado/parcial/fallido) aparezca SOLO, sin
+  // que el usuario tenga que recargar la pagina. Se detiene al no quedar ninguno
+  // procesando o tras un tope de tiempo (evita polling indefinido).
+  const hasOcrProcessing = materials.some((m) => m.extraction_status === 'ocr_processing');
+  useEffect(() => {
+    if (!hasOcrProcessing) return;
+    let cancelled = false;
+    let ticks = 0;
+    const id = window.setInterval(() => {
+      ticks += 1;
+      void loadMaterials().then((list) => {
+        if (!cancelled) setMaterials(list);
+      });
+      if (ticks >= 60) window.clearInterval(id); // ~5 min a 5 s/tick.
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [hasOcrProcessing, loadMaterials]);
+
   // --- Subida (intake neutro; sin categoria ni clasificacion) ---
   const runUpload = async (
     sourceType: 'zip' | 'folder' | 'multi_file',
@@ -179,23 +202,44 @@ export function MaterialPage({ isAdmin = false }: { isAdmin?: boolean }) {
       // imagenes, texto OCR, prompts ni claves; el render del PDF es server-side).
       if (shouldUseServerOcr()) {
         if (!currentOpposition) return;
-        const summary = await runOcrViaEdgeFunction({
-          workspace_id: currentOpposition.workspace_id,
-          opposition_id: currentOpposition.id,
-          material_id: m.id,
-          force_retry: !first,
-        });
-        const ok =
-          summary.extraction_status === 'completed_ocr' ||
-          summary.extraction_status === 'completed_ocr_with_warnings';
-        setNotice(
-          ok
-            ? { type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' }
-            : { type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' },
+        // Optimista: marca el material como procesando para que el badge se
+        // actualice al instante y arranque el polling; aviso de proceso largo.
+        setMaterials((prev) =>
+          prev.map((x) => (x.id === m.id ? { ...x, extraction_status: 'ocr_processing' } : x)),
         );
-        const list = await loadMaterials();
-        setMaterials(list);
-        refresh();
+        setNotice({
+          type: 'success',
+          text: 'OCR en proceso. En documentos largos puede tardar varios minutos; el estado se actualiza solo, no hace falta recargar la página.',
+        });
+        try {
+          const summary = await runOcrViaEdgeFunction({
+            workspace_id: currentOpposition.workspace_id,
+            opposition_id: currentOpposition.id,
+            material_id: m.id,
+            force_retry: !first,
+          });
+          const ok =
+            summary.extraction_status === 'completed_ocr' ||
+            summary.extraction_status === 'completed_ocr_with_warnings';
+          setNotice(
+            ok
+              ? { type: 'success', text: 'OCR completado. Revisa el resultado del archivo.' }
+              : { type: 'error', text: 'El OCR no pudo extraer texto utilizable del escaneo.' },
+          );
+        } catch (err) {
+          // La llamada puede tardar más que la espera del cliente; el resultado
+          // real se persiste en servidor y el polling lo reflejará. No bloquear
+          // con un error duro engañoso.
+          const text = err instanceof ServerOcrError ? err.message : ocrErrorMessage(err);
+          setNotice({
+            type: 'error',
+            text: `${text} Si el OCR sigue en proceso, el estado se actualizará automáticamente.`,
+          });
+        } finally {
+          const list = await loadMaterials();
+          setMaterials(list);
+          refresh();
+        }
         return;
       }
 
@@ -423,6 +467,8 @@ function ocrErrorMessage(err: unknown): string {
       return 'Este material no está marcado como escaneo.';
     case 'OCR_PAGE_LIMIT_EXCEEDED':
       return 'El documento supera el máximo de páginas admitido para OCR.';
+    case 'OCR_BUDGET_EXCEEDED':
+      return 'El OCR de este documento supera el presupuesto admitido. Reduce el documento o ajusta el límite.';
     case 'OCR_PROVIDER_NOT_CONFIGURED':
       return 'El servicio de OCR no está configurado en este entorno.';
     case 'OCR_RENDER_FAILED':

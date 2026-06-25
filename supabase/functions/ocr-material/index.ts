@@ -38,12 +38,26 @@ import {
   resolveOcrStrategy,
   buildOcrPdfRequest,
   parseOcrPdfResponse,
+  resolveOcrBatchSize,
+  planOcrBatches,
+  resolveOcrBudget,
+  evaluateOcrBudget,
   MAX_OCR_PDF_BYTES,
   MAX_OCR_PDF_PAGES,
   OCR_DOCUMENT_TIMEOUT_MS,
   type OcrErrorCode,
   type OcrPageBand,
+  type OcrPageRange,
 } from '../_shared/ocr-material/contract.ts';
+import {
+  parseOpenAIUsage,
+  addUsage,
+  EMPTY_USAGE,
+  resolvePrice,
+  buildCostBreakdown,
+  estimateOcrCostUsd,
+  type AiUsage,
+} from '../_shared/ai-cost/contract.ts';
 import { renderPdfToPages, PdfRenderError } from './pdfRender.ts';
 
 const corsHeaders = {
@@ -181,6 +195,43 @@ Deno.serve(async (req: Request) => {
     return fail(OCR_ERROR.PROVIDER_NOT_CONFIGURED, 501, OCR_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
 
+  // 4b) Presupuesto por DOCUMENTO (SPEC 034/035): cap de paginas + coste estimado
+  //     maximo. Se evalua ANTES de crear el run o llamar al proveedor (cero
+  //     escrituras si excede). El coste se estima por paginas; el real se calcula
+  //     luego con el `usage`. Sin page_count conocido no se puede estimar coste:
+  //     se confia en el cap de paginas por lote y en MAX_OCR_PDF_PAGES.
+  const priceEnv = {
+    AI_PRICE_INPUT_PER_M: Deno.env.get('AI_PRICE_INPUT_PER_M'),
+    AI_PRICE_OUTPUT_PER_M: Deno.env.get('AI_PRICE_OUTPUT_PER_M'),
+  };
+  if (typeof material.page_count === 'number' && material.page_count > 0) {
+    const budget = resolveOcrBudget({
+      OCR_MAX_PAGES_PER_DOCUMENT: Deno.env.get('OCR_MAX_PAGES_PER_DOCUMENT'),
+      OCR_MAX_COST_PER_DOCUMENT_USD: Deno.env.get('OCR_MAX_COST_PER_DOCUMENT_USD'),
+    });
+    const { estimatedCostUsd } = estimateOcrCostUsd({
+      pages: material.page_count,
+      model: provider.model,
+      env: priceEnv,
+    });
+    const decision = evaluateOcrBudget({
+      pages: material.page_count,
+      estimatedCostUsd,
+      budget,
+    });
+    if (!decision.ok) {
+      // Log SEGURO: solo paginas + motivo; nunca contenido del PDF ni secretos.
+      console.error(`ocr_budget_exceeded pages=${material.page_count} reason=${decision.reason}`);
+      return fail(
+        decision.reason === 'page_limit' ? OCR_ERROR.PAGE_LIMIT_EXCEEDED : OCR_ERROR.BUDGET_EXCEEDED,
+        decision.reason === 'page_limit' ? 413 : 429,
+        decision.reason === 'page_limit'
+          ? 'El documento supera el maximo de paginas admitido para OCR.'
+          : 'El OCR de este documento supera el presupuesto admitido.',
+      );
+    }
+  }
+
   // 5) Reintento: se crea SIEMPRE un run NUEVO con su propio `ocr_run_id`, sin
   //    reutilizar ni mezclar paginas de runs anteriores (las paginas se insertan
   //    SOLO con este `runId`). Se CONSERVA el historial auditado de runs/paginas
@@ -255,9 +306,13 @@ Deno.serve(async (req: Request) => {
   type PageResult = { page_number: number; text: string; confidence: number | null; warnings: string[] };
   const strategy = resolveOcrStrategy({ OCR_STRATEGY: Deno.env.get('OCR_STRATEGY') });
   let results: PageResult[];
+  // Uso real acumulado (tokens) entre lotes/paginas -> coste real persistido.
+  let totalUsage: AiUsage = EMPTY_USAGE;
+  // Avisos a nivel de LOTE (no de pagina): p. ej. un lote no procesado por timeout.
+  const batchWarnings: string[] = [];
 
   if (strategy === 'provider_pdf') {
-    // 5b-A) Envio directo del PDF al proveedor (una sola llamada). Guarda de
+    // 5b-A) Envio directo del PDF al proveedor SIN rasterizar. Guarda de
     //       tamano/paginas ANTES de llamar (limite del file input del proveedor).
     if (
       bytes.byteLength > MAX_OCR_PDF_BYTES ||
@@ -272,45 +327,89 @@ Deno.serve(async (req: Request) => {
         diagCodes: ['pdf_too_large'],
       });
     }
+    // LOTES por rango de paginas: en Edge no se puede partir el PDF, asi que cada
+    // lote reenvia el PDF completo pidiendo SOLO su rango. Evita el timeout de una
+    // sola llamada y conserva el texto de los lotes ya leidos si uno falla
+    // (resultado PARCIAL honesto). Sin page_count conocido -> una unica llamada.
     const fileName = `${request.material_id}.pdf`;
-    const body = buildOcrPdfRequest({ model: provider.model, pdfBase64: toBase64(bytes), fileName });
-    let resp: Response;
-    try {
-      resp = await withTimeout(
-        fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${provider.apiKey}`,
-          },
-          body: JSON.stringify(body),
-        }),
-        OCR_DOCUMENT_TIMEOUT_MS,
-      );
-    } catch {
-      // SI se llamo al proveedor (timeout/red): fallo de PROVEEDOR, no de render.
-      console.error('ocr_provider_failed reason=timeout_or_network');
-      return await failRun(userClient, runId, request.material_id, material, {
-        runStatus: 'failed',
-        extractionStatus: 'ocr_failed',
-        errorCode: OCR_ERROR.PROVIDER_FAILED,
-        errorText: 'El proveedor OCR no respondio.',
-        diagCodes: ['provider_timeout_or_network'],
+    const pdfBase64 = toBase64(bytes);
+    const batchSize = resolveOcrBatchSize({ OCR_PDF_BATCH_PAGES: Deno.env.get('OCR_PDF_BATCH_PAGES') });
+    const totalPages =
+      typeof material.page_count === 'number' && material.page_count > 0
+        ? Math.min(material.page_count, MAX_OCR_PDF_PAGES)
+        : 0;
+    const batches = planOcrBatches(totalPages, batchSize);
+    const plan: (OcrPageRange | null)[] = batches.length > 0 ? batches : [null];
+
+    results = [];
+    for (const range of plan) {
+      const body = buildOcrPdfRequest({
+        model: provider.model,
+        pdfBase64,
+        fileName,
+        pageRange: range ?? undefined,
       });
+      let resp: Response;
+      try {
+        resp = await withTimeout(
+          fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${provider.apiKey}`,
+            },
+            body: JSON.stringify(body),
+          }),
+          OCR_DOCUMENT_TIMEOUT_MS,
+        );
+      } catch {
+        // SI se llamo al proveedor (timeout/red): fallo de PROVEEDOR, no de render.
+        // Con lotes ya leidos -> resultado PARCIAL con aviso; si no, fallo honesto.
+        console.error(`ocr_provider_failed reason=timeout_or_network range=${range ? `${range.from}-${range.to}` : 'all'}`);
+        if (results.length > 0) {
+          batchWarnings.push(
+            range
+              ? `Paginas ${range.from}-${range.to} no leidas (timeout del proveedor); resultado parcial.`
+              : 'El documento no se pudo leer completo (timeout del proveedor).',
+          );
+          break;
+        }
+        return await failRun(userClient, runId, request.material_id, material, {
+          runStatus: 'failed',
+          extractionStatus: 'ocr_failed',
+          errorCode: OCR_ERROR.PROVIDER_FAILED,
+          errorText: 'El proveedor OCR no respondio.',
+          diagCodes: ['provider_timeout_or_network'],
+        });
+      }
+      if (!resp.ok) {
+        // Log SEGURO: solo el status; nunca cuerpo crudo, prompt ni Authorization.
+        console.error(`ocr_provider_failed status=${resp.status} range=${range ? `${range.from}-${range.to}` : 'all'}`);
+        if (results.length > 0) {
+          batchWarnings.push(
+            range
+              ? `Paginas ${range.from}-${range.to} rechazadas por el proveedor; resultado parcial.`
+              : 'El proveedor rechazo el documento.',
+          );
+          break;
+        }
+        return await failRun(userClient, runId, request.material_id, material, {
+          runStatus: 'failed',
+          extractionStatus: 'ocr_failed',
+          errorCode: OCR_ERROR.PROVIDER_FAILED,
+          errorText: 'El proveedor OCR rechazo el documento.',
+          diagCodes: [`provider_http_${resp.status}`],
+        });
+      }
+      const data = (await resp.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: unknown;
+      };
+      totalUsage = addUsage(totalUsage, parseOpenAIUsage(data.usage));
+      for (const p of parseOcrPdfResponse(data.choices?.[0]?.message?.content ?? null).pages) {
+        results.push(p);
+      }
     }
-    if (!resp.ok) {
-      // Log SEGURO: solo el status; nunca cuerpo crudo, prompt ni Authorization.
-      console.error(`ocr_provider_failed status=${resp.status}`);
-      return await failRun(userClient, runId, request.material_id, material, {
-        runStatus: 'failed',
-        extractionStatus: 'ocr_failed',
-        errorCode: OCR_ERROR.PROVIDER_FAILED,
-        errorText: 'El proveedor OCR rechazo el documento.',
-        diagCodes: [`provider_http_${resp.status}`],
-      });
-    }
-    const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-    results = parseOcrPdfResponse(data.choices?.[0]?.message?.content ?? null).pages;
   } else {
     // 5b-B) Render server-side (fail-closed si MuPDF no inicializa/rasteriza). NO
     //       se ha llamado aun al proveedor: un fallo aqui es de RENDER, no de
@@ -351,7 +450,11 @@ Deno.serve(async (req: Request) => {
           limits.pageTimeoutMs,
         );
         if (resp.ok) {
-          const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+          const data = (await resp.json()) as {
+            choices?: { message?: { content?: string } }[];
+            usage?: unknown;
+          };
+          totalUsage = addUsage(totalUsage, parseOpenAIUsage(data.usage));
           result = parseOcrVisionResponse(data.choices?.[0]?.message?.content ?? null);
         } else {
           result.warnings.push('El proveedor OCR rechazo esta pagina.');
@@ -405,6 +508,9 @@ Deno.serve(async (req: Request) => {
       break; // no seguir procesando si la persistencia de paginas falla.
     }
   }
+  // Avisos a nivel de lote (p. ej. lote no leido por timeout): un resultado PARCIAL
+  // con texto util debe quedar como completed_with_warnings, nunca como limpio.
+  for (const w of batchWarnings) warnings.push(w);
 
   // Si alguna pagina no se pudo guardar, NO hay resultado fiable: run/material
   // fallidos honestos y OCR_SAVE_FAILED (nunca completed_ocr).
@@ -427,6 +533,9 @@ Deno.serve(async (req: Request) => {
   });
   const finishedAt = new Date().toISOString();
 
+  // Coste REAL del OCR a partir del `usage` acumulado (sin prompts ni contenido).
+  const cost = buildCostBreakdown(totalUsage, resolvePrice(provider.model, priceEnv));
+
   const { error: runUpdateErr } = await userClient
     .from('material_ocr_runs')
     .update({
@@ -436,6 +545,11 @@ Deno.serve(async (req: Request) => {
       average_confidence: avg,
       warnings,
       errors: aggregated.length === 0 ? ['No se extrajo texto utilizable del escaneo.'] : [],
+      input_tokens: cost.input_tokens,
+      output_tokens: cost.output_tokens,
+      total_tokens: cost.total_tokens,
+      estimated_cost_usd: cost.estimated_cost_usd,
+      cost_model: cost.cost_model,
       updated_at: finishedAt,
     })
     .eq('id', runId);
@@ -490,6 +604,8 @@ Deno.serve(async (req: Request) => {
     failed_pages: failed,
     average_confidence: avg,
     warnings: [...new Set(warnings)],
+    estimated_cost_usd: cost.estimated_cost_usd,
+    cost_model: cost.cost_model,
   });
 });
 

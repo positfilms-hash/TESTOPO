@@ -28,6 +28,13 @@ import {
   DEFAULT_OCR_STRATEGY,
   buildOcrPdfRequest,
   parseOcrPdfResponse,
+  planOcrBatches,
+  resolveOcrBatchSize,
+  resolveOcrBudget,
+  evaluateOcrBudget,
+  OCR_PDF_BATCH_PAGES,
+  MAX_OCR_PDF_PAGES,
+  MAX_OCR_COST_PER_DOCUMENT_USD,
   MAX_OCR_PAGES,
   OCR_PER_PAGE_TIMEOUT_MS,
 } from '../../../supabase/functions/_shared/ocr-material/contract';
@@ -336,5 +343,72 @@ describe('estrategia OCR provider_pdf (alternativa sin rasterizar en Edge)', () 
     expect(parseOcrPdfResponse('no-json').pages).toEqual([]);
     expect(parseOcrPdfResponse(null).pages).toEqual([]);
     expect(parseOcrPdfResponse(JSON.stringify({ nope: 1 })).pages).toEqual([]);
+  });
+})
+
+describe('lotes por rango de paginas (provider_pdf, PDFs grandes)', () => {
+  it('resolveOcrBatchSize por defecto el maximo; un secreto solo lo REDUCE', () => {
+    expect(resolveOcrBatchSize({})).toBe(OCR_PDF_BATCH_PAGES);
+    expect(resolveOcrBatchSize({ OCR_PDF_BATCH_PAGES: '4' })).toBe(4);
+    // valor invalido o mayor que el maximo -> maximo
+    expect(resolveOcrBatchSize({ OCR_PDF_BATCH_PAGES: '999' })).toBe(OCR_PDF_BATCH_PAGES);
+    expect(resolveOcrBatchSize({ OCR_PDF_BATCH_PAGES: 'x' })).toBe(OCR_PDF_BATCH_PAGES);
+  });
+
+  it('planOcrBatches divide [1..total] en rangos consecutivos de <= batchSize', () => {
+    expect(planOcrBatches(24, 10)).toEqual([
+      { from: 1, to: 10 },
+      { from: 11, to: 20 },
+      { from: 21, to: 24 },
+    ]);
+    expect(planOcrBatches(10, 10)).toEqual([{ from: 1, to: 10 }]);
+    // sin total conocido -> sin lotes (el llamador hace una sola llamada al doc)
+    expect(planOcrBatches(0, 10)).toEqual([]);
+    expect(planOcrBatches(5, 0)).toEqual([]);
+  });
+
+  it('buildOcrPdfRequest con pageRange pide SOLO ese rango (sin imagenes)', () => {
+    const body = buildOcrPdfRequest({
+      model: 'gpt-4o-mini',
+      pdfBase64: 'QUJD',
+      fileName: 'mat.pdf',
+      pageRange: { from: 11, to: 20 },
+    }) as { messages: { role: string; content: unknown }[] };
+    const userMsg = body.messages.find((m) => m.role === 'user');
+    const serialized = JSON.stringify(userMsg?.content);
+    expect(serialized).toContain('de la 11 a la 20');
+    expect(serialized).toContain('data:application/pdf;base64,QUJD');
+    expect(serialized).not.toContain('image_url');
+  });
+});
+
+describe('presupuesto de OCR por documento', () => {
+  it('resolveOcrBudget: defaults seguros; secretos solo REDUCEN', () => {
+    const def = resolveOcrBudget({});
+    expect(def.maxPages).toBe(MAX_OCR_PDF_PAGES);
+    expect(def.maxCostUsd).toBe(MAX_OCR_COST_PER_DOCUMENT_USD);
+    const tighter = resolveOcrBudget({
+      OCR_MAX_PAGES_PER_DOCUMENT: '30',
+      OCR_MAX_COST_PER_DOCUMENT_USD: '0.10',
+    });
+    expect(tighter.maxPages).toBe(30);
+    expect(tighter.maxCostUsd).toBe(0.1);
+    // valores mayores que el maximo seguro NO lo superan
+    expect(resolveOcrBudget({ OCR_MAX_COST_PER_DOCUMENT_USD: '999' }).maxCostUsd).toBe(
+      MAX_OCR_COST_PER_DOCUMENT_USD,
+    );
+  });
+
+  it('evaluateOcrBudget: bloquea por paginas o por coste; permite si cabe', () => {
+    const budget = resolveOcrBudget({});
+    expect(evaluateOcrBudget({ pages: 10, estimatedCostUsd: 0.02, budget })).toEqual({ ok: true });
+    expect(evaluateOcrBudget({ pages: 9999, estimatedCostUsd: 0.0, budget })).toEqual({
+      ok: false,
+      reason: 'page_limit',
+    });
+    expect(evaluateOcrBudget({ pages: 5, estimatedCostUsd: 999, budget })).toEqual({
+      ok: false,
+      reason: 'cost_limit',
+    });
   });
 })
