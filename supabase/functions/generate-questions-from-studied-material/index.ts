@@ -45,12 +45,8 @@ import {
   isStudyRunReady,
   isUsableStudiedMaterial,
   evaluateSelectionScope,
-  resolveProvider,
   buildOpenAIRequest,
   parseProviderCandidates,
-  classifyProviderError,
-  PROVIDER_ERROR_TIMEOUT,
-  PROVIDER_ERROR_NETWORK,
   validateDirectCandidate,
   candidateStatus,
   runDirectGeneration,
@@ -65,6 +61,12 @@ import {
   type DirectRunPort,
   type ValidatedDirectCandidate,
 } from '../_shared/direct-question-generation/contract.ts';
+import { DEFAULT_OPENAI_MODEL } from '../_shared/direct-question-generation/contract.ts';
+// SPEC 041: capa comun de proveedor IA OpenAI-compatible (base URL configurable,
+// timeout, fallback de formato y thinking de Qwen3). Sin configurar AI_* el
+// comportamiento es identico al actual (fallback a OPENAI_*).
+import { resolveAiProvider, AI_PROVIDER_ERROR, capSourceChars, resolveMaxSourceChars } from '../_shared/ai-provider/contract.ts';
+import { callChatCompletion } from '../_shared/ai-provider/openaiCompatible.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -267,7 +269,12 @@ Deno.serve(async (req: Request) => {
   const unitPointers = new Map<string, StudyUnitPointer>();
   const scopeMaterialIds = new Set<string>();
   const scopeUnitIds = new Set<string>();
-  let charBudget = limits.maxSourceChars;
+  // SPEC 041: para el proveedor local, el presupuesto de chars no debe superar
+  // AI_MAX_SOURCE_CHARS (si esta definido). Solo endurece; sin la env, igual que hoy.
+  let charBudget = capSourceChars(
+    limits.maxSourceChars,
+    resolveMaxSourceChars({ AI_MAX_SOURCE_CHARS: Deno.env.get('AI_MAX_SOURCE_CHARS') }),
+  );
 
   for (const u of units) {
     if (promptUnits.length >= limits.maxUnits) break;
@@ -304,11 +311,24 @@ Deno.serve(async (req: Request) => {
   }
 
   // 6) Proveedor: la CLAVE es secreto de SERVIDOR. Sin proveedor real -> 501 honesto.
-  const provider = resolveProvider({
-    AI_PROVIDER: Deno.env.get('AI_PROVIDER'),
-    OPENAI_API_KEY: Deno.env.get('OPENAI_API_KEY'),
-    OPENAI_MODEL: Deno.env.get('OPENAI_MODEL'),
-  });
+  //    SPEC 041: resolucion OpenAI-compatible (AI_* preferente, fallback OPENAI_*),
+  //    base URL configurable para LM Studio/servidor europeo sin tocar codigo.
+  const provider = resolveAiProvider(
+    {
+      AI_PROVIDER: Deno.env.get('AI_PROVIDER'),
+      AI_BASE_URL: Deno.env.get('AI_BASE_URL'),
+      AI_API_KEY: Deno.env.get('AI_API_KEY'),
+      AI_MODEL: Deno.env.get('AI_MODEL'),
+      AI_REQUEST_TIMEOUT_MS: Deno.env.get('AI_REQUEST_TIMEOUT_MS'),
+      AI_CONTEXT_WINDOW_TOKENS: Deno.env.get('AI_CONTEXT_WINDOW_TOKENS'),
+      AI_MAX_SOURCE_CHARS: Deno.env.get('AI_MAX_SOURCE_CHARS'),
+      AI_ENABLE_THINKING: Deno.env.get('AI_ENABLE_THINKING'),
+      OPENAI_BASE_URL: Deno.env.get('OPENAI_BASE_URL'),
+      OPENAI_API_KEY: Deno.env.get('OPENAI_API_KEY'),
+      OPENAI_MODEL: Deno.env.get('OPENAI_MODEL'),
+    },
+    { defaultModel: DEFAULT_OPENAI_MODEL },
+  );
   if (!provider) {
     return fail(DQG_ERROR.PROVIDER_NOT_CONFIGURED, 501, DQG_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
@@ -517,62 +537,33 @@ Deno.serve(async (req: Request) => {
     port,
     requested: cappedQuestionCount,
     produce: async () => {
-      let content: string | null = null;
-      try {
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${provider.apiKey}`,
-          },
-          body: JSON.stringify(
-            buildOpenAIRequest({
-              model: provider.model,
-              difficulty: request.difficulty,
-              question_count: cappedQuestionCount,
-              units: promptUnits,
-              avoidBlock,
-            }),
-          ),
-        });
-        if (!resp.ok) {
-          // Diagnostico SEGURO: lee el body de error de OpenAI (sin exponer api key,
-          // prompt ni la respuesta cruda) y mapea a codigos estables.
-          let body: unknown = null;
-          try {
-            body = await resp.json();
-          } catch {
-            body = null;
-          }
-          const info = classifyProviderError(resp.status, body);
-          // Log seguro: SOLO status/type/code; nunca Authorization ni prompt.
-          console.error(
-            `direct_qg provider_error status=${info.provider_status} type=${info.provider_type ?? ''} code=${info.provider_code ?? ''}`,
-          );
-          return {
-            ok: false,
-            code: DQG_ERROR.PROVIDER_FAILED,
-            candidates: [],
-            errors: info.codes,
-            provider_status: info.provider_status,
-            provider_code: info.provider_code,
-          };
-        }
-        const data = (await resp.json()) as {
-          choices?: { message?: { content?: string } }[];
-          usage?: unknown;
+      // SPEC 041: la llamada (URL base, bearer, timeout, fallback de formato y
+      // filtrado de <think>) la centraliza la capa comun. El diagnostico seguro
+      // (sin api key/prompt/respuesta cruda) viene en `result.info`.
+      const aiResult = await callChatCompletion(
+        provider,
+        buildOpenAIRequest({
+          model: provider.model,
+          difficulty: request.difficulty,
+          question_count: cappedQuestionCount,
+          units: promptUnits,
+          avoidBlock,
+        }),
+      );
+      if (!aiResult.ok) {
+        const info = aiResult.info;
+        return {
+          ok: false,
+          code: DQG_ERROR.PROVIDER_FAILED,
+          candidates: [],
+          errors: info?.codes ?? [AI_PROVIDER_ERROR.UNKNOWN],
+          provider_status: info?.provider_status,
+          provider_code: info?.provider_code ?? null,
         };
-        // Coste de IA: captura el uso de tokens del proveedor (sin secretos/texto).
-        runUsage = parseOpenAIUsage(data.usage);
-        content = data.choices?.[0]?.message?.content ?? null;
-      } catch (err) {
-        // Timeout (withTimeout rechaza con Error('timeout')) vs error de red.
-        const isTimeout = err instanceof Error && err.message === 'timeout';
-        const diag = isTimeout ? PROVIDER_ERROR_TIMEOUT : PROVIDER_ERROR_NETWORK;
-        console.error(`direct_qg provider_error ${diag}`);
-        return { ok: false, code: DQG_ERROR.PROVIDER_FAILED, candidates: [], errors: [diag] };
       }
-      const parseRes = parseProviderCandidates(content);
+      // Coste de IA: captura el uso de tokens del proveedor (sin secretos/texto).
+      runUsage = parseOpenAIUsage(aiResult.usage);
+      const parseRes = parseProviderCandidates(aiResult.content);
       if (!parseRes.ok) return { ok: false, code: parseRes.code, candidates: [] };
       const validated: ValidatedDirectCandidate[] = [];
       for (const candidate of parseRes.candidates) {
