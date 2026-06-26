@@ -39,7 +39,7 @@ import {
   chunkSectionText,
   buildFallbackStudyUnits,
   materialHasOcrWarnings,
-  resolveStudyProvider,
+  DEFAULT_STUDY_MODEL,
   STUDY_SYSTEM_PROMPT,
   parseProviderUnits,
   validateStudyUnit,
@@ -50,6 +50,10 @@ import {
   type ProviderUnit,
   type ValidatedStudyUnit,
 } from '../_shared/material-study/contract.ts';
+// SPEC 041: capa comun de proveedor IA OpenAI-compatible. AI_* preferente con
+// fallback a STUDY_PROVIDER/STUDY_MODEL/OPENAI_* (riesgo cero para el deploy actual).
+import { resolveAiProvider, capSourceChars } from '../_shared/ai-provider/contract.ts';
+import { callChatCompletion } from '../_shared/ai-provider/openaiCompatible.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,22 +71,6 @@ function fail(code: StudyErrorCode, status: number, message?: string): Response 
 }
 function uuid(): string {
   return crypto.randomUUID();
-}
-// Timeout por LLAMADA al proveedor (cota dura; SPEC 038 P0).
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), ms);
-    promise.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -336,11 +324,27 @@ Deno.serve(async (req: Request) => {
   }
 
   // 5) Proveedor: sin proveedor real -> 501 honesto, CERO escrituras.
-  const provider = resolveStudyProvider({
-    STUDY_PROVIDER: Deno.env.get('STUDY_PROVIDER'),
-    OPENAI_API_KEY: Deno.env.get('OPENAI_API_KEY'),
-    STUDY_MODEL: Deno.env.get('STUDY_MODEL'),
-  });
+  //    SPEC 041: AI_* preferente; si no, gate legado STUDY_PROVIDER/STUDY_MODEL.
+  const provider = resolveAiProvider(
+    {
+      AI_PROVIDER: Deno.env.get('AI_PROVIDER'),
+      AI_BASE_URL: Deno.env.get('AI_BASE_URL'),
+      AI_API_KEY: Deno.env.get('AI_API_KEY'),
+      AI_MODEL: Deno.env.get('AI_MODEL'),
+      AI_REQUEST_TIMEOUT_MS: Deno.env.get('AI_REQUEST_TIMEOUT_MS'),
+      AI_CONTEXT_WINDOW_TOKENS: Deno.env.get('AI_CONTEXT_WINDOW_TOKENS'),
+      AI_MAX_SOURCE_CHARS: Deno.env.get('AI_MAX_SOURCE_CHARS'),
+      AI_ENABLE_THINKING: Deno.env.get('AI_ENABLE_THINKING'),
+      OPENAI_BASE_URL: Deno.env.get('OPENAI_BASE_URL'),
+      OPENAI_API_KEY: Deno.env.get('OPENAI_API_KEY'),
+      OPENAI_MODEL: Deno.env.get('OPENAI_MODEL'),
+    },
+    {
+      legacyProvider: Deno.env.get('STUDY_PROVIDER'),
+      legacyModel: Deno.env.get('STUDY_MODEL'),
+      defaultModel: DEFAULT_STUDY_MODEL,
+    },
+  );
   if (!provider) {
     return fail(STUDY_ERROR.PROVIDER_NOT_CONFIGURED, 501, STUDY_PROVIDER_NOT_CONFIGURED_MESSAGE);
   }
@@ -379,7 +383,9 @@ Deno.serve(async (req: Request) => {
   let unitsCreated = 0;
   let studiedCount = 0;
   let hadErrors = false;
-  let totalCharBudget = limits.totalSourceChars; // GLOBAL, no se reinicia por material
+  // SPEC 041: el presupuesto global de chars no supera AI_MAX_SOURCE_CHARS para el
+  // proveedor local (si esta definido). Solo endurece; sin la env, igual que hoy.
+  let totalCharBudget = capSourceChars(limits.totalSourceChars, provider.maxSourceChars); // GLOBAL, no se reinicia por material
   let totalUnits = 0; // GLOBAL
 
   for (const material of toStudy) {
@@ -439,33 +445,28 @@ Deno.serve(async (req: Request) => {
           'LITERALMENTE de ese bloque.',
           ...blocks.map((b) => `BLOQUE ${b.label} [material_section_id=${b.section_id}]\n${b.text}`),
         ].join('\n\n');
-        const resp = await withTimeout(
-          fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
-            body: JSON.stringify({
-              model: provider.model,
-              temperature: 0.2,
-              messages: [
-                { role: 'system', content: STUDY_SYSTEM_PROMPT },
-                { role: 'user', content: userContent },
-              ],
-              response_format: { type: 'json_object' },
-            }),
-          }),
-          limits.perCallTimeoutMs,
+        // SPEC 041: llamada via capa comun (base URL configurable, fallback de
+        // formato, timeout). El presupuesto por llamada del estudio solo puede
+        // ENDURECER el timeout del proveedor (se toma el menor de ambos).
+        const aiResult = await callChatCompletion(
+          { ...provider, timeoutMs: Math.min(provider.timeoutMs, limits.perCallTimeoutMs) },
+          {
+            model: provider.model,
+            temperature: 0.2,
+            messages: [
+              { role: 'system', content: STUDY_SYSTEM_PROMPT },
+              { role: 'user', content: userContent },
+            ],
+            response_format: { type: 'json_object' },
+          },
         );
-        if (resp.ok) {
-          const data = (await resp.json()) as {
-            choices?: { message?: { content?: string } }[];
-            usage?: unknown;
-          };
-          content = data.choices?.[0]?.message?.content ?? null;
+        if (aiResult.ok) {
+          content = aiResult.content;
           // Coste de IA: acumula el uso de tokens del proveedor (sin secretos/texto).
-          totalUsage = addUsage(totalUsage, parseOpenAIUsage(data.usage));
+          totalUsage = addUsage(totalUsage, parseOpenAIUsage(aiResult.usage));
         } else {
           hadErrors = true;
-          qaErrors.push('provider_http_error');
+          for (const c of aiResult.info?.codes ?? ['provider_exception']) qaErrors.push(c);
         }
       } catch {
         hadErrors = true;
